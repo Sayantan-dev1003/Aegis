@@ -104,3 +104,35 @@ lerna-debug.log*
 
 # TypeScript build info
 *.tsbuildinfo
+
+# ── Machine Learning and Data ─────────────────────────────────────────────
+# Datasets
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.h5
+*.hdf5
+data/
+services/ml-worker/data/
+
+# Models and Checkpoints
+*.pkl
+*.joblib
+*.pt
+*.pth
+*.onnx
+models/
+services/ml-worker/models/
+
+# Results, Plots, and Logs
+*.png
+results/
+artifacts/
+reports/
+plots/
+logs/
+services/ml-worker/results/
+services/ml-worker/artifacts/
+services/ml-worker/plots/
+services/ml-worker/logs/
