@@ -100,7 +100,7 @@ class ProbabilityCalibrator:
         logger.info("Validating required files and inputs...")
         
         expected_files = [
-            ("Model", os.path.join(self.artifacts_dir, "model.joblib")),
+            ("Model", os.path.join(self.artifacts_dir, "xgboost_model.joblib")),
             ("Model Metadata", os.path.join(self.artifacts_dir, "model_metadata.json")),
             ("Training Config", os.path.join(self.artifacts_dir, "training_configuration.json")),
             ("Feature Metadata", os.path.join(self.artifacts_dir, "feature_selector_metadata.json")),

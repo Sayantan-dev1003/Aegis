@@ -22,10 +22,10 @@ Categorical Encoder
 Feature Selection
         │
         ▼
-XGBoost Training
+Optuna Hyperparameter Tuning
         │
         ▼
-<!-- Optuna Hyperparameter Tuning -- skip -->
+Best Model Training (XGBoost)
         │
         ▼
 Probability Calibration

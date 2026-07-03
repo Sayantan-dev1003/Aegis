@@ -95,23 +95,18 @@ class ModelTrainer:
         self.overfitting_warnings: List[str] = []
         self.report_obj: Dict[str, Any] = {}
         
+        # Keep only immutable defaults. Hyperparameters will be merged from best_hyperparameters.json,
+        # or XGBoost will use its own internal defaults.
         self.training_config = {
-            "n_estimators": 500,
-            "max_depth": 8,
-            "learning_rate": 0.05,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "min_child_weight": 3,
-            "gamma": 0,
-            "reg_alpha": 0,
-            "reg_lambda": 1,
             "objective": "binary:logistic",
-            "eval_metric": "auc",
+            "eval_metric": "aucpr",
             "tree_method": "hist",
             "random_state": self.random_state,
             "n_jobs": -1
         }
-        self.early_stopping_rounds = 50
+        self.early_stopping_rounds = 100
+        
+        self._load_best_hyperparameters()
 
     def _setup_logger(self) -> logging.Logger:
         """Sets up a production-grade logger."""
@@ -125,6 +120,32 @@ class ModelTrainer:
             handler.setFormatter(formatter)
             logger.addHandler(handler)
         return logger
+
+    def _load_best_hyperparameters(self) -> None:
+        """Loads optimal hyperparameters. Fails if unavailable."""
+        best_params_path = os.path.join(self.artifact_dir, "best_hyperparameters.json")
+        if os.path.exists(best_params_path):
+            self.logger.info(f"Found best_hyperparameters.json at {best_params_path}. Overwriting default config.")
+            try:
+                with open(best_params_path, "r") as f:
+                    best_params = json.load(f)
+                
+                # Update training config
+                self.training_config.update(best_params)
+                
+                # Update early stopping rounds if provided in optimized hyperparameters
+                if "early_stopping_rounds" in best_params:
+                    self.early_stopping_rounds = best_params["early_stopping_rounds"]
+                
+                # Ensure deterministic random state is preserved
+                self.training_config["random_state"] = self.random_state
+            except Exception as e:
+                raise ModelTrainingError(f"Failed to load best_hyperparameters.json: {e}")
+        else:
+            raise ModelTrainingError(
+                "best_hyperparameters.json not found. "
+                "Run Hyperparameter Optimization before Model Training."
+            )
 
     def _get_memory_mb(self, df: pd.DataFrame) -> float:
         """Calculates DataFrame memory usage in Megabytes."""
@@ -246,23 +267,20 @@ class ModelTrainer:
         self.logger.info(f"Identified and verified {len(self.candidate_features)} candidate features.")
 
     def compute_class_weights(self) -> None:
-        """Calculates scale_pos_weight based on class distribution in the training set."""
-        self.logger.info("Computing class weights...")
+        """Validates that scale_pos_weight is present in the loaded hyperparameters."""
+        self.logger.info("Validating class weights...")
         start_time = time.time()
 
-        y_train = self.train_df['isFraud']
-        pos_samples = y_train.sum()
-        neg_samples = len(y_train) - pos_samples
+        if 'scale_pos_weight' in self.training_config:
+            self.scale_pos_weight = self.training_config['scale_pos_weight']
+            self.logger.info(f"Using scale_pos_weight={self.scale_pos_weight:.4f} from loaded hyperparameters.")
+        else:
+            raise ModelTrainingError(
+                "Optimal scale_pos_weight is missing from hyperparameters. "
+                "Ensure best_hyperparameters.json is present and contains this value."
+            )
 
-        if pos_samples == 0:
-            raise ModelTrainingError("No positive samples found in training set.")
-
-        self.scale_pos_weight = float(neg_samples / pos_samples)
-        self.training_config['scale_pos_weight'] = self.scale_pos_weight
-        
         self.timings['compute_class_weights'] = time.time() - start_time
-        self.logger.info(f"Class distribution: Negatives={neg_samples}, Positives={pos_samples}")
-        self.logger.info(f"Computed scale_pos_weight: {self.scale_pos_weight:.4f}")
 
     def train(self) -> None:
         """Trains the XGBoost Classifier with Early Stopping."""
@@ -305,7 +323,7 @@ class ModelTrainer:
         self._record_process_memory("after_training")
 
         self.timings['train'] = time.time() - start_time
-        self.logger.info(f"Training complete. Best iteration: {self.best_iteration}, Best AUC: {self.best_score:.4f}")
+        self.logger.info(f"Training complete. Best iteration: {self.best_iteration}, Best Validation AUCPR: {self.best_score:.4f}")
 
     def predict(self) -> None:
         """Generates predictions and probabilities on Train and Validation sets."""
@@ -494,7 +512,7 @@ class ModelTrainer:
                 "hyperparameters": self.training_config,
                 "early_stopping_rounds": self.early_stopping_rounds,
                 "best_iteration": int(self.best_iteration),
-                "best_score": float(self.best_score)
+                "best_validation_aucpr": float(self.best_score)
             },
             "metrics": {
                 "train": self.train_metrics,
@@ -532,7 +550,7 @@ class ModelTrainer:
         os.makedirs(self.report_dir, exist_ok=True)
 
         # Save model
-        model_path = os.path.join(self.artifact_dir, "model.joblib")
+        model_path = os.path.join(self.artifact_dir, "xgboost_model.joblib")
         joblib.dump(self.model, model_path)
 
         # Save feature importance
@@ -566,7 +584,7 @@ class ModelTrainer:
             "feature_names": self.candidate_features,
             "selected_feature_count": len(self.candidate_features),
             "best_iteration": int(self.best_iteration),
-            "best_score": float(self.best_score),
+            "best_validation_aucpr": float(self.best_score),
             "scale_pos_weight": self.scale_pos_weight,
             "training_time": self.timings.get("train", 0.0),
             "python_version": platform.python_version(),

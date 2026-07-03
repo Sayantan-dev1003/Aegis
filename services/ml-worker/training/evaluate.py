@@ -137,7 +137,7 @@ class ModelEvaluator:
     def __init__(
         self,
         val_path: str = "data/selected/validation.parquet",
-        model_path: str = "artifacts/model.joblib",
+        model_path: str = "artifacts/xgboost_model.joblib",
         metadata_path: str = "artifacts/model_metadata.json",
         config_path: str = "artifacts/training_configuration.json",
         importance_path: str = "artifacts/feature_importance.json",

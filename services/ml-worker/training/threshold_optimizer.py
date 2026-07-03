@@ -83,7 +83,7 @@ class ThresholdOptimizer:
         self.logger = self._setup_logger()
         
         self.inputs = {
-            "model": os.path.join(self.artifacts_dir, "model.joblib"),
+            "model": os.path.join(self.artifacts_dir, "xgboost_model.joblib"),
             "probability_calibrator": os.path.join(self.artifacts_dir, "probability_calibrator.joblib"),
             "model_meta": os.path.join(self.artifacts_dir, "model_metadata.json"),
             "train_config": os.path.join(self.artifacts_dir, "training_configuration.json"),
@@ -716,7 +716,7 @@ class ThresholdOptimizer:
              rep_data = json.load(f)
         self._check_schema(rep_data, {
              "timestamp": str, "pipeline_version": str, "model_version": str, "optimization_strategy": str,
-             "recommended_threshold": (int, float), "business_score": (int, float), "reason": str,
+             "target_metric": str, "recommended_threshold": (int, float), "business_score": (int, float), "reason": str,
              "comparison_with_default": dict, "metric_improvements": dict,
              "deployment_recommendation": str, "warnings": list
         }, "threshold_optimization_report.json")
@@ -739,7 +739,11 @@ class ThresholdOptimizer:
              meta_data = json.load(f)
         self._check_schema(meta_data, {
              "pipeline_version": str, "model_version": str, "strategy": str,
+             "threshold_start": (int, float), "threshold_end": (int, float),
+             "step": (int, float), "total_thresholds": int,
              "default_threshold": (int, float), "recommended_threshold": (int, float),
+             "best_f1_threshold": (int, float), "best_precision_threshold": (int, float),
+             "best_recall_threshold": (int, float), "timestamp": str,
              "software_versions": dict, "execution_time": (int, float), "stage_timings": dict,
              "validation_sample_count": int, "fraud_sample_count": int, "legitimate_sample_count": int,
              "fraud_prevalence": (int, float), "calibration_method": str, "selected_metric": str,
