@@ -132,7 +132,9 @@ artifacts/
 reports/
 plots/
 logs/
+deployment/
 services/ml-worker/results/
 services/ml-worker/artifacts/
 services/ml-worker/plots/
 services/ml-worker/logs/
+services/ml-worker/deployment/
