@@ -7,6 +7,7 @@ and prepares deployment artifacts for the Kafka-based inference service.
 """
 
 import os
+import io
 import json
 import hashlib
 import time
@@ -63,7 +64,8 @@ class ArtifactExporter:
         # State
         self.checksums: Dict[str, str] = {
             "xgboost_model.joblib": "",
-            "probability_calibrator.joblib": ""
+            "probability_calibrator.joblib": "",
+            "runtime_preprocessing.joblib": ""
         }
         self.checksum_verified: bool = True
         self.validation_status: str = "SUCCESS"
@@ -78,6 +80,7 @@ class ArtifactExporter:
         self.threshold: Dict[str, Any] = {}
         self.shap_metadata: Dict[str, Any] = {}
         self.encoder_metadata: Dict[str, Any] = {}
+        self.runtime_preprocessing_metadata: Dict[str, Any] = {}
         self.deployment_id = f"Aegis-{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d-%H%M%S')}"
         
         self.copied_artifacts: List[str] = []
@@ -175,9 +178,12 @@ class ArtifactExporter:
             calibrator = self._load_joblib(os.path.join(self.artifacts_dir, "probability_calibrator.joblib"), "probability_calibrator.joblib")
             self._validate_probability_calibrator(calibrator, xgb_model)
             
+            # Load and validate runtime preprocessing artifact
+            self._validate_runtime_preprocessing()
+            
             # Copy joblib models to deployment directory and verify checksums
             self.logger.info("Copying models to deployment directory and verifying integrity...")
-            for file_name in ["xgboost_model.joblib", "probability_calibrator.joblib"]:
+            for file_name in ["xgboost_model.joblib", "probability_calibrator.joblib", "runtime_preprocessing.joblib"]:
                 src = os.path.join(self.artifacts_dir, file_name)
                 dst = os.path.join(self.deployment_dir, file_name)
                 if os.path.exists(src):
@@ -200,6 +206,54 @@ class ArtifactExporter:
                 joblib.load(os.path.join(self.deployment_dir, "probability_calibrator.joblib"))
             except Exception as e:
                 raise ExportArtifactsError("deep_verification", "load_copied", f"Failed to load copied model: {e}", "Ensure disk integrity")
+            
+            # Deep verification of copied runtime preprocessing artifact
+            self.logger.info("Performing deep verification of copied runtime preprocessing artifact...")
+            try:
+                rp_reloaded = joblib.load(os.path.join(self.deployment_dir, "runtime_preprocessing.joblib"))
+            except Exception as e:
+                raise ExportArtifactsError(
+                    "runtime_preprocessing.joblib",
+                    "deep_verify_copied",
+                    f"Failed to load copied artifact: {e}",
+                    "Ensure disk integrity"
+                )
+            if "aggregation_mappings" not in rp_reloaded:
+                raise ExportArtifactsError(
+                    "runtime_preprocessing.joblib",
+                    "deep_verify_copied",
+                    "aggregation_mappings key missing in copied artifact",
+                    "Re-run feature engineering stage"
+                )
+            if "frequency_mappings" not in rp_reloaded:
+                raise ExportArtifactsError(
+                    "runtime_preprocessing.joblib",
+                    "deep_verify_copied",
+                    "frequency_mappings key missing in copied artifact",
+                    "Re-run feature engineering stage"
+                )
+            # NaN-safe byte-stream comparison: aggregation statistics can contain
+            # NaN (from .std() on single-element groups); NaN != NaN in Python so
+            # plain dict equality would always report a false mismatch.
+            buf_copied_agg = io.BytesIO()
+            joblib.dump(rp_reloaded["aggregation_mappings"], buf_copied_agg)
+            if buf_copied_agg.getvalue() != self.runtime_preprocessing_metadata.get("_bytes_aggregation_mappings"):
+                raise ExportArtifactsError(
+                    "runtime_preprocessing.joblib",
+                    "deep_verify_copied",
+                    "aggregation_mappings byte-stream mismatch between source and copied artifact",
+                    "Ensure no concurrent writes to the artifacts directory"
+                )
+            buf_copied_freq = io.BytesIO()
+            joblib.dump(rp_reloaded["frequency_mappings"], buf_copied_freq)
+            if buf_copied_freq.getvalue() != self.runtime_preprocessing_metadata.get("_bytes_frequency_mappings"):
+                raise ExportArtifactsError(
+                    "runtime_preprocessing.joblib",
+                    "deep_verify_copied",
+                    "frequency_mappings byte-stream mismatch between source and copied artifact",
+                    "Ensure no concurrent writes to the artifacts directory"
+                )
+            self.logger.info("Deep verification of runtime_preprocessing.joblib passed.")
             
             self._generate_outputs()
             
@@ -295,18 +349,18 @@ class ArtifactExporter:
         fc = self.model_metadata["feature_count"]
         if self.feature_metadata.get("feature_count") != fc or self.shap_metadata.get("feature_count") != fc:
             raise ExportArtifactsError("consistency", "validate", "Feature count mismatch across metadata", "Re-run full pipeline")
-            
+
         # Pipeline version
         pv = self.model_metadata["pipeline_version"]
         if self.shap_metadata.get("pipeline_version") != pv or (
             self.feature_metadata.get("pipeline_version") and self.feature_metadata["pipeline_version"] != pv):
             raise ExportArtifactsError("consistency", "validate", "Pipeline version mismatch", "Re-run full pipeline")
-            
+
         # Model version
         mv = self.model_metadata["model_version"]
         if self.shap_metadata.get("model_version") != mv:
             raise ExportArtifactsError("consistency", "validate", "Model version mismatch", "Re-run full pipeline")
-            
+
         # Feature ordering
         fo = self.model_metadata.get("feature_order", self.model_metadata.get("features", []))
         if fo:
@@ -316,18 +370,50 @@ class ArtifactExporter:
                 raise ExportArtifactsError("consistency", "validate", "Feature order length mismatch", "Re-run full pipeline")
             if len(set(fo)) != len(fo):
                 raise ExportArtifactsError("consistency", "validate", "Duplicate features in feature order", "Re-run full pipeline")
-            
+
         # Random seed
         rs = self.model_metadata["random_seed"]
         if "random_seed" in self.feature_metadata and self.feature_metadata["random_seed"] != rs:
             raise ExportArtifactsError("consistency", "validate", "Random seed mismatch", "Re-run full pipeline")
         if "random_state" in self.shap_metadata and self.shap_metadata["random_state"] != rs:
             raise ExportArtifactsError("consistency", "validate", "Random seed mismatch", "Re-run full pipeline")
-            
+
         # Target column
         t = self.model_metadata.get("target", "isFraud")
         if "target" in self.feature_metadata and self.feature_metadata["target"] != t:
             raise ExportArtifactsError("consistency", "validate", "Target column mismatch", "Re-run full pipeline")
+
+        # ── Issue 7: Runtime preprocessing deployment consistency ─────────────
+        # Verify that the runtime preprocessing artifact was built from the same
+        # pipeline version as the model.  This prevents accidentally deploying a
+        # model trained with Aegis-1.1.0 alongside feature mappings from Aegis-1.0.0.
+        rp_meta = self.runtime_preprocessing_metadata
+        if rp_meta:
+            rp_artifact_version = rp_meta.get("artifact_version")
+            if rp_artifact_version and rp_artifact_version != pv:
+                raise ExportArtifactsError(
+                    "consistency",
+                    "validate",
+                    f"runtime_preprocessing artifact_version '{rp_artifact_version}' != "
+                    f"model pipeline_version '{pv}'. Mixed artifacts from different pipeline "
+                    "versions must not be deployed together.",
+                    "Re-run feature engineering and model training with the same PIPELINE_VERSION"
+                )
+
+            rp_fe_version = rp_meta.get("feature_engineering_version")
+            if rp_fe_version and rp_fe_version != pv:
+                raise ExportArtifactsError(
+                    "consistency",
+                    "validate",
+                    f"runtime_preprocessing feature_engineering_version '{rp_fe_version}' != "
+                    f"model pipeline_version '{pv}'.",
+                    "Re-run feature engineering stage with the same PIPELINE_VERSION as model training"
+                )
+
+            self.logger.info(
+                f"Deployment consistency OK: runtime_preprocessing artifact_version='{rp_artifact_version}' "
+                f"matches model pipeline_version='{pv}'"
+            )
 
     def _validate_model(self, model: Any):
         self.logger.info("Validating XGBoost Model...")
@@ -370,6 +456,138 @@ class ArtifactExporter:
             
         if not hasattr(calibrator, "predict_proba") and not hasattr(calibrator, "predict"):
             raise ExportArtifactsError("probability_calibrator.joblib", "validate", "Missing predict methods", "Calibrator must implement predict_proba or predict")
+
+    def _validate_runtime_preprocessing(self):
+        """
+        Loads and validates the runtime preprocessing artifact against the
+        formal schema (ARTIFACT_SCHEMA_VERSION = "1.0").
+
+        Validation checks (Issue 6):
+        1. schema_version key present and value == "1.0"
+        2. aggregation_mappings present and non-empty (>= 1 group)
+        3. frequency_mappings present and non-empty (>= 1 group)
+        4. percentile_mapping present and len > 0
+        5. Every aggregation group has >= 1 stat bucket, every bucket size > 0
+        6. Every frequency group size > 0
+        7. artifact_version == pipeline_version in model_metadata.json
+
+        Raises:
+            ExportArtifactsError: On any validation failure.
+        """
+        self.logger.info("Validating runtime preprocessing artifact (schema v1.0)...")
+        artifact_path = os.path.join(self.artifacts_dir, "runtime_preprocessing.joblib")
+
+        rp = self._load_joblib(artifact_path, "runtime_preprocessing.joblib")
+
+        # ── 1. Schema version ────────────────────────────────────────────────
+        schema_version = rp.get("schema_version")
+        if schema_version != "1.0":
+            raise ExportArtifactsError(
+                "runtime_preprocessing.joblib",
+                "validate",
+                f"schema_version mismatch: expected '1.0', got '{schema_version}'. "
+                "Re-run feature engineering stage to regenerate the artifact.",
+                "Re-run feature engineering stage"
+            )
+
+        # ── 2. aggregation_mappings present and non-empty ────────────────────
+        agg = rp.get("aggregation_mappings")
+        if not agg:
+            raise ExportArtifactsError(
+                "runtime_preprocessing.joblib",
+                "validate",
+                "aggregation_mappings is absent or empty",
+                "Re-run feature engineering stage"
+            )
+
+        # ── 3. frequency_mappings present and non-empty ──────────────────────
+        freq = rp.get("frequency_mappings")
+        if not freq:
+            raise ExportArtifactsError(
+                "runtime_preprocessing.joblib",
+                "validate",
+                "frequency_mappings is absent or empty",
+                "Re-run feature engineering stage"
+            )
+
+        # ── 4. percentile_mapping present and non-empty ──────────────────────
+        percentile = rp.get("percentile_mapping")
+        if not percentile or len(percentile) == 0:
+            raise ExportArtifactsError(
+                "runtime_preprocessing.joblib",
+                "validate",
+                "percentile_mapping is absent or empty; Amount_Percentile cannot be served at inference",
+                "Re-run feature engineering stage"
+            )
+
+        # ── 5. Per-group size checks for aggregation_mappings ────────────────
+        for col, stats in agg.items():
+            if not stats:
+                raise ExportArtifactsError(
+                    "runtime_preprocessing.joblib",
+                    "validate",
+                    f"aggregation_mappings['{col}'] has no stat buckets (empty dict)",
+                    "Re-run feature engineering stage"
+                )
+            for stat, bucket in stats.items():
+                if len(bucket) == 0:
+                    raise ExportArtifactsError(
+                        "runtime_preprocessing.joblib",
+                        "validate",
+                        f"aggregation_mappings['{col}']['{stat}'] is empty (size=0)",
+                        "Re-run feature engineering stage"
+                    )
+
+        # ── 6. Per-group size checks for frequency_mappings ──────────────────
+        for group, mapping in freq.items():
+            if len(mapping) == 0:
+                raise ExportArtifactsError(
+                    "runtime_preprocessing.joblib",
+                    "validate",
+                    f"frequency_mappings['{group}'] is empty (size=0)",
+                    "Re-run feature engineering stage"
+                )
+
+        # ── 7. artifact_version == model pipeline_version ────────────────────
+        artifact_version = rp.get("artifact_version")
+        model_pipeline_version = self.model_metadata.get("pipeline_version") if self.model_metadata else None
+        if model_pipeline_version and artifact_version != model_pipeline_version:
+            raise ExportArtifactsError(
+                "runtime_preprocessing.joblib",
+                "validate",
+                f"artifact_version '{artifact_version}' != model pipeline_version '{model_pipeline_version}'. "
+                "Artifact and model were built from different pipeline versions.",
+                "Re-run feature engineering stage with the same PIPELINE_VERSION as model training"
+            )
+
+        # ── Cache serialized bytes for NaN-safe deep copy verification ────────
+        # We store bytes rather than the raw dicts to avoid NaN != NaN
+        # false-positives when comparing the source vs. copied artifact later.
+        buf_agg = io.BytesIO()
+        buf_freq = io.BytesIO()
+        joblib.dump(rp["aggregation_mappings"], buf_agg)
+        joblib.dump(rp["frequency_mappings"], buf_freq)
+
+        # Carry runtime preprocessing metadata forward for use in _generate_outputs
+        # and _validate_consistency.
+        self.runtime_preprocessing_metadata["schema_version"] = schema_version
+        self.runtime_preprocessing_metadata["artifact_version"] = artifact_version
+        self.runtime_preprocessing_metadata["feature_engineering_version"] = rp.get("feature_engineering_version", artifact_version)
+        self.runtime_preprocessing_metadata["pipeline_version"] = rp.get("artifact_version", rp.get("pipeline_version", ""))
+        self.runtime_preprocessing_metadata["percentile_buckets"] = len(percentile)
+        self.runtime_preprocessing_metadata["aggregation_groups"] = list(agg.keys())
+        self.runtime_preprocessing_metadata["frequency_groups"] = list(freq.keys())
+        self.runtime_preprocessing_metadata["_bytes_aggregation_mappings"] = buf_agg.getvalue()
+        self.runtime_preprocessing_metadata["_bytes_frequency_mappings"] = buf_freq.getvalue()
+
+        self.logger.info(
+            f"runtime_preprocessing.joblib validated: "
+            f"schema_version={schema_version}, "
+            f"artifact_version={artifact_version}, "
+            f"aggregation_groups={list(agg.keys())}, "
+            f"frequency_groups={list(freq.keys())}, "
+            f"percentile_buckets={len(percentile):,}"
+        )
 
     def _generate_outputs(self):
         self.logger.info("Generating deployment outputs...")
@@ -415,11 +633,24 @@ class ArtifactExporter:
             "files": {
                 "model_file": "xgboost_model.joblib",
                 "calibrator_file": "probability_calibrator.joblib",
+                "runtime_preprocessing_file": "runtime_preprocessing.joblib",
                 "config_file": "deployment_config.json"
+            },
+            "runtime_preprocessing": {
+                "enabled": True,
+                "artifact": "runtime_preprocessing.joblib",
+                # ── Issue 3: schema and version fields for ML Worker startup validation ──
+                "schema_version": self.runtime_preprocessing_metadata.get("schema_version", "1.0"),
+                "artifact_version": self.runtime_preprocessing_metadata.get("artifact_version", ""),
+                "feature_engineering_version": self.runtime_preprocessing_metadata.get("feature_engineering_version", ""),
+                "aggregation_groups": self.runtime_preprocessing_metadata.get("aggregation_groups", []),
+                "frequency_groups": self.runtime_preprocessing_metadata.get("frequency_groups", []),
+                "percentile_buckets": self.runtime_preprocessing_metadata.get("percentile_buckets", 0),
             },
             "checksums": {
                 "xgboost_model.joblib": self.checksums.get("xgboost_model.joblib", ""),
-                "probability_calibrator.joblib": self.checksums.get("probability_calibrator.joblib", "")
+                "probability_calibrator.joblib": self.checksums.get("probability_calibrator.joblib", ""),
+                "runtime_preprocessing.joblib": self.checksums.get("runtime_preprocessing.joblib", "")
             },
             "runtime": {
                 "python_version": platform.python_version(),
@@ -433,6 +664,7 @@ class ArtifactExporter:
             "validation": {
                 "feature_order_verified": feature_order_verified,
                 "checksum_verified": self.checksum_verified,
+                "runtime_preprocessing_verified": "runtime_preprocessing.joblib" in self.validated_files,
                 "deployment_ready": is_deployment_ready,
                 "exported_by": "ExportArtifacts v2.0"
             }
@@ -441,15 +673,67 @@ class ArtifactExporter:
         config_path = os.path.join(self.deployment_dir, "deployment_config.json")
         with open(config_path, "w") as f:
             json.dump(deployment_config, f, indent=4, sort_keys=True)
-            
+
+        # ── Critical: post-write cross-check (Issue 1) ───────────────────────
+        # Re-read the written deployment_config.json and assert that the
+        # runtime_preprocessing section values are exactly equal to the values
+        # extracted from the artifact during _validate_runtime_preprocessing().
+        # This closes the gap between artifact validation and config generation:
+        # even if a future refactor accidentally breaks the data flow, this
+        # assertion will catch it immediately rather than at ML Worker startup.
+        with open(config_path, "r") as f:
+            written_config = json.load(f)
+
+        written_rp = written_config.get("runtime_preprocessing", {})
+        expected_agg_groups = self.runtime_preprocessing_metadata.get("aggregation_groups", [])
+        expected_freq_groups = self.runtime_preprocessing_metadata.get("frequency_groups", [])
+        expected_percentile_buckets = self.runtime_preprocessing_metadata.get("percentile_buckets", 0)
+
+        config_agg_groups = written_rp.get("aggregation_groups", [])
+        config_freq_groups = written_rp.get("frequency_groups", [])
+        config_percentile_buckets = written_rp.get("percentile_buckets", -1)
+
+        if config_agg_groups != expected_agg_groups:
+            raise ExportArtifactsError(
+                "deployment_config.json",
+                "post_write_verify",
+                f"runtime_preprocessing.aggregation_groups in written config "
+                f"{config_agg_groups} != artifact groups {expected_agg_groups}",
+                "Data flow between _validate_runtime_preprocessing and _generate_outputs is broken"
+            )
+        if config_freq_groups != expected_freq_groups:
+            raise ExportArtifactsError(
+                "deployment_config.json",
+                "post_write_verify",
+                f"runtime_preprocessing.frequency_groups in written config "
+                f"{config_freq_groups} != artifact groups {expected_freq_groups}",
+                "Data flow between _validate_runtime_preprocessing and _generate_outputs is broken"
+            )
+        if config_percentile_buckets != expected_percentile_buckets:
+            raise ExportArtifactsError(
+                "deployment_config.json",
+                "post_write_verify",
+                f"runtime_preprocessing.percentile_buckets in written config "
+                f"{config_percentile_buckets} != artifact value {expected_percentile_buckets}",
+                "Data flow between _validate_runtime_preprocessing and _generate_outputs is broken"
+            )
+
+        self.logger.info(
+            "deployment_config.json post-write cross-check PASSED: "
+            f"aggregation_groups={config_agg_groups}, "
+            f"frequency_groups={config_freq_groups}, "
+            f"percentile_buckets={config_percentile_buckets:,}"
+        )
+
         val_report = {
             "schema_version": "2.0",
             "deployment_id": self.deployment_id,
             "validation_status": self.validation_status,
             "deployment_config_generated": True,
-            "joblib_files_copied": len(self.copied_artifacts) == 2,
+            "joblib_files_copied": len(self.copied_artifacts) == 3,
             "checksum_verification": self.checksum_verified,
             "feature_order_verification": feature_order_verified,
+            "runtime_preprocessing_verified": "runtime_preprocessing.joblib" in self.validated_files,
             "deployment_ready": is_deployment_ready,
             "warnings": self.warnings,
             "errors": self.errors,
@@ -466,7 +750,7 @@ class ArtifactExporter:
             "deployment_id": getattr(self, "deployment_id", "UNKNOWN"),
             "validation_status": "FAILED",
             "deployment_config_generated": False,
-            "joblib_files_copied": len(getattr(self, "copied_artifacts", [])) == 2,
+            "joblib_files_copied": len(getattr(self, "copied_artifacts", [])) == 3,
             "checksum_verification": getattr(self, "checksum_verified", False),
             "feature_order_verification": False,
             "deployment_ready": False,
