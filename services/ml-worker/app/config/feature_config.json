@@ -1,0 +1,7 @@
+{
+  "fraud_threshold": 0.42,
+  "model_version": "xgb-v1.2",
+  "auto_block_threshold": 0.85,
+  "review_threshold": 0.60,
+  "feature_version": "v3"
+}

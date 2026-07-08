@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -397,34 +398,24 @@ class FeatureEngineer:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _add_velocity_features(self, out: pd.DataFrame, row: pd.Series) -> None:
-        card1 = str(row.get("card1", ""))
-        device_info_raw = row.get("DeviceInfo", None)
-        device_info_str = (
-            str(device_info_raw)
-            if not (pd.isna(device_info_raw) or device_info_raw is None)
-            else ""
-        )
-        addr1 = str(row.get("addr1", ""))
-        p_email = row.get("P_emaildomain", None)
-        email_str = str(p_email) if not (pd.isna(p_email) or p_email is None) else ""
+        # Map the ZCOUNT velocity features (computed in processor.py via velocity_features.py)
+        # to the feature names expected by the XGBoost model.
+        
+        # We use txn_velocity_24h for Transaction_Per_Card (representing the long-term frequency)
+        txn_velocity_24h = row.get("txn_velocity_24h", np.nan)
+        out["Transaction_Per_Card"] = float(txn_velocity_24h) if pd.notna(txn_velocity_24h) else np.nan
 
-        ts_raw = row.get("TransactionDT", 0.0)
-        try:
-            ts = float(ts_raw)
-        except (TypeError, ValueError):
-            ts = 0.0
+        # We use txn_velocity_1h for Card_Frequency (representing the short-term burst frequency)
+        txn_velocity_1h = row.get("txn_velocity_1h", np.nan)
+        out["Card_Frequency"] = float(txn_velocity_1h) if pd.notna(txn_velocity_1h) else np.nan
 
-        # Card velocity — atomic INCR + timestamp diff via Redis pipeline
-        card_vel = self.state_store.get_card_velocity(card1, ts)
-        out["Transaction_Per_Card"] = card_vel.transaction_per_card
-        out["Card_Frequency"] = card_vel.card_frequency
-        out["Card_Time_Diff"] = card_vel.card_time_diff
+        # device_seen_before is 0 or 1, representing if this device is known for this account.
+        device_seen_before = row.get("device_seen_before", np.nan)
+        out["Transaction_Per_Device"] = float(device_seen_before) if pd.notna(device_seen_before) else np.nan
 
-        # Device velocity
-        out["Transaction_Per_Device"] = self.state_store.get_device_velocity(device_info_str)
-
-        # Address frequency
-        out["Address_Frequency"] = self.state_store.get_address_frequency(addr1)
-
-        # Email transaction count
-        out["Email_Transaction_Count"] = self.state_store.get_email_count(email_str)
+        # The model was trained with these additional features via the legacy state_store pipeline.
+        # Since the Phase 10 spec replaces them with ZCOUNT velocity and device history only, 
+        # we populate them with NaN to rely on the model's native missing-value imputation.
+        out["Card_Time_Diff"] = np.nan
+        out["Address_Frequency"] = np.nan
+        out["Email_Transaction_Count"] = np.nan

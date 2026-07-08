@@ -5,7 +5,11 @@ import signal
 import threading
 import uvicorn
 import redis
+import atexit
 
+from opentelemetry import trace
+
+from opentelemetry.instrumentation.kafka import KafkaInstrumentor
 from app.monitoring.logger import configure_logger, get_logger
 from app.monitoring.tracing import setup_tracing
 from app.config.config import get_config
@@ -33,6 +37,7 @@ def bootstrap() -> None:
         # 2. Config & Tracing
         config = get_config()
         setup_tracing()
+        KafkaInstrumentor().instrument()
         
         # 3. Artifact Validation
         logger.info("loading_artifacts")
@@ -106,10 +111,22 @@ def main() -> None:
             container.kafka_producer.close(timeout=5.0)
         if container.redis_client:
             container.redis_client.close()
+            
+        provider = trace.get_tracer_provider()
+        if hasattr(provider, "shutdown"):
+            provider.shutdown()
+            
         sys.exit(0)
         
     signal.signal(signal.SIGTERM, handle_sigterm)
     signal.signal(signal.SIGINT, handle_sigterm)
+    
+    def shutdown_tracer():
+        provider = trace.get_tracer_provider()
+        if hasattr(provider, "shutdown"):
+            provider.shutdown()
+            
+    atexit.register(shutdown_tracer)
     
     # Run FastAPI server for health/metrics
     config = get_config()

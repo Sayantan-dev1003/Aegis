@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Sayantan-dev1003/aegis/api/internal/logger"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/rs/zerolog/log"
 )
 
 // RequestLogger is a middleware that logs details of incoming HTTP requests using Zerolog.
@@ -21,7 +21,7 @@ func RequestLogger() func(next http.Handler) http.Handler {
 				// Extract request ID from context if present
 				reqID := GetRequestID(r.Context())
 
-				log.Info().
+				logger.FromContext(r.Context()).Info().
 					Str("request_id", reqID).
 					Str("method", r.Method).
 					Str("path", r.URL.Path).

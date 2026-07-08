@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -23,6 +24,12 @@ import (
 	"github.com/Sayantan-dev1003/aegis/api/internal/outbox"
 	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
 	"github.com/Sayantan-dev1003/aegis/api/internal/service"
+	"github.com/Sayantan-dev1003/aegis/api/internal/ws"
+	"github.com/Sayantan-dev1003/aegis/api/internal/metrics"
+	"github.com/Sayantan-dev1003/aegis/api/internal/tracing"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -34,6 +41,20 @@ func main() {
 
 	// Load configuration
 	cfg := config.Load()
+
+	// Initialize OpenTelemetry Tracing
+	shutdown, err := tracing.InitTracer(context.Background())
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialise tracer")
+	}
+	defer func() {
+		if err := shutdown(context.Background()); err != nil {
+			log.Error().Err(err).Msg("tracer shutdown error")
+		}
+	}()
+
+	// Initialize Prometheus Metrics
+	metrics.Init(nil)
 
 	log.Info().Msg("Configuration loaded successfully!")
 	log.Info().
@@ -80,18 +101,68 @@ func main() {
 	txRepo := repository.NewTransactionRepository(pgPool)
 	outboxRepo := repository.NewOutboxRepository(pgPool)
 	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo)
-	ingestHandler := handler.NewIngestHandler(ingestService)
+	
+	velocityStore := repository.NewVelocityStore(redisClient, &log.Logger)
+	ingestHandler := handler.NewIngestHandler(ingestService, velocityStore)
 
 	// Background context for graceful shutdown
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
+
+	var wg sync.WaitGroup
 
 	// Initialize Kafka & Outbox Poller
 	kafkaProducer := kafka.NewProducer(cfg.KafkaBrokers)
 	defer kafkaProducer.Close()
 
 	outboxPoller := outbox.NewPoller(outboxRepo, kafkaProducer)
-	go outboxPoller.Start(serverCtx)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		outboxPoller.Start(serverCtx)
+	}()
+
+	// Initialize WebSocket Hub
+	wsHub := ws.NewHub()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		wsHub.Run(serverCtx)
+	}()
+
+	fraudResultRepo := repository.NewFraudResultRepository(pgPool)
+	configRepo := repository.NewConfigRepository(pgPool)
+	reviewRepo := repository.NewReviewRepository(pgPool)
+	auditRepo := repository.NewAuditRepository(pgPool)
+	statsRepo := repository.NewStatsRepository(pgPool)
+
+	configService := service.NewConfigService(configRepo, redisClient, &log.Logger)
+	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub)
+	reviewService := service.NewReviewService(pgPool, txRepo, reviewRepo, auditRepo, wsHub)
+
+	wsHandler := handler.NewWebSocketHandler(wsHub, authService)
+	txHandler := handler.NewTransactionHandler(txRepo, fraudResultRepo, reviewRepo)
+	reviewHandler := handler.NewReviewHandler(reviewService)
+	statsHandler := handler.NewStatsHandler(statsRepo, redisClient)
+	adminHandler := handler.NewAdminHandler(configRepo, txRepo, auditRepo, configService, kafkaProducer)
+
+	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, fraudService)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := resultsConsumer.Start(serverCtx); err != nil {
+			log.Error().Err(err).Msg("results consumer exited")
+		}
+	}()
+
+	dlqConsumer := kafka.NewDLQConsumer(cfg.KafkaBrokers, txRepo)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := dlqConsumer.Start(serverCtx); err != nil {
+			log.Error().Err(err).Msg("dlq consumer exited")
+		}
+	}()
 
 	log.Info().Msg("Aegis API Server dependencies initialized successfully.")
 
@@ -103,12 +174,18 @@ func main() {
 	r.Use(aegismw.RequestID)
 	r.Use(aegismw.RequestLogger())
 
+	// Expose Prometheus metrics
+	r.Handle("/metrics", promhttp.Handler())
+
 	// Health check endpoint
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
+
+	// WebSocket Feed route
+	r.Get("/ws/feed", wsHandler.ServeWS)
 
 	// Auth routes
 	r.Post("/auth/login", authHandler.Login)
@@ -125,7 +202,7 @@ func main() {
 	// Protected routes for testing
 	r.Group(func(r chi.Router) {
 		r.Use(aegismw.Auth(authService))
-		
+
 		r.Get("/auth/me", func(w http.ResponseWriter, req *http.Request) {
 			info := req.Context().Value(aegismw.AnalystInfoKey).(aegismw.AnalystInfo)
 			w.Write([]byte(fmt.Sprintf("Hello %s, role: %s", info.ID, info.Role)))
@@ -136,12 +213,30 @@ func main() {
 			r.Get("/auth/admin", func(w http.ResponseWriter, req *http.Request) {
 				w.Write([]byte("Admin only area"))
 			})
+			r.Get("/admin/config", adminHandler.ListConfig)
+			r.Patch("/admin/config/{key}", adminHandler.UpdateConfig)
+			r.Get("/admin/dlq", adminHandler.ListDLQ)
+			r.Post("/admin/dlq/{id}/requeue", adminHandler.RequeueDLQ)
 		})
+		
+		// API v1 routes (any authenticated role)
+		r.Get("/api/v1/transactions", txHandler.List)
+		r.Get("/api/v1/transactions/{id}", txHandler.GetByID)
+		r.Post("/api/v1/transactions/{id}/review", reviewHandler.SubmitReview)
+		r.Get("/api/v1/stats/summary", statsHandler.Summary)
+		r.Get("/api/v1/stats/trends", statsHandler.Trends)
 	})
 
 	// Start server on configured API port
 	serverAddr := fmt.Sprintf(":%s", cfg.APIPort)
-	srv := &http.Server{Addr: serverAddr, Handler: r}
+
+	// Wrap chi router with otelhttp
+	handler := otelhttp.NewHandler(r, cfg.OtelServiceNameAPI,
+		otelhttp.WithTracerProvider(otel.GetTracerProvider()),
+		otelhttp.WithPropagators(otel.GetTextMapPropagator()),
+	)
+
+	srv := &http.Server{Addr: serverAddr, Handler: handler}
 
 	go func() {
 		log.Info().Str("addr", serverAddr).Msg("Listening for HTTP requests")
@@ -167,6 +262,8 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatal().Err(err).Msg("Server forced to shutdown")
 	}
+
+	wg.Wait()
 
 	log.Info().Msg("Server exiting")
 }

@@ -7,6 +7,20 @@ import pandas as pd
 
 from app.inference.artifact_loader import RuntimeArtifacts
 from app.config.config import get_config
+from app.config.config_client import get_config_float
+
+_threshold_cache = {"value": None, "fetched_at": 0}
+_THRESHOLD_TTL = 60  # seconds
+
+# Note: threshold updates propagate to ML worker within ~60s (local cache TTL).
+# Go API Redis cache TTL is 60s. Total max propagation delay: ~120s.
+def get_dynamic_fraud_threshold(default_threshold: float) -> float:
+    now = time.time()
+    if (_threshold_cache["value"] is None or 
+            now - _threshold_cache["fetched_at"] > _THRESHOLD_TTL):
+        _threshold_cache["value"] = get_config_float("fraud_threshold", default_threshold)
+        _threshold_cache["fetched_at"] = now
+    return _threshold_cache["value"]
 
 
 @dataclass
@@ -65,7 +79,11 @@ class DecisionEngine:
                 pipeline.  If provided, latency_ms is computed from it.
             threshold_override: Optional per-request threshold override.
         """
-        thresh = threshold_override if threshold_override is not None else self.default_threshold
+        if threshold_override is not None:
+            thresh = threshold_override
+        else:
+            thresh = get_dynamic_fraud_threshold(self.default_threshold)
+            
         is_fraud = prediction.calibrated_probability >= thresh
 
         dist = abs(prediction.calibrated_probability - thresh)

@@ -20,9 +20,12 @@ type Transaction struct {
 	Channel          string    `json:"channel" db:"channel"`                   // online / pos / atm
 	DeviceID         *string   `json:"device_id,omitempty" db:"device_id"`
 	IPAddress        *string   `json:"ip_address,omitempty" db:"ip_address"`
-	Timestamp        time.Time `json:"timestamp" db:"timestamp"`     // when bank says txn happened
-	IngestedAt       time.Time `json:"ingested_at" db:"ingested_at"` // Defaults to NOW()
-	Status           string    `json:"status" db:"status"`           // pending, scored, auto_blocked, reviewed, scoring_failed
+	Timestamp        time.Time  `json:"timestamp" db:"timestamp"`     // when bank says txn happened
+	IngestedAt       time.Time  `json:"ingested_at" db:"ingested_at"` // Defaults to NOW()
+	Status           string     `json:"status" db:"status"`           // pending, scored, auto_blocked, reviewed, scoring_failed
+	RequeueCount     int        `json:"requeue_count" db:"requeue_count"`
+	LastRequeuedAt   *time.Time `json:"last_requeued_at,omitempty" db:"last_requeued_at"`
+	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // OutboxEvent represents an event to be processed asynchronously.

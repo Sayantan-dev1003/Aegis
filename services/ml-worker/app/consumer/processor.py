@@ -101,6 +101,26 @@ class Processor:
             try:
                 inference_start = time.time()
 
+                from app.features.velocity_features import compute_redis_features
+                account_id = str(raw_message.get("AccountID", raw_message.get("card_id", "")))
+                device_id = raw_message.get("DeviceID", raw_message.get("device_id"))
+                if not device_id and "metadata" in raw_message:
+                    device_id = raw_message["metadata"].get("device_id")
+                
+                redis_features = compute_redis_features(account_id, device_id)
+                raw_message.update(redis_features)
+                
+                import hashlib
+                hashed_account_id = hashlib.sha256(account_id.encode()).hexdigest()[:8]
+                logger.info(
+                    "features_computed",
+                    extra={
+                        "transaction_id": transaction_id,
+                        "account_id": hashed_account_id,
+                        **redis_features
+                    }
+                )
+
                 # ── 1. Full inference pipeline ────────────────────────────────
                 feature_df = container.feature_pipeline.run(raw_message)
                 prediction = container.inference_engine.predict(feature_df)
@@ -125,7 +145,7 @@ class Processor:
                     "is_fraud": decision.is_fraud,
                     "fraud_score": decision.probability,
                     "raw_score": decision.raw_probability,
-                    "threshold": decision.threshold,
+                    "threshold_used": decision.threshold,
                     "confidence": decision.confidence_level,
                     "top_features": shap_result.top_features,
                     "prediction_probability": shap_result.prediction_probability,

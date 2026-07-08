@@ -11,9 +11,9 @@ import (
 
 // AuthService handles authentication logic.
 type AuthService struct {
-	jwtSecret     []byte
-	accessTTL     time.Duration
-	refreshTTL    time.Duration
+	jwtSecret  []byte
+	accessTTL  time.Duration
+	refreshTTL time.Duration
 }
 
 // NewAuthService creates a new AuthService.

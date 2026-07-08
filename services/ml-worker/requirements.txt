@@ -13,9 +13,10 @@ llvmlite==0.47.0
 narwhals==2.22.1
 numba==0.65.1
 numpy==2.4.6
-opentelemetry-api==1.43.0
-opentelemetry-sdk==1.43.0
-opentelemetry-semantic-conventions==0.64b0
+opentelemetry-api==1.24.0
+opentelemetry-sdk==1.24.0
+opentelemetry-exporter-otlp-proto-grpc==1.24.0
+opentelemetry-instrumentation-kafka-python==0.45b0
 packaging==26.2
 pandas==3.0.3
 pydantic==2.13.4
@@ -44,5 +45,5 @@ pyarrow
 fastparquet
 black>=24.0.0
 pydantic-settings>=2.0.0
-redis>=5.0.0
+redis==5.0.8
 prometheus-client>=0.17.0

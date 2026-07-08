@@ -49,9 +49,9 @@ type Config struct {
 	// These are the initial values seeded into the system_config DB table on first run.
 	// At runtime, the service reads them from DB (with Redis cache). These env vars
 	// allow overriding defaults without changing code.
-	FraudThreshold       float64
-	AutoBlockThreshold   float64
-	FraudSpikeAlertRate  float64
+	FraudThreshold      float64
+	AutoBlockThreshold  float64
+	FraudSpikeAlertRate float64
 
 	// Migrations
 	MigrationsPath string
@@ -61,7 +61,7 @@ type Config struct {
 // When running via Docker Compose, env vars are injected directly.
 // When running locally (go run), it walks up from services/api to find the root .env.
 func Load() *Config {
-	_ = godotenv.Load()          // .env in current dir (services/api)
+	_ = godotenv.Load()             // .env in current dir (services/api)
 	_ = godotenv.Load("../../.env") // root .env (two levels up from services/api)
 
 	cfg := &Config{
@@ -88,11 +88,11 @@ func Load() *Config {
 		OtelServiceNameAPI:       getEnvRequired("OTEL_SERVICE_NAME_API"),
 		// The Go service exposes /metrics on a dedicated port so Prometheus can scrape it.
 		// Defaults to 9091 to avoid conflicting with the Prometheus container (9090).
-		MetricsPort:              getEnvDefault("METRICS_PORT", "9091"),
-		FraudThreshold:           getEnvFloat64Default("FRAUD_THRESHOLD", 0.75),
-		AutoBlockThreshold:       getEnvFloat64Default("AUTO_BLOCK_THRESHOLD", 0.92),
-		FraudSpikeAlertRate:      getEnvFloat64Default("FRAUD_SPIKE_ALERT_RATE", 0.05),
-		MigrationsPath:           getEnvDefault("MIGRATIONS_PATH", "../../migrations"),
+		MetricsPort:         getEnvDefault("METRICS_PORT", "9091"),
+		FraudThreshold:      getEnvFloat64Default("FRAUD_THRESHOLD", 0.75),
+		AutoBlockThreshold:  getEnvFloat64Default("AUTO_BLOCK_THRESHOLD", 0.92),
+		FraudSpikeAlertRate: getEnvFloat64Default("FRAUD_SPIKE_ALERT_RATE", 0.05),
+		MigrationsPath:      getEnvDefault("MIGRATIONS_PATH", "../../migrations"),
 	}
 
 	return cfg
@@ -161,4 +161,3 @@ func parseDuration(val string) (time.Duration, error) {
 	}
 	return time.ParseDuration(val)
 }
-

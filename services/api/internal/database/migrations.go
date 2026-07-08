@@ -8,7 +8,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/rs/zerolog/log"
+	"github.com/Sayantan-dev1003/aegis/api/internal/logger"
 )
 
 // RunMigrations connects to PostgreSQL and applies all pending migrations from migrationsPath.
@@ -17,7 +17,7 @@ func RunMigrations(host, port, user, password, dbName, migrationsPath string) er
 		migrationsPath = "migrations"
 	}
 
-	log.Info().Str("path", migrationsPath).Msg("Running database migrations...")
+	logger.Get().Info().Str("path", migrationsPath).Msg("Running database migrations...")
 
 	// Verify migrations path exists
 	if _, err := os.Stat(migrationsPath); os.IsNotExist(err) {
@@ -35,12 +35,12 @@ func RunMigrations(host, port, user, password, dbName, migrationsPath string) er
 
 	if err := m.Up(); err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
-			log.Info().Msg("No database migrations to apply")
+			logger.Get().Info().Msg("No database migrations to apply")
 			return nil
 		}
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	log.Info().Msg("Database migrations applied successfully")
+	logger.Get().Info().Msg("Database migrations applied successfully")
 	return nil
 }

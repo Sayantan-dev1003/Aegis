@@ -1,51 +1,50 @@
-from __future__ import annotations
-
+import os
 import logging
 import structlog
-from typing import Any, MutableMapping
+from opentelemetry import trace
 
-from app.monitoring.tracing import get_trace_id
-
-
-def add_service_name(
-    logger: logging.Logger, method_name: str, event_dict: MutableMapping[str, Any]
-) -> MutableMapping[str, Any]:
-    event_dict["service"] = "fraud-ml-worker"
+def add_trace_context(logger, method, event_dict):
+    """
+    structlog processor that injects OTel trace_id and span_id
+    into every log entry automatically.
+    """
+    span = trace.get_current_span()
+    if span and span.get_span_context().is_valid:
+        ctx = span.get_span_context()
+        event_dict["trace_id"] = format(ctx.trace_id, "032x")
+        event_dict["span_id"] = format(ctx.span_id, "016x")
     return event_dict
 
-
-def add_trace_id(
-    logger: logging.Logger, method_name: str, event_dict: MutableMapping[str, Any]
-) -> MutableMapping[str, Any]:
-    """Automatically binds the current OpenTelemetry trace_id to every log record."""
-    trace_id = get_trace_id()
-    if trace_id:
-        event_dict["trace_id"] = trace_id
+def add_service_context(logger, method, event_dict):
+    event_dict["service"] = os.environ.get("OTEL_SERVICE_NAME", "aegis-ml-worker")
     return event_dict
 
-
-def configure_logger() -> None:
-    """Configures structlog to output JSON with standard keys."""
+def configure_logger():
+    log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+    
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
-            structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
-            add_service_name,
-            add_trace_id,
+            structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
+            add_service_context,
+            add_trace_context,
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.stdlib.BoundLogger,
+        wrapper_class=structlog.make_filtering_bound_logger(
+            getattr(logging, log_level)
+        ),
         context_class=dict,
-        logger_factory=structlog.stdlib.LoggerFactory(),
-        cache_logger_on_first_use=True,
+        logger_factory=structlog.PrintLoggerFactory(),
+    )
+    
+    # Also configure stdlib logging to go through structlog
+    logging.basicConfig(
+        format="%(message)s",
+        level=getattr(logging, log_level),
     )
 
-    # Configure stdlib logging to pass through to structlog
-    logging.basicConfig(format="%(message)s", level=logging.INFO)
-
-
-def get_logger(name: str | None = None) -> structlog.BoundLogger:
-    """Returns a structlog bound logger."""
+def get_logger(name: str = "aegis"):
     return structlog.get_logger(name)

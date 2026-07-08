@@ -45,6 +45,16 @@ func (p *Producer) Produce(ctx context.Context, topic string, key []byte, value 
 	return p.writer.WriteMessages(ctx, msg)
 }
 
+// PublishRawTransaction publishes a raw transaction to the DLQ requeue topic.
+func (p *Producer) PublishRawTransaction(ctx context.Context, key string, value []byte) error {
+	msg := kafka.Message{
+		Topic: "transactions.raw",
+		Key:   []byte(key),
+		Value: value,
+	}
+	return p.writer.WriteMessages(ctx, msg)
+}
+
 // Close gracefully closes the producer.
 func (p *Producer) Close() error {
 	return p.writer.Close()

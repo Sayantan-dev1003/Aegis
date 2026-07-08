@@ -10,7 +10,7 @@ import (
 	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
 	"github.com/Sayantan-dev1003/aegis/api/internal/service"
 	"github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog/log"
+	"github.com/Sayantan-dev1003/aegis/api/internal/logger"
 )
 
 type AuthHandler struct {
@@ -36,7 +36,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	analyst, err := h.repo.FindByEmail(r.Context(), req.Email)
 	if err != nil {
-		log.Error().Err(err).Msg("Database error during login")
+		logger.FromContext(r.Context()).Error().Err(err).Msg("Database error during login")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -53,14 +53,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, err := h.authService.GenerateAccessToken(analyst.ID, analyst.Role)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate access token")
+		logger.FromContext(r.Context()).Error().Err(err).Msg("Failed to generate access token")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	refreshToken, err := h.authService.GenerateRefreshToken(analyst.ID)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate refresh token")
+		logger.FromContext(r.Context()).Error().Err(err).Msg("Failed to generate refresh token")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -121,7 +121,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	newAccessToken, err := h.authService.GenerateAccessToken(analystID, analyst.Role)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to generate new access token")
+		logger.FromContext(r.Context()).Error().Err(err).Msg("Failed to generate new access token")
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -160,7 +160,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if ttl > 0 {
 		err = h.redisClient.Set(r.Context(), "bl_"+req.RefreshToken, "true", ttl).Err()
 		if err != nil {
-			log.Error().Err(err).Msg("Failed to blacklist token in redis")
+			logger.FromContext(r.Context()).Error().Err(err).Msg("Failed to blacklist token in redis")
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
