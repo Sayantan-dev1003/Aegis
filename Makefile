@@ -1,14 +1,26 @@
-.PHONY: dev test migrate seed logs reset
+.PHONY: dev test test-go test-python mock migrate migrate-down seed logs reset
 
 dev:
 	@echo "Starting Aegis services..."
 	docker compose up --build -d
 
-test:
+## Run all tests (Go unit tests + Python unit tests)
+test: test-go test-python
+
+## Run only Go unit tests (no DB, no Kafka required)
+test-go:
 	@echo "Running Go unit tests..."
-	cd services/api && go test -v ./...
+	cd services/api && go test -v -count=1 ./internal/service/... ./internal/validator/... ./internal/middleware/...
+
+## Run only Python unit tests (no Kafka, no Redis required — all mocked)
+test-python:
 	@echo "Running Python unit tests..."
-	@echo "Python tests placeholder (pytest services/ml-worker)"
+	cd services/ml-worker && .\venv\Scripts\python.exe -m pytest tests/ -v --tb=short
+
+## Send mock transactions to the running API (requires: docker compose up)
+mock:
+	@echo "Sending mock transactions to API..."
+	python scripts/mock_transactions.py --count 50 --rps 5 --fraud-ratio 0.2
 
 migrate:
 	@echo "Running database migrations..."

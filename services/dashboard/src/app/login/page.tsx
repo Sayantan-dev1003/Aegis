@@ -1,0 +1,83 @@
+"use client";
+
+import React, { useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { AUTH_URL } from "../lib/api";
+import styles from "./login.module.css";
+
+export default function LoginPage() {
+  const { login } = useAuth();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const res = await fetch(`${AUTH_URL}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Login failed");
+      }
+
+      login(data.access_token, data.analyst);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className={styles.loginWrapper}>
+      <div className={`card ${styles.loginCard}`}>
+        <h1 className={styles.title}>Aegis</h1>
+        <p className={styles.subtitle}>Fraud Defense System</p>
+
+        {error && <div className={styles.errorBox}>{error}</div>}
+
+        <form onSubmit={handleSubmit}>
+          <div className={styles.formGroup}>
+            <label className={styles.label}>Username</label>
+            <input
+              type="text"
+              className="input-field"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className={styles.formGroup}>
+            <label className={styles.label}>Password</label>
+            <input
+              type="password"
+              className="input-field"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            className={`btn-primary ${styles.submitBtn}`}
+            disabled={isLoading}
+          >
+            {isLoading ? "Authenticating..." : "Sign In"}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}

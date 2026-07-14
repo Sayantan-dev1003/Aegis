@@ -1,0 +1,105 @@
+.layoutWrapper {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 250px;
+  background-color: var(--surface-color);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebarHeader {
+  padding: var(--space-xl) var(--space-lg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebarTitle {
+  color: var(--primary-color);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.navList {
+  list-style: none;
+  padding: var(--space-md) 0;
+  flex-grow: 1;
+}
+
+.navItem {
+  margin-bottom: var(--space-xs);
+}
+
+.navLink {
+  display: block;
+  padding: var(--space-sm) var(--space-lg);
+  color: var(--text-main);
+  font-weight: 500;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+}
+
+.navLink:hover, .navLinkActive {
+  background-color: var(--bg-color);
+  color: var(--primary-color);
+  border-left-color: var(--primary-color);
+}
+
+.userSection {
+  padding: var(--space-lg);
+  border-top: 1px solid var(--border-color);
+  font-size: 0.9rem;
+}
+
+.userName {
+  font-weight: 600;
+  margin-bottom: var(--space-xs);
+}
+
+.mainContent {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.topBar {
+  height: 60px;
+  background-color: var(--surface-color);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 var(--space-xl);
+}
+
+.connectionStatus {
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: var(--space-sm);
+}
+
+.statusConnected {
+  background-color: var(--success-color);
+}
+
+.statusDisconnected {
+  background-color: var(--error-color);
+}
+
+.contentArea {
+  flex-grow: 1;
+  padding: var(--space-xl);
+  overflow-y: auto;
+}

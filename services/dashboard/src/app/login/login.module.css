@@ -1,0 +1,52 @@
+.loginWrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: var(--bg-color);
+}
+
+.loginCard {
+  width: 100%;
+  max-width: 400px;
+  text-align: center;
+}
+
+.title {
+  margin-bottom: var(--space-sm);
+  color: var(--primary-color);
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.subtitle {
+  color: var(--text-muted);
+  margin-bottom: var(--space-xl);
+  font-size: 0.9rem;
+}
+
+.formGroup {
+  margin-bottom: var(--space-md);
+  text-align: left;
+}
+
+.label {
+  display: block;
+  margin-bottom: var(--space-xs);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.errorBox {
+  background-color: #fee2e2;
+  color: var(--error-color);
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-md);
+  font-size: 0.9rem;
+}
+
+.submitBtn {
+  width: 100%;
+  margin-top: var(--space-md);
+}

@@ -47,3 +47,5 @@ black>=24.0.0
 pydantic-settings>=2.0.0
 redis==5.0.8
 prometheus-client>=0.17.0
+pytest>=8.0.0
+pytest-mock>=3.14.0
