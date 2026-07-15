@@ -22,8 +22,9 @@ type LoginRequest struct {
 
 // LoginResponse contains JWT tokens returned upon successful login
 type LoginResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken  string   `json:"access_token"`
+	RefreshToken string   `json:"refresh_token"`
+	Analyst      *Analyst `json:"analyst"`
 }
 
 // RefreshRequest is the payload for the refresh token endpoint

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
@@ -168,6 +169,16 @@ func main() {
 
 	// Set up Chi router
 	r := chi.NewRouter()
+
+	// Add CORS middleware
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{cfg.CORSAllowedOrigins},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-Bank-API-Key"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: true,
+		MaxAge:           300, // Maximum value not ignored by any of major browsers
+	}))
 
 	// Add standard middleware and custom request logging middleware
 	r.Use(middleware.Recoverer)

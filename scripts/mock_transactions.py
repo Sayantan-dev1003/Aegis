@@ -209,10 +209,12 @@ async def send_one(
     is_fraud: bool,
     stats: Stats,
     verbose: bool,
+    api_key: str,
 ) -> None:
     start = time.perf_counter()
+    headers = {"X-Bank-API-Key": api_key} if api_key else {}
     try:
-        resp = await client.post(url, json=payload, timeout=10.0)
+        resp = await client.post(url, json=payload, headers=headers, timeout=10.0)
         latency_ms = (time.perf_counter() - start) * 1000
         stats.record(latency_ms, resp.status_code, is_fraud)
         tag = "🔴 FRAUD" if is_fraud else "✅ LEGIT"
@@ -245,6 +247,7 @@ async def run(
     concurrency: int,
     verbose: bool,
     account_pool_size: int,
+    api_key: str,
 ) -> Stats:
     ingest_url = f"{api_url.rstrip('/')}/api/v1/ingest/transactions"
     # Pre-generate a small account pool — re-used across transactions to build history
@@ -270,7 +273,7 @@ async def run(
 
             async def _bounded(p=payload, f=is_fraud):
                 async with semaphore:
-                    await send_one(client, ingest_url, p, f, stats, verbose)
+                    await send_one(client, ingest_url, p, f, stats, verbose, api_key)
 
             task = asyncio.create_task(_bounded())
             tasks.append(task)
@@ -334,6 +337,25 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print full response body for each request",
     )
+    # Attempt to load BANK_API_KEY from .env file as a default
+    default_api_key = ""
+    try:
+        from pathlib import Path
+        env_path = Path(__file__).parent.parent / ".env"
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("BANK_API_KEY="):
+                    default_api_key = line.split("=", 1)[1].strip('"\'')
+                    break
+    except Exception:
+        pass
+
+    p.add_argument(
+        "--api-key",
+        default=default_api_key,
+        help="API key to pass in the X-Bank-API-Key header (defaults to BANK_API_KEY in .env)",
+    )
     return p
 
 
@@ -357,6 +379,7 @@ def main() -> None:
                 concurrency=args.concurrency,
                 verbose=args.verbose,
                 account_pool_size=args.account_pool,
+                api_key=args.api_key,
             )
         )
     except KeyboardInterrupt:

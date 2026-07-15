@@ -38,7 +38,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           ))}
         </ul>
         <div className={styles.userSection}>
-          <div className={styles.userName}>{user?.username || "Analyst"}</div>
+          <div className={styles.userName}>{user?.full_name || "Analyst"}</div>
           <div style={{ color: "var(--text-muted)", marginBottom: "var(--space-md)" }}>
             Role: {user?.role || "analyst"}
           </div>

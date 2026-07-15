@@ -7,7 +7,7 @@ import styles from "./login.module.css";
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -21,15 +21,21 @@ export default function LoginPage() {
       const res = await fetch(`${AUTH_URL}/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        throw new Error(data.error || "Login failed");
+        let errMsg = "Login failed";
+        try {
+          const errData = await res.json();
+          errMsg = errData.error || errMsg;
+        } catch {
+          errMsg = await res.text().catch(() => errMsg);
+        }
+        throw new Error(errMsg);
       }
 
+      const data = await res.json();
       login(data.access_token, data.analyst);
     } catch (err: any) {
       setError(err.message);
@@ -52,8 +58,8 @@ export default function LoginPage() {
             <input
               type="text"
               className="input-field"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>

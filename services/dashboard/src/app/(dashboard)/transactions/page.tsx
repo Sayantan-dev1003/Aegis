@@ -26,7 +26,8 @@ export default function TransactionsPage() {
     const loadTransactions = async () => {
       try {
         const data = await fetchApi("/transactions?limit=20");
-        setTransactions(data || []);
+        // The API returns { data: [...], next_cursor: "..." }
+        setTransactions(data?.data || []);
       } catch (err: any) {
         setError(err.message);
       } finally {
