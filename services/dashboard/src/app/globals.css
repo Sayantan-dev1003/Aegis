@@ -1,20 +1,24 @@
 /* Minimalist Yellow Theme - Professional & Sober */
 
 :root {
-  /* Colors - Command Center Dark Mode */
-  --bg-color: #111827; /* Charcoal */
-  --surface-color: #1f2937; /* Gray */
-  --primary-color: #3b82f6; /* Electric Blue */
-  --primary-hover: #2563eb;
-  --primary-light: #1d4ed8;
+  /* Colors - Aegis SOC-style Dark Mode */
+  --bg-color: #0A0E14; /* Deep ink-navy base */
+  --surface-color: #121822;
+  --surface-hover: #1A2230;
   
-  --text-main: #f9fafb; /* Light Gray/White */
-  --text-muted: #9ca3af;
-  --border-color: #374151; /* Dark Gray */
+  --primary-color: #5C6EF8; /* Indigo accent */
+  --primary-hover: #4B5FE0;
   
-  --error-color: #ef4444; /* Crimson Red */
-  --success-color: #10b981; /* Emerald Green */
-  --warning-color: #f59e0b; /* Amber/Orange */
+  --text-main: #E8EDF4;
+  --text-muted: #8D9AAB;
+  --text-disabled: #4E5A6B;
+  --border-color: #232C3A;
+  
+  /* Semantic Risk Colors */
+  --risk-critical: #E5484D;
+  --risk-medium: #F5A524;
+  --risk-low: #12B76A;
+  --risk-info: #4CC2FF;
   
   /* Spacing (Consistent scale) */
   --space-xs: 0.25rem;
@@ -30,8 +34,8 @@
   --radius-lg: 8px;
   
   /* Shadows */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
 }
 
 * {

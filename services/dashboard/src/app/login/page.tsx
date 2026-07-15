@@ -37,8 +37,12 @@ export default function LoginPage() {
 
       const data = await res.json();
       login(data.access_token, data.analyst);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(String(err));
+      }
     } finally {
       setIsLoading(false);
     }

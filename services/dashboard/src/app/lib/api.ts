@@ -19,7 +19,8 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
+  const url = endpoint.startsWith("http") ? endpoint : `${API_URL}${endpoint}`;
+  const response = await fetch(url, {
     ...options,
     headers,
   });

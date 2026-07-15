@@ -19,31 +19,40 @@ export default function AdminConfigPage() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
 
-  useEffect(() => {
-    loadConfigs();
-  }, []);
-
   const loadConfigs = async () => {
     try {
-      const data = await fetchApi("/admin/config");
+      const data = await fetchApi("http://localhost:8080/admin/config");
       setConfigs(data || []);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(String(err));
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadConfigs();
+  }, []);
+
   const handleSave = async (key: string) => {
     try {
-      await fetchApi(`/admin/config/${key}`, {
+      await fetchApi(`http://localhost:8080/admin/config/${key}`, {
         method: "PATCH",
         body: JSON.stringify({ value: editValue }),
       });
       setEditingKey(null);
       await loadConfigs();
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        alert(err.message);
+      } else {
+        alert(String(err));
+      }
     }
   };
 

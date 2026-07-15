@@ -12,12 +12,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { isConnected } = useWebSocket();
   const pathname = usePathname();
 
-  const navLinks = [
-    { name: "Transactions", path: "/transactions" },
-    { name: "Review Queue", path: "/reviews" },
-    { name: "Analytics", path: "/stats" },
-    { name: "Settings", path: "/admin/config" },
+  const adminNav = [
+    { name: "System Health", path: "/admin/health" },
+    { name: "Model Management", path: "/admin/models" },
+    { name: "Rules & Velocity", path: "/admin/rules" },
+    { name: "User Management", path: "/admin/users" },
+    { name: "Queue Config", path: "/admin/queue" },
+    { name: "Audit Log", path: "/admin/audit" },
+    { name: "Integrations", path: "/admin/integrations" },
   ];
+
+  const reviewerNav = [
+    { name: "Case Queue", path: "/reviewer/queue" },
+    { name: "Investigation", path: "/reviewer/investigate" },
+    { name: "Customer 360", path: "/reviewer/customer" },
+    { name: "My Performance", path: "/reviewer/performance" },
+    { name: "Alerts", path: "/reviewer/alerts" },
+  ];
+
+  const viewerNav = [
+    { name: "Executive Overview", path: "/viewer/overview" },
+    { name: "Analytics & Reports", path: "/viewer/analytics" },
+    { name: "Model Performance", path: "/viewer/models" },
+    { name: "Audit Trail", path: "/viewer/audit" },
+  ];
+
+  const role = user?.role || "reviewer";
+  const navLinks = role === "admin" ? adminNav : role === "viewer" ? viewerNav : reviewerNav;
 
   return (
     <div className={styles.layoutWrapper}>

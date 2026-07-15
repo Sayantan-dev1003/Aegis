@@ -59,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const parsedUser = JSON.parse(storedUser);
         if (parsedUser && typeof parsedUser === "object") {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
           setToken(storedToken);
           setUser(parsedUser);
         } else {
@@ -89,7 +90,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCookie("aegis_user", JSON.stringify(newUser), 7 * 24 * 60 * 60);
     setToken(newToken);
     setUser(newUser);
-    router.push("/transactions");
+    
+    // Redirect based on role
+    const defaultRoute = newUser.role === "admin" 
+      ? "/admin/health" 
+      : newUser.role === "viewer" 
+        ? "/viewer/overview" 
+        : "/reviewer/queue";
+        
+    router.push(defaultRoute);
   };
 
   const logout = () => {
