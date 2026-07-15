@@ -9,7 +9,6 @@ import atexit
 
 from opentelemetry import trace
 
-from opentelemetry.instrumentation.kafka import KafkaInstrumentor
 from app.monitoring.logger import configure_logger, get_logger
 from app.monitoring.tracing import setup_tracing
 from app.config.config import get_config
@@ -37,8 +36,7 @@ def bootstrap() -> None:
         # 2. Config & Tracing
         config = get_config()
         setup_tracing()
-        KafkaInstrumentor().instrument()
-        
+
         # 3. Artifact Validation
         logger.info("loading_artifacts")
         loader = ArtifactLoader()
