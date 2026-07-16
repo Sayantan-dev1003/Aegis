@@ -14,7 +14,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const adminNav = [
     { name: "System Health", path: "/admin/health" },
-    { name: "Model Management", path: "/admin/models" },
+    { name: "Model Management", path: "/admin/model-manage" },
     { name: "Rules & Velocity", path: "/admin/rules" },
     { name: "User Management", path: "/admin/users" },
     { name: "Queue Config", path: "/admin/queue" },
