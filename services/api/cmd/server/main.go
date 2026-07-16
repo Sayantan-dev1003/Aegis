@@ -136,6 +136,12 @@ func main() {
 	reviewRepo := repository.NewReviewRepository(pgPool)
 	auditRepo := repository.NewAuditRepository(pgPool)
 	statsRepo := repository.NewStatsRepository(pgPool)
+	
+	// Phase 2 Repositories
+	ruleRepo := repository.NewRuleRepository(pgPool)
+	queueRepo := repository.NewQueueRepository(pgPool)
+	intRepo := repository.NewIntegrationRepository(pgPool)
+	modelRepo := repository.NewModelRepository(pgPool)
 
 	configService := service.NewConfigService(configRepo, redisClient, &log.Logger)
 	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub)
@@ -146,6 +152,13 @@ func main() {
 	reviewHandler := handler.NewReviewHandler(reviewService)
 	statsHandler := handler.NewStatsHandler(statsRepo, redisClient)
 	adminHandler := handler.NewAdminHandler(configRepo, txRepo, auditRepo, configService, kafkaProducer)
+	analystHandler := handler.NewAnalystHandler(analystRepo, auditRepo)
+	
+	// Phase 2 Handlers
+	ruleHandler := handler.NewRuleHandler(ruleRepo, auditRepo)
+	queueHandler := handler.NewQueueHandler(queueRepo, auditRepo)
+	intHandler := handler.NewIntegrationHandler(intRepo, auditRepo)
+	modelHandler := handler.NewModelHandler(modelRepo, auditRepo)
 
 	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, fraudService)
 	wg.Add(1)
@@ -228,6 +241,39 @@ func main() {
 			r.Patch("/admin/config/{key}", adminHandler.UpdateConfig)
 			r.Get("/admin/dlq", adminHandler.ListDLQ)
 			r.Post("/admin/dlq/{id}/requeue", adminHandler.RequeueDLQ)
+			r.Get("/admin/audit", adminHandler.ListAuditLogs)
+			r.Get("/admin/analysts", analystHandler.ListAnalysts)
+			r.Patch("/admin/analysts/{id}", analystHandler.UpdateAnalyst)
+			
+			// Phase 2 Routes
+			r.Get("/admin/rules", ruleHandler.List)
+			r.Post("/admin/rules", ruleHandler.Create)
+			r.Patch("/admin/rules/{id}/toggle", ruleHandler.ToggleActive)
+			r.Delete("/admin/rules/{id}", ruleHandler.Delete)
+			r.Post("/admin/rules/{id}/backtest", ruleHandler.Backtest)
+			
+			r.Get("/admin/queues", queueHandler.List)
+			r.Post("/admin/queues", queueHandler.Create)
+			r.Patch("/admin/queues/{id}", queueHandler.Update)
+			r.Delete("/admin/queues/{id}", queueHandler.Delete)
+			
+			r.Get("/admin/api-keys", intHandler.ListAPIKeys)
+			r.Post("/admin/api-keys", intHandler.CreateAPIKey)
+			r.Delete("/admin/api-keys/{id}", intHandler.RevokeAPIKey)
+			
+			r.Get("/admin/webhooks", intHandler.ListWebhooks)
+			r.Post("/admin/webhooks", intHandler.CreateWebhook)
+			r.Patch("/admin/webhooks/{id}", intHandler.UpdateWebhook)
+			r.Delete("/admin/webhooks/{id}", intHandler.DeleteWebhook)
+			r.Get("/admin/webhooks/{id}/deliveries", intHandler.ListWebhookDeliveries)
+			
+			r.Get("/admin/models", modelHandler.List)
+			r.Post("/admin/models/{id}/deploy", modelHandler.Deploy)
+			r.Post("/admin/models/{id}/rollback", modelHandler.Rollback)
+			
+			// Phase 3 Route
+			metricsAdminHandler := handler.NewMetricsHandler()
+			r.Get("/admin/metrics", metricsAdminHandler.GetMetrics)
 		})
 		
 		// API v1 routes (any authenticated role)

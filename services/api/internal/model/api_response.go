@@ -136,3 +136,9 @@ type RawTransactionEvent struct {
 	IsRequeue     bool      `json:"is_requeue"`
 	RequeueCount  int       `json:"requeue_count"`
 }
+
+// ListAuditLogsResponse represents the response for listing audit logs.
+type ListAuditLogsResponse struct {
+	Data  []AuditLog `json:"data"`
+	Total int        `json:"total"`
+}

@@ -1,49 +1,9 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { fetchApi } from "../../../lib/api";
 import { DataTable } from '@/components/DataTable';
 import { Modal } from '@/components/Modal';
-
-// Dummy Data
-const auditEvents = [
-  {
-    id: 'evt-1', timestamp: '2026-07-15 14:22:10',
-    actor: { name: 'Alice Chen', email: 'alice@aegis.com' },
-    action: 'updated', targetType: 'rule', targetId: 'rule-2',
-    summary: 'Updated rule "Foreign IP + Large Txn" operator to > 1000',
-    diff: {
-      before: `{\n  "condition": "is_foreign == 1 && amount > 500",\n  "action": "step_up"\n}`,
-      after: `{\n  "condition": "is_foreign == 1 && amount > 1000",\n  "action": "step_up"\n}`
-    }
-  },
-  {
-    id: 'evt-2', timestamp: '2026-07-15 13:45:00',
-    actor: { name: 'Bob Smith', email: 'bob@aegis.com' },
-    action: 'rolled_back', targetType: 'model', targetId: 'xgb-v2.2',
-    summary: 'Rolled back scoring model from v2.3 to v2.2',
-    diff: {
-      before: `{\n  "live_version": "v2.3",\n  "traffic_allocation": 100\n}`,
-      after: `{\n  "live_version": "v2.2",\n  "traffic_allocation": 100\n}`
-    }
-  },
-  {
-    id: 'evt-3', timestamp: '2026-07-15 11:30:45',
-    actor: { name: 'Charlie Davis', email: 'charlie@aegis.com' },
-    action: 'created', targetType: 'queue', targetId: 'q-5',
-    summary: 'Created new queue "Crypto Investigations"',
-    diff: null
-  },
-  {
-    id: 'evt-4', timestamp: '2026-07-14 09:15:20',
-    actor: { name: 'System', email: 'system@aegis.internal' },
-    action: 'deleted', targetType: 'user', targetId: 'usr-8',
-    summary: 'Deactivated user due to prolonged inactivity (90+ days)',
-    diff: {
-      before: `{\n  "status": "active",\n  "last_login": "2026-04-10"\n}`,
-      after: `{\n  "status": "inactive",\n  "last_login": "2026-04-10"\n}`
-    }
-  },
-];
 
 const ActionBadge = ({ action }: { action: string }) => {
   let color = '';
@@ -65,20 +25,43 @@ const ActionBadge = ({ action }: { action: string }) => {
 };
 
 export default function AuditLogPage() {
+  const [auditEvents, setAuditEvents] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionFilter, setActionFilter] = useState('All');
   const [targetFilter, setTargetFilter] = useState('All');
   
   const [viewingDiff, setViewingDiff] = useState<any>(null);
 
+  const loadAuditLogs = async () => {
+    try {
+      const data = await fetchApi("http://localhost:8080/admin/audit");
+      setAuditEvents(data.data || []);
+    } catch (err) {
+      console.error("Failed to load audit logs", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAuditLogs();
+  }, []);
+
   const filteredEvents = auditEvents.filter(e => {
-    const matchesSearch = e.summary.toLowerCase().includes(searchQuery.toLowerCase()) || e.actor.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const actorName = e.actor_id || "System";
+    const summaryStr = e.details ? JSON.stringify(e.details) : "";
+    const matchesSearch = summaryStr.toLowerCase().includes(searchQuery.toLowerCase()) || actorName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesAction = actionFilter === 'All' || e.action === actionFilter.toLowerCase().replace(' ', '_');
-    const matchesTarget = targetFilter === 'All' || e.targetType === targetFilter.toLowerCase();
+    const matchesTarget = targetFilter === 'All' || e.entity_type === targetFilter.toLowerCase();
     return matchesSearch && matchesAction && matchesTarget;
   });
 
-  const getInitials = (name: string) => name === 'System' ? 'SY' : name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const getInitials = (name: string) => {
+    if (!name) return "U";
+    if (name === 'System') return 'SY';
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
 
   const renderDiffContent = (before: string, after: string) => {
     const beforeLines = before.split('\n');
@@ -101,6 +84,8 @@ export default function AuditLogPage() {
       </div>
     );
   };
+
+  if (loading) return <div style={{ padding: "2rem" }}>Loading audit logs...</div>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
@@ -133,20 +118,27 @@ export default function AuditLogPage() {
       <div>
         <DataTable
           columns={[
-            { key: 'timestamp', header: 'Timestamp', render: (e: any) => <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{e.timestamp}</span> },
+            { key: 'timestamp', header: 'Timestamp', render: (e: any) => <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{new Date(e.created_at).toLocaleString()}</span> },
             { key: 'actor', header: 'Actor', render: (e: any) => (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'var(--bg-surface-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.65rem', border: '1px solid var(--border-color)' }}>
-                  {getInitials(e.actor.name)}
+                  {getInitials(e.actor_id || "System")}
                 </div>
-                <div style={{ fontWeight: 500 }}>{e.actor.name}</div>
+                <div style={{ fontWeight: 500 }}>{e.actor_id || "System"}</div>
               </div>
             )},
             { key: 'action', header: 'Action', render: (e: any) => <ActionBadge action={e.action} /> },
-            { key: 'target', header: 'Target', render: (e: any) => <span style={{ textTransform: 'capitalize', color: 'var(--text-secondary)' }}>{e.targetType}</span> },
-            { key: 'summary', header: 'Summary', render: (e: any) => <span style={{ color: 'var(--text-primary)' }}>{e.summary}</span> },
+            { key: 'target', header: 'Target', render: (e: any) => <span style={{ textTransform: 'capitalize', color: 'var(--text-secondary)' }}>{e.entity_type}</span> },
+            { key: 'summary', header: 'Summary', render: (e: any) => {
+              let summary = "";
+              if (e.action === "created") summary = `Created ${e.entity_type}`;
+              else if (e.action === "updated") summary = `Updated ${e.entity_type}`;
+              else if (e.action === "deleted") summary = `Deleted ${e.entity_type}`;
+              else summary = `${e.action} ${e.entity_type}`;
+              return <span style={{ color: 'var(--text-primary)' }}>{summary}</span>;
+            }},
             { key: 'diffAction', header: '', render: (e: any) => (
-              e.diff ? (
+              e.details ? (
                 <button 
                   onClick={() => setViewingDiff(e)} 
                   style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
@@ -162,15 +154,18 @@ export default function AuditLogPage() {
 
       {/* Diff Modal */}
       <Modal isOpen={!!viewingDiff} onClose={() => setViewingDiff(null)} title="Configuration Change Diff" width="700px">
-        {viewingDiff && viewingDiff.diff && (
+        {viewingDiff && viewingDiff.details && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', gap: '16px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
               <div><strong>Action:</strong> <span style={{ textTransform: 'capitalize' }}>{viewingDiff.action.replace('_', ' ')}</span></div>
-              <div><strong>Target:</strong> <span style={{ textTransform: 'capitalize' }}>{viewingDiff.targetType} ({viewingDiff.targetId})</span></div>
-              <div><strong>Actor:</strong> {viewingDiff.actor.name}</div>
+              <div><strong>Target:</strong> <span style={{ textTransform: 'capitalize' }}>{viewingDiff.entity_type} ({viewingDiff.entity_id})</span></div>
+              <div><strong>Actor:</strong> {viewingDiff.actor_id || "System"}</div>
             </div>
             
-            {renderDiffContent(viewingDiff.diff.before, viewingDiff.diff.after)}
+            {renderDiffContent(
+              viewingDiff.details.before ? JSON.stringify(viewingDiff.details.before, null, 2) : "{}",
+              viewingDiff.details.after ? JSON.stringify(viewingDiff.details.after, null, 2) : "{}"
+            )}
             
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
               <button 

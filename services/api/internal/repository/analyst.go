@@ -89,3 +89,61 @@ func (r *AnalystRepository) UpdateLastLogin(ctx context.Context, id string) erro
 	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
+
+// List fetches all analysts without their password hashes.
+func (r *AnalystRepository) List(ctx context.Context) ([]model.Analyst, error) {
+	query := `
+		SELECT id, email, full_name, role, is_active, created_at, last_login
+		FROM analysts
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var analysts []model.Analyst
+	for rows.Next() {
+		var a model.Analyst
+		err := rows.Scan(
+			&a.ID,
+			&a.Email,
+			&a.FullName,
+			&a.Role,
+			&a.IsActive,
+			&a.CreatedAt,
+			&a.LastLogin,
+		)
+		if err != nil {
+			return nil, err
+		}
+		// Clear out PasswordHash just in case
+		a.PasswordHash = ""
+		analysts = append(analysts, a)
+	}
+	return analysts, nil
+}
+
+// UpdateRole updates the role of an analyst.
+func (r *AnalystRepository) UpdateRole(ctx context.Context, id string, role string) error {
+	query := `
+		UPDATE analysts
+		SET role = $2
+		WHERE id = $1
+	`
+	_, err := r.db.Exec(ctx, query, id, role)
+	return err
+}
+
+// SetActive updates the active status of an analyst.
+func (r *AnalystRepository) SetActive(ctx context.Context, id string, isActive bool) error {
+	query := `
+		UPDATE analysts
+		SET is_active = $2
+		WHERE id = $1
+	`
+	_, err := r.db.Exec(ctx, query, id, isActive)
+	return err
+}

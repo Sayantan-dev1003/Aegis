@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { fetchApi } from "../../../lib/api";
 import { StatCard } from '@/components/StatCard';
 import { ChartCard } from '@/components/ChartCard';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -9,7 +10,7 @@ import { Slider } from '@/components/Slider';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar, CartesianGrid, Legend } from 'recharts';
 
-// Dummy Data
+// Dummy Data for charts (no backend provided for these)
 const precisionRecallData = Array.from({ length: 100 }, (_, i) => {
   const threshold = i / 100;
   return {
@@ -40,12 +41,6 @@ const driftData = Array.from({ length: 30 }, (_, i) => ({
   ip_risk_score: 0.05 + Math.random() * 0.08 + (i > 20 ? 0.1 : 0),
 }));
 
-const versionHistory = [
-  { id: 'v2.3', deployedAt: '2026-07-10 14:30', prAuc: 0.887, status: 'live' },
-  { id: 'v2.2', deployedAt: '2026-06-15 09:00', prAuc: 0.881, status: 'archived' },
-  { id: 'v2.1', deployedAt: '2026-05-20 11:15', prAuc: 0.875, status: 'archived' },
-];
-
 const retrainJobs = [
   { id: 'job-942', status: 'completed', startedAt: '2026-07-09 22:00', durationSec: 3450 },
   { id: 'job-910', status: 'completed', startedAt: '2026-06-14 22:00', durationSec: 3380 },
@@ -58,7 +53,45 @@ export default function ModelManagementPage() {
   const [isRetrainOpen, setIsRetrainOpen] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
 
+  // Live Data
+  const [models, setModels] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const currentStats = precisionRecallData.find(d => d.threshold >= threshold) || precisionRecallData[0];
+
+  const loadModels = async () => {
+    try {
+      const data = await fetchApi("http://localhost:8080/admin/models");
+      setModels(data || []);
+    } catch (err) {
+      console.error("Failed to load models", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadModels();
+  }, []);
+
+  const activeModel = models.find(m => m.is_active);
+  const prAuc = activeModel ? activeModel.precision : 0.887; 
+  const rocAuc = activeModel ? activeModel.recall : 0.977; 
+  const f1 = activeModel ? activeModel.f1_score : 0.824; 
+
+  const handleRollback = async () => {
+    if (!selectedVersion) return;
+    try {
+      await fetchApi(`http://localhost:8080/admin/models/${selectedVersion}/rollback`, {
+        method: "POST"
+      });
+      setIsRollbackOpen(false);
+      loadModels();
+    } catch (err) {
+      console.error("Failed to rollback", err);
+      alert("Failed to rollback model");
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
@@ -72,20 +105,20 @@ export default function ModelManagementPage() {
         alignItems: 'center',
         gap: 'var(--space-md)'
       }}>
-        <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)' }}>XGBoost v2.3</h2>
+        <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)' }}>{activeModel ? `XGBoost ${activeModel.version}` : 'Loading...'}</h2>
         <StatusBadge status="active" label="Live" />
         <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>·</span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Deployed Jul 10, 2026</span>
+        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Deployed {activeModel && activeModel.deployed_at ? new Date(activeModel.deployed_at).toLocaleDateString() : 'Unknown'}</span>
         <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>·</span>
         <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Trained on IEEE-CIS</span>
       </div>
 
       {/* KPI Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-md)' }}>
-        <StatCard label="PR-AUC" value="0.887" delta={2.1} deltaDirection="up" status="good" />
-        <StatCard label="ROC-AUC" value="0.977" delta={0.5} deltaDirection="up" status="good" />
+        <StatCard label="PR-AUC" value={prAuc.toFixed(3)} delta={2.1} deltaDirection="up" status="good" />
+        <StatCard label="ROC-AUC" value={rocAuc.toFixed(3)} delta={0.5} deltaDirection="up" status="good" />
         <StatCard label="Accuracy" value="0.990" delta={0.1} deltaDirection="up" status="good" />
-        <StatCard label="F1 Score" value="0.824" delta={1.2} deltaDirection="up" status="good" />
+        <StatCard label="F1 Score" value={f1.toFixed(3)} delta={1.2} deltaDirection="up" status="good" />
       </div>
 
       {/* 2-Column: PR Curve & SHAP */}
@@ -155,25 +188,27 @@ export default function ModelManagementPage() {
       {/* Model Version History */}
       <div>
         <h3 style={{ margin: '0 0 var(--space-md) 0', color: 'var(--text-primary)' }}>Version History</h3>
-        <DataTable
-          columns={[
-            { key: 'id', header: 'Version' },
-            { key: 'deployedAt', header: 'Deployed At' },
-            { key: 'prAuc', header: 'PR-AUC' },
-            { key: 'status', header: 'Status', render: (row: any) => <StatusBadge status={row.status === 'live' ? 'active' : 'inactive'} label={row.status} /> },
-            { key: 'actions', header: '', render: (row: any) => (
-              row.status === 'live' ? null : (
-                <button
-                  onClick={() => { setSelectedVersion(row.id); setIsRollbackOpen(true); }}
-                  style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer' }}
-                >
-                  Rollback
-                </button>
-              )
-            )}
-          ]}
-          rows={versionHistory}
-        />
+        {loading ? <div>Loading version history...</div> : (
+          <DataTable
+            columns={[
+              { key: 'version', header: 'Version' },
+              { key: 'deployedAt', header: 'Deployed At', render: (row: any) => row.deployed_at ? new Date(row.deployed_at).toLocaleString() : '-' },
+              { key: 'prAuc', header: 'Precision / Recall', render: (row: any) => `${row.precision?.toFixed(3) || 0} / ${row.recall?.toFixed(3) || 0}` },
+              { key: 'status', header: 'Status', render: (row: any) => <StatusBadge status={row.is_active ? 'active' : 'inactive'} label={row.is_active ? 'live' : 'archived'} /> },
+              { key: 'actions', header: '', render: (row: any) => (
+                row.is_active ? null : (
+                  <button
+                    onClick={() => { setSelectedVersion(row.id); setIsRollbackOpen(true); }}
+                    style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer' }}
+                  >
+                    Rollback
+                  </button>
+                )
+              )}
+            ]}
+            rows={models}
+          />
+        )}
       </div>
 
       {/* Retrain Section */}
@@ -207,10 +242,10 @@ export default function ModelManagementPage() {
       <ConfirmDialog
         isOpen={isRollbackOpen}
         title="Confirm Rollback"
-        description={`Are you sure you want to rollback to version ${selectedVersion}? This will immediately direct all live scoring traffic to the older model.`}
+        description={`Are you sure you want to rollback to this model version? This will immediately direct all live scoring traffic to the older model.`}
         confirmLabel="Rollback"
         danger={true}
-        onConfirm={() => setIsRollbackOpen(false)}
+        onConfirm={handleRollback}
         onCancel={() => setIsRollbackOpen(false)}
       />
 

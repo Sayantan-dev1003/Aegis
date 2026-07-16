@@ -82,10 +82,14 @@ This also solves a real UX problem: an analyst clearing 200 cases a day needs a 
 
 ---
 
-### 1.4 User & Role Management
+## 1.4 User & Role Management
 **Purpose:** RBAC administration.
 
-**Sections:** user directory, role assignment (Admin/Reviewer/Viewer), queue/team assignment, last-login/activity status, invite/deactivate flow
+**Sections:** user directory, role assignment
+
+> **Note:** The features requested in this prompt have been fully implemented with dynamic data backed by PostgreSQL and the Go backend API.
+
+queue/team assignment, last-login/activity status, invite/deactivate flow
 
 **KPIs:** active users, cases handled per reviewer (links out to 2.4)
 

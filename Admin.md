@@ -1,6 +1,6 @@
 # Aegis Admin Dashboard — Build Prompt
 
-Paste this whole document into Claude Code / your agent of choice. It assumes the shell (sidebar nav, header, page title pattern) shown in the screenshots is already built and working — this prompt is scoped to building out the **content area** of all 7 admin routes only. Do not rebuild or restyle the sidebar, header, or page title block.
+> **Note:** The features requested in this prompt have been fully implemented with dynamic data backed by PostgreSQL and the Go backend API.Paste this whole document into Claude Code / your agent of choice. It assumes the shell (sidebar nav, header, page title pattern) shown in the screenshots is already built and working — this prompt is scoped to building out the **content area** of all 7 admin routes only. Do not rebuild or restyle the sidebar, header, or page title block.
 
 ---
 

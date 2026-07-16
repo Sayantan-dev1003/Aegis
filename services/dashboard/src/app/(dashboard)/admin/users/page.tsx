@@ -1,18 +1,11 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { fetchApi } from "../../../lib/api";
 import { DataTable } from '@/components/DataTable';
 import { Drawer } from '@/components/Drawer';
 import { Modal } from '@/components/Modal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-
-// Dummy Data
-const initialUsers = [
-  { id: 'usr-1', name: 'Alice Chen', email: 'alice@aegis.com', role: 'admin', queues: ['Tier 3', 'Escalations'], status: 'active', lastActiveAt: '10 mins ago', mfaEnforced: true },
-  { id: 'usr-2', name: 'Bob Smith', email: 'bob@aegis.com', role: 'reviewer', queues: ['Tier 1', 'Tier 2'], status: 'active', lastActiveAt: '1 hr ago', mfaEnforced: true },
-  { id: 'usr-3', name: 'Charlie Davis', email: 'charlie@aegis.com', role: 'viewer', queues: [], status: 'inactive', lastActiveAt: '5 days ago', mfaEnforced: false },
-  { id: 'usr-4', name: 'Diana Prince', email: 'diana@aegis.com', role: 'reviewer', queues: ['Tier 1'], status: 'active', lastActiveAt: 'Just now', mfaEnforced: true },
-];
 
 const RoleBadge = ({ role }: { role: string }) => {
   let color = '';
@@ -47,7 +40,8 @@ const permissionMatrix = [
 ];
 
 export default function UsersPage() {
-  const [users, setUsers] = useState(initialUsers);
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -57,14 +51,67 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<any>(null);
   const [deactivatingUserId, setDeactivatingUserId] = useState<string | null>(null);
 
+  const loadUsers = async () => {
+    try {
+      const data = await fetchApi("http://localhost:8080/admin/analysts");
+      setUsers(data || []);
+    } catch (err) {
+      console.error("Failed to load users", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const handleUpdateUser = async () => {
+    if (!editingUser) return;
+    try {
+      await fetchApi(`http://localhost:8080/admin/analysts/${editingUser.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: editingUser.role, is_active: editingUser.is_active })
+      });
+      setEditingUser(null);
+      loadUsers();
+    } catch (err) {
+      console.error("Failed to update user", err);
+      alert("Failed to update user");
+    }
+  };
+
+  const handleDeactivate = async () => {
+    if (!deactivatingUserId) return;
+    try {
+      await fetchApi(`http://localhost:8080/admin/analysts/${deactivatingUserId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: false })
+      });
+      setDeactivatingUserId(null);
+      loadUsers();
+    } catch (err) {
+      console.error("Failed to deactivate user", err);
+      alert("Failed to deactivate user");
+    }
+  };
+
   const filteredUsers = users.filter(u => {
-    const matchesSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const nameMatch = u.name ? u.name.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+    const emailMatch = u.email ? u.email.toLowerCase().includes(searchQuery.toLowerCase()) : false;
+    const matchesSearch = nameMatch || emailMatch;
     const matchesRole = roleFilter === 'All' || u.role === roleFilter.toLowerCase();
-    const matchesStatus = statusFilter === 'All' || u.status === statusFilter.toLowerCase();
+    const statusStr = u.is_active ? 'active' : 'inactive';
+    const matchesStatus = statusFilter === 'All' || statusStr === statusFilter.toLowerCase();
     return matchesSearch && matchesRole && matchesStatus;
   });
 
-  const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const getInitials = (name: string) => {
+    if (!name) return "U";
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
+
+  if (loading) return <div style={{ padding: "2rem" }}>Loading users...</div>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
@@ -111,22 +158,22 @@ export default function UsersPage() {
             { key: 'role', header: 'Role', render: (u: any) => <RoleBadge role={u.role} /> },
             { key: 'queues', header: 'Queues', render: (u: any) => (
               <div style={{ display: 'flex', gap: '4px' }}>
-                {u.queues.length === 0 ? <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>None</span> : 
+                {!u.queues || u.queues.length === 0 ? <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>None</span> : 
                   u.queues.map((q: string) => <span key={q} style={{ padding: '2px 6px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '0.75rem' }}>{q}</span>)
                 }
               </div>
             )},
             { key: 'status', header: 'Status', render: (u: any) => (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: u.status === 'active' ? 'var(--risk-low)' : 'var(--text-disabled)' }} />
-                <span style={{ textTransform: 'capitalize' }}>{u.status}</span>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: u.is_active ? 'var(--risk-low)' : 'var(--text-disabled)' }} />
+                <span style={{ textTransform: 'capitalize' }}>{u.is_active ? 'Active' : 'Inactive'}</span>
               </div>
             )},
-            { key: 'lastActiveAt', header: 'Last Active', render: (u: any) => <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{u.lastActiveAt}</span> },
+            { key: 'lastActiveAt', header: 'Last Active', render: (u: any) => <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{u.last_active_at ? new Date(u.last_active_at).toLocaleString() : 'Never'}</span> },
             { key: 'actions', header: '', render: (u: any) => (
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                 <button onClick={() => setEditingUser(u)} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem' }}>Edit</button>
-                <button onClick={() => setDeactivatingUserId(u.id)} style={{ background: 'none', border: 'none', color: 'var(--risk-critical)', cursor: 'pointer', fontSize: '0.85rem' }}>Deactivate</button>
+                {u.is_active && <button onClick={() => setDeactivatingUserId(u.id)} style={{ background: 'none', border: 'none', color: 'var(--risk-critical)', cursor: 'pointer', fontSize: '0.85rem' }}>Deactivate</button>}
               </div>
             )}
           ]}
@@ -186,7 +233,7 @@ export default function UsersPage() {
       {/* Edit Drawer */}
       <Drawer isOpen={!!editingUser} onClose={() => setEditingUser(null)} title="Edit User">
         {editingUser && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%' }}>
             <div>
               <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '1.125rem' }}>{editingUser.name}</div>
               <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{editingUser.email}</div>
@@ -194,7 +241,7 @@ export default function UsersPage() {
             
             <div>
               <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Role</label>
-              <select defaultValue={editingUser.role} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+              <select value={editingUser.role} onChange={(e) => setEditingUser({...editingUser, role: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
                 <option value="admin">Admin</option>
                 <option value="reviewer">Reviewer</option>
                 <option value="viewer">Viewer</option>
@@ -203,20 +250,16 @@ export default function UsersPage() {
             </div>
 
             <div>
-              <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Assigned Queues</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {['Tier 1', 'Tier 2', 'Tier 3', 'Escalations'].map(q => (
-                  <label key={q} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', fontSize: '0.875rem' }}>
-                    <input type="checkbox" defaultChecked={editingUser.queues.includes(q)} />
-                    {q}
-                  </label>
-                ))}
-              </div>
+              <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Active Status</label>
+              <select value={editingUser.is_active ? "active" : "inactive"} onChange={(e) => setEditingUser({...editingUser, is_active: e.target.value === "active"})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
             </div>
 
             <div style={{ marginTop: 'auto', display: 'flex', gap: '12px' }}>
               <button onClick={() => setEditingUser(null)} style={{ flex: 1, padding: '10px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => setEditingUser(null)} style={{ flex: 1, padding: '10px', backgroundColor: 'var(--accent)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>Save Changes</button>
+              <button onClick={handleUpdateUser} style={{ flex: 1, padding: '10px', backgroundColor: 'var(--accent)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>Save Changes</button>
             </div>
           </div>
         )}
@@ -229,10 +272,7 @@ export default function UsersPage() {
         description="Are you sure you want to deactivate this user? They will immediately lose access to the Aegis console and any active sessions will be terminated."
         confirmLabel="Deactivate"
         danger={true}
-        onConfirm={() => {
-          setUsers(users.map(u => u.id === deactivatingUserId ? { ...u, status: 'inactive' } : u));
-          setDeactivatingUserId(null);
-        }}
+        onConfirm={handleDeactivate}
         onCancel={() => setDeactivatingUserId(null)}
       />
     </div>

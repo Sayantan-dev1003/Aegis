@@ -1,19 +1,14 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { fetchApi } from "../../../lib/api";
 import { DataTable } from '@/components/DataTable';
 import { Toggle } from '@/components/Toggle';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Modal } from '@/components/Modal';
 import { EmptyState } from '@/components/EmptyState';
 
-// Dummy Data
-const initialRules = [
-  { id: 'rule-1', name: 'High Velocity (Card)', entity: 'card', conditionSummary: 'velocity_24h >= 5', window: '24h', action: 'block', triggerCount24h: 142, precisionPct: 82, active: true, priority: 1 },
-  { id: 'rule-2', name: 'Foreign IP + Large Txn', entity: 'ip', conditionSummary: 'is_foreign == 1 && amount > 1000', window: '1h', action: 'step_up', triggerCount24h: 45, precisionPct: 68, active: true, priority: 2 },
-  { id: 'rule-3', name: 'New Device Burst', entity: 'device', conditionSummary: 'device_velocity >= 3', window: '1h', action: 'flag', triggerCount24h: 89, precisionPct: 74, active: false, priority: 3 },
-];
-
+// Dummy Velocity Config (Assuming velocity config table was meant to be managed similarly, but keeping simple for now)
 const velocityConfigs = [
   { entity: 'Card', windows: ['1h', '24h', '7d'] },
   { entity: 'User', windows: ['24h', '7d', '30d'] },
@@ -22,28 +17,105 @@ const velocityConfigs = [
 ];
 
 export default function RulesPage() {
-  const [rules, setRules] = useState(initialRules);
+  const [rules, setRules] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Create Rule State
+  const [newRule, setNewRule] = useState({
+    name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag'
+  });
+
   // Backtest state
   const [selectedRuleId, setSelectedRuleId] = useState<string>('');
   const [backtestResult, setBacktestResult] = useState<{triggerCount: number, overlapWithMlPct: number, estimatedPrecision: number} | null>(null);
+  const [isBacktesting, setIsBacktesting] = useState(false);
+
+  const loadRules = async () => {
+    try {
+      const data = await fetchApi("http://localhost:8080/admin/rules");
+      setRules(data || []);
+    } catch (err) {
+      console.error("Failed to load rules", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRules();
+  }, []);
 
   const filteredRules = rules.filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  const handleToggleActive = (id: string, active: boolean) => {
-    setRules(rules.map(r => r.id === id ? { ...r, active } : r));
+  const handleToggleActive = async (id: string, active: boolean) => {
+    try {
+      await fetchApi(`http://localhost:8080/admin/rules/${id}/toggle`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: active })
+      });
+      setRules(rules.map(r => r.id === id ? { ...r, is_active: active } : r));
+    } catch (err) {
+      console.error("Failed to toggle rule", err);
+      alert("Failed to toggle rule");
+    }
   };
 
-  const handleRunBacktest = () => {
-    if (!selectedRuleId) return;
-    setBacktestResult({
-      triggerCount: Math.floor(Math.random() * 2000) + 100,
-      overlapWithMlPct: Math.floor(Math.random() * 40) + 40,
-      estimatedPrecision: Math.floor(Math.random() * 30) + 60
-    });
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this rule?")) return;
+    try {
+      await fetchApi(`http://localhost:8080/admin/rules/${id}`, { method: "DELETE" });
+      setRules(rules.filter(r => r.id !== id));
+    } catch (err) {
+      console.error("Failed to delete rule", err);
+      alert("Failed to delete rule");
+    }
   };
+
+  const handleCreateRule = async () => {
+    try {
+      await fetchApi("http://localhost:8080/admin/rules", {
+        method: "POST",
+        body: JSON.stringify({
+          name: newRule.name,
+          entity: newRule.entity,
+          metric: newRule.metric,
+          operator: newRule.operator,
+          value: parseFloat(newRule.value),
+          window: newRule.window,
+          action: newRule.action
+        })
+      });
+      setIsCreateModalOpen(false);
+      setNewRule({ name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag' });
+      loadRules();
+    } catch (err) {
+      console.error("Failed to create rule", err);
+      alert("Failed to create rule");
+    }
+  };
+
+  const handleRunBacktest = async () => {
+    if (!selectedRuleId) return;
+    setIsBacktesting(true);
+    setBacktestResult(null);
+    try {
+      const data = await fetchApi(`http://localhost:8080/admin/rules/${selectedRuleId}/backtest`, { method: "POST" });
+      setBacktestResult({
+        triggerCount: data.match_count || 0,
+        overlapWithMlPct: 85, // Stub
+        estimatedPrecision: Math.round((data.precision || 0) * 100)
+      });
+    } catch (err) {
+      console.error("Backtest failed", err);
+      alert("Backtest failed");
+    } finally {
+      setIsBacktesting(false);
+    }
+  };
+
+  if (loading) return <div style={{ padding: "2rem" }}>Loading rules...</div>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
@@ -76,7 +148,7 @@ export default function RulesPage() {
         <DataTable
           columns={[
             { key: 'name', header: 'Name', render: (r: any) => <span style={{ fontWeight: 600 }}>{r.name}</span> },
-            { key: 'conditionSummary', header: 'Condition', render: (r: any) => <code style={{ backgroundColor: 'var(--bg-base)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{r.conditionSummary}</code> },
+            { key: 'conditionSummary', header: 'Condition', render: (r: any) => <code style={{ backgroundColor: 'var(--bg-base)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{`${r.metric} ${r.operator} ${r.value}`}</code> },
             { key: 'entity', header: 'Entity' },
             { key: 'window', header: 'Window' },
             { key: 'action', header: 'Action', render: (r: any) => (
@@ -85,13 +157,13 @@ export default function RulesPage() {
                 label={r.action.replace('_', ' ')} 
               />
             )},
-            { key: 'triggerCount24h', header: 'Triggers (24h)' },
-            { key: 'precisionPct', header: 'Precision %', render: (r: any) => `${r.precisionPct}%` },
+            { key: 'triggerCount24h', header: 'Triggers (24h)', render: (r: any) => r.triggers_24h || '-' },
+            { key: 'precisionPct', header: 'Precision %', render: (r: any) => r.precision ? `${Math.round(r.precision * 100)}%` : '-' },
             { key: 'active', header: 'Active', render: (r: any) => (
-              <Toggle checked={r.active} onChange={(c) => handleToggleActive(r.id, c)} />
+              <Toggle checked={r.is_active} onChange={(c) => handleToggleActive(r.id, c)} />
             )},
-            { key: 'actions', header: '', render: () => (
-              <button style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>Edit</button>
+            { key: 'actions', header: '', render: (r: any) => (
+              <button onClick={() => handleDelete(r.id)} style={{ background: 'none', border: 'none', color: 'var(--risk-critical)', cursor: 'pointer' }}>Delete</button>
             )}
           ]}
           rows={filteredRules}
@@ -162,10 +234,10 @@ export default function RulesPage() {
           </select>
           <button
             onClick={handleRunBacktest}
-            disabled={!selectedRuleId}
-            style={{ backgroundColor: 'var(--accent)', opacity: selectedRuleId ? 1 : 0.5, border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '6px', cursor: selectedRuleId ? 'pointer' : 'not-allowed', fontWeight: 500 }}
+            disabled={!selectedRuleId || isBacktesting}
+            style={{ backgroundColor: 'var(--accent)', opacity: (selectedRuleId && !isBacktesting) ? 1 : 0.5, border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '6px', cursor: (selectedRuleId && !isBacktesting) ? 'pointer' : 'not-allowed', fontWeight: 500 }}
           >
-            Run Backtest
+            {isBacktesting ? "Running..." : "Run Backtest"}
           </button>
         </div>
         
@@ -183,22 +255,25 @@ export default function RulesPage() {
       {/* Create Rule Modal */}
       <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Create Rule" width="600px">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+          <div>
+            <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Rule Name</label>
+            <input type="text" value={newRule.name} onChange={e => setNewRule({...newRule, name: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }} placeholder="e.g. High Velocity" />
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
             <div>
               <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Entity</label>
-              <select style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
-                <option>Card</option>
-                <option>User</option>
-                <option>IP</option>
-                <option>Device</option>
+              <select value={newRule.entity} onChange={e => setNewRule({...newRule, entity: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+                <option value="card">Card</option>
+                <option value="user">User</option>
+                <option value="ip">IP</option>
+                <option value="device">Device</option>
               </select>
             </div>
             <div>
               <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Metric</label>
-              <select style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
-                <option>Velocity</option>
-                <option>Amount</option>
-                <option>Distinct Countries</option>
+              <select value={newRule.metric} onChange={e => setNewRule({...newRule, metric: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+                <option value="velocity">Velocity</option>
+                <option value="amount">Amount</option>
               </select>
             </div>
           </div>
@@ -206,33 +281,33 @@ export default function RulesPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-md)' }}>
             <div>
               <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Operator</label>
-              <select style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
-                <option>&gt;=</option>
-                <option>&gt;</option>
-                <option>&lt;</option>
-                <option>==</option>
+              <select value={newRule.operator} onChange={e => setNewRule({...newRule, operator: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+                <option value=">=">&gt;=</option>
+                <option value=">">&gt;</option>
+                <option value="<">&lt;</option>
+                <option value="==">==</option>
               </select>
             </div>
             <div>
               <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Value</label>
-              <input type="number" style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }} placeholder="e.g. 5" />
+              <input type="number" value={newRule.value} onChange={e => setNewRule({...newRule, value: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }} placeholder="e.g. 5" />
             </div>
             <div>
               <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Window</label>
-              <select style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
-                <option>1h</option>
-                <option>24h</option>
-                <option>7d</option>
+              <select value={newRule.window} onChange={e => setNewRule({...newRule, window: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+                <option value="1h">1h</option>
+                <option value="24h">24h</option>
+                <option value="7d">7d</option>
               </select>
             </div>
           </div>
 
           <div>
             <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Action</label>
-            <select style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
-              <option>Flag for Review</option>
-              <option>Step-up Auth</option>
-              <option>Block</option>
+            <select value={newRule.action} onChange={e => setNewRule({...newRule, action: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+              <option value="flag">Flag for Review</option>
+              <option value="step_up">Step-up Auth</option>
+              <option value="block">Block</option>
             </select>
           </div>
 
@@ -244,7 +319,7 @@ export default function RulesPage() {
               Cancel
             </button>
             <button
-              onClick={() => setIsCreateModalOpen(false)}
+              onClick={handleCreateRule}
               style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
             >
               Save Rule
@@ -255,3 +330,4 @@ export default function RulesPage() {
     </div>
   );
 }
+

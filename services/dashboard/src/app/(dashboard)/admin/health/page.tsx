@@ -1,84 +1,77 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import { fetchApi } from "../../../lib/api";
 import { StatCard } from '../../../../components/StatCard';
 import { ChartCard } from '../../../../components/ChartCard';
 import { StatusBadge } from '../../../../components/StatusBadge';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
-// --- Mock Data ---
-const initialChartData = Array.from({ length: 20 }, (_, i) => ({
-  time: `10:${i.toString().padStart(2, '0')}`,
-  topicA: Math.floor(Math.random() * 20) + 10,
-  topicB: Math.floor(Math.random() * 10) + 5,
-  p50: Math.floor(Math.random() * 10) + 20,
-  p95: Math.floor(Math.random() * 20) + 40,
-  p99: Math.floor(Math.random() * 30) + 70,
-  redisHitRate: Math.random() * 10 + 90,
-  redisLatency: Math.random() * 2 + 1,
-  wsConnections: Math.floor(Math.random() * 500) + 5000,
-  wsThroughput: Math.floor(Math.random() * 200) + 1000,
-}));
-
-const services = [
-  { name: 'Go API', status: 'active' as const },
-  { name: 'Python Scorer', status: 'active' as const },
-  { name: 'Postgres DB', status: 'active' as const },
-  { name: 'Redis Cache', status: 'warning' as const },
-  { name: 'Kafka Broker 1', status: 'active' as const },
-  { name: 'Kafka Broker 2', status: 'active' as const },
-  { name: 'Kafka Broker 3', status: 'active' as const },
-];
-
-const incidents: unknown[] = []; // Empty array for empty state
-
 export default function SystemHealthPage() {
-  const [chartData, setChartData] = useState(initialChartData);
-  const [kpiData, setKpiData] = useState([
-    { label: 'Kafka Lag', value: '12ms', delta: 2, deltaDirection: 'down' as const, status: 'good' as const },
-    { label: 'Throughput', value: '4,204', delta: 5, deltaDirection: 'up' as const, status: 'good' as const },
-    { label: 'p99 Latency', value: '85ms', delta: 12, deltaDirection: 'up' as const, status: 'warn' as const },
-    { label: 'Error Rate', value: '0.04%', delta: 0, deltaDirection: 'down' as const, status: 'good' as const },
-    { label: 'Uptime', value: '99.99%', status: 'good' as const },
-  ]);
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [kpiData, setKpiData] = useState<any[]>([]);
+  const [services, setServices] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Simulate live data updates
+  // Poll for metrics every 5 seconds
   useEffect(() => {
-    const interval = setInterval(() => {
-      setChartData(prev => {
-        const newData = [...prev.slice(1)];
-        const last = prev[prev.length - 1];
+    let mounted = true;
+    
+    const loadMetrics = async () => {
+      try {
+        const data = await fetchApi("http://localhost:8080/admin/metrics");
+        if (!mounted || !data) return;
         
-        // Extract minute and second
-        let [m, s] = last.time.split(':').map(Number);
-        s++;
-        if (s >= 60) { s = 0; m++; }
+        // Push a new data point to chartData
+        const now = new Date();
+        const timeStr = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
         
-        newData.push({
-          time: `${m}:${s.toString().padStart(2, '0')}`,
-          topicA: Math.floor(Math.random() * 20) + 10,
-          topicB: Math.floor(Math.random() * 10) + 5,
-          p50: Math.floor(Math.random() * 10) + 20,
-          p95: Math.floor(Math.random() * 20) + 40,
-          p99: Math.floor(Math.random() * 30) + 70,
-          redisHitRate: Math.random() * 10 + 90,
-          redisLatency: Math.random() * 2 + 1,
-          wsConnections: Math.floor(Math.random() * 500) + 5000,
-          wsThroughput: Math.floor(Math.random() * 200) + 1000,
+        setChartData(prev => {
+          const newData = [...prev];
+          if (newData.length > 20) newData.shift();
+          newData.push({
+            time: timeStr,
+            topicA: data.consumer_lag?.["transactions.raw"] || 0,
+            topicB: data.consumer_lag?.["transactions.scored"] || 0,
+            p50: parseInt(data.api_latency?.p50 || "0"),
+            p95: parseInt(data.api_latency?.p95 || "0"),
+            p99: parseInt(data.api_latency?.p99 || "0"),
+            redisHitRate: parseInt(data.redis_hit_rate || "0"),
+          });
+          return newData;
         });
-        return newData;
-      });
-      
-      // Randomly tweak KPIs
-      setKpiData(prev => prev.map(kpi => {
-        if (kpi.label === 'Throughput') {
-          return { ...kpi, value: `${Math.floor(Math.random() * 500 + 4000).toLocaleString()}` };
-        }
-        return kpi;
-      }));
-    }, 2000);
-    return () => clearInterval(interval);
+        
+        // Set KPIs
+        setKpiData([
+          { label: 'Error Rate', value: data.error_rate || '0%', status: 'good' as const },
+          { label: 'Uptime', value: data.uptime || '100%', status: 'good' as const },
+          { label: 'API p50', value: data.api_latency?.p50 || '0ms', status: 'good' as const },
+          { label: 'API p99', value: data.api_latency?.p99 || '0ms', status: 'warn' as const },
+          { label: 'Redis Hit Rate', value: data.redis_hit_rate || '0%', status: 'good' as const },
+        ]);
+        
+        // Set Services
+        setServices(data.services || []);
+      } catch (err) {
+        console.error("Failed to load metrics", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadMetrics();
+    const interval = setInterval(loadMetrics, 5000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
+
+  if (loading) {
+    return <div style={{ padding: "2rem" }}>Loading live metrics...</div>;
+  }
+
+  const incidents: any[] = [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)' }}>
@@ -135,19 +128,6 @@ export default function SystemHealthPage() {
             </AreaChart>
           </ResponsiveContainer>
         </ChartCard>
-
-        <ChartCard title="WebSocket Hub" subtitle="Active connections & throughput" liveIndicator externalLink="#">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-              <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
-              <Line type="monotone" dataKey="wsConnections" name="Connections" stroke="var(--info)" strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="wsThroughput" name="Throughput (msg/s)" stroke="var(--accent)" strokeWidth={2} dot={false} isAnimationActive={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartCard>
       </div>
 
       {/* Service Status Matrix & Incidents */}
@@ -156,7 +136,7 @@ export default function SystemHealthPage() {
           <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 var(--space-md) 0' }}>Service Matrix</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
             {services.map((svc, i) => (
-              <StatusBadge key={i} status={svc.status} label={svc.name} />
+              <StatusBadge key={i} status={svc.status as any} label={svc.name} />
             ))}
           </div>
         </div>
@@ -177,7 +157,6 @@ export default function SystemHealthPage() {
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No active incidents reported across the pipeline.</div>
               </div>
             ) : (
-              // Incident table would go here
               <div>Table</div>
             )}
           </div>
@@ -186,3 +165,4 @@ export default function SystemHealthPage() {
     </div>
   );
 }
+

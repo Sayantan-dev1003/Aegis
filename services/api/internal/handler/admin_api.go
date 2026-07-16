@@ -138,6 +138,50 @@ func (h *AdminHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(fmt.Sprintf(`{"key": "%s", "value": "%s"}`, key, req.Value)))
 }
 
+func (h *AdminHandler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	actorID := q.Get("actor_id")
+	action := q.Get("action")
+	resourceType := q.Get("resource_type")
+	
+	var startDate, endDate time.Time
+	if d := q.Get("start_date"); d != "" {
+		if t, err := time.Parse(time.RFC3339, d); err == nil {
+			startDate = t
+		}
+	}
+	if d := q.Get("end_date"); d != "" {
+		if t, err := time.Parse(time.RFC3339, d); err == nil {
+			endDate = t
+		}
+	}
+
+	limit := 50
+	if l, err := strconv.Atoi(q.Get("limit")); err == nil && l > 0 && l <= 1000 {
+		limit = l
+	}
+	offset := 0
+	if o, err := strconv.Atoi(q.Get("offset")); err == nil && o >= 0 {
+		offset = o
+	}
+
+	logs, total, err := h.auditRepo.List(r.Context(), actorID, action, resourceType, startDate, endDate, limit, offset)
+	if err != nil {
+		h.respondError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if logs == nil {
+		logs = []model.AuditLog{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(model.ListAuditLogsResponse{
+		Data:  logs,
+		Total: total,
+	})
+}
+
 func (h *AdminHandler) ListDLQ(w http.ResponseWriter, r *http.Request) {
 	// Parse pagination args
 	q := r.URL.Query()

@@ -1,0 +1,5 @@
+ALTER TABLE reviews
+DROP COLUMN IF EXISTS queue_id;
+
+DROP TRIGGER IF EXISTS set_timestamp ON queues;
+DROP TABLE IF EXISTS queues;
