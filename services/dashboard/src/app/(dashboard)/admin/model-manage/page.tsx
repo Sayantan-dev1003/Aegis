@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { DataTable } from '@/components/DataTable';
 import { Slider } from '@/components/Slider';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar, CartesianGrid, Legend } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar, CartesianGrid, Legend, LabelList } from 'recharts';
 
 // Dummy Data for charts (no backend provided for these)
 const precisionRecallData = Array.from({ length: 100 }, (_, i) => {
@@ -41,11 +41,7 @@ const driftData = Array.from({ length: 30 }, (_, i) => ({
   ip_risk_score: 0.05 + Math.random() * 0.08 + (i > 20 ? 0.1 : 0),
 }));
 
-const retrainJobs = [
-  { id: 'job-942', status: 'completed', startedAt: '2026-07-09 22:00', durationSec: 3450 },
-  { id: 'job-910', status: 'completed', startedAt: '2026-06-14 22:00', durationSec: 3380 },
-  { id: 'job-855', status: 'failed', startedAt: '2026-05-19 22:00', durationSec: 420 },
-];
+
 
 export default function ModelManagementPage() {
   const [threshold, setThreshold] = useState(0.62);
@@ -56,6 +52,10 @@ export default function ModelManagementPage() {
   // Live Data
   const [models, setModels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const [retrainJobsData, setRetrainJobsData] = useState<any[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(true);
+  const [isRetraining, setIsRetraining] = useState(false);
 
   const currentStats = precisionRecallData.find(d => d.threshold >= threshold) || precisionRecallData[0];
 
@@ -65,19 +65,74 @@ export default function ModelManagementPage() {
       setModels(data || []);
     } catch (err) {
       console.error("Failed to load models", err);
+      setModels([]);
     } finally {
       setLoading(false);
     }
   };
 
+  const loadRetrainJobs = async () => {
+    try {
+      const data = await fetchApi("http://localhost:8080/admin/retrain-jobs");
+      setRetrainJobsData(data || []);
+      // Check if any job is pending to continue polling
+      const hasPending = data && data.some((job: any) => job.status === 'pending');
+      setIsRetraining(hasPending);
+    } catch (err) {
+      console.error("Failed to load retrain jobs", err);
+    } finally {
+      setLoadingJobs(false);
+    }
+  };
+
   useEffect(() => {
     loadModels();
+    loadRetrainJobs();
   }, []);
 
-  const activeModel = models.find(m => m.is_active);
-  const prAuc = activeModel ? activeModel.precision : 0.887; 
-  const rocAuc = activeModel ? activeModel.recall : 0.977; 
-  const f1 = activeModel ? activeModel.f1_score : 0.824; 
+  // Dynamic polling mechanism with backoff
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    let currentInterval = 5000; // start at 5s
+    const maxInterval = 30000;  // cap at 30s
+
+    const poll = async () => {
+      if (!isRetraining) return;
+      await loadRetrainJobs();
+      await loadModels();
+      currentInterval = Math.min(currentInterval * 1.5, maxInterval);
+      timeoutId = setTimeout(poll, currentInterval);
+    };
+
+    if (isRetraining) {
+      timeoutId = setTimeout(poll, currentInterval);
+    }
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isRetraining]);
+
+  const handleTriggerRetrain = async () => {
+    try {
+      setIsRetraining(true);
+      await fetchApi("http://localhost:8080/admin/retrain-jobs", {
+        method: "POST"
+      });
+      setIsRetrainOpen(false);
+      loadRetrainJobs(); // immediately reload jobs
+    } catch (error) {
+      console.error("Failed to trigger retrain", error);
+      setIsRetraining(false);
+    }
+  };
+
+  const activeModel = models.find(m => m.is_active) || models[0] || {};
+  const prAuc = activeModel.pr_auc || 0.000; 
+  const rocAuc = activeModel.roc_auc || 0.000; 
+  const recall = activeModel.recall || 0.000;
+  const precision = activeModel.precision || 0.000;
+  const f1 = activeModel.f1_score || 0.000; 
 
   const handleRollback = async () => {
     if (!selectedVersion) return;
@@ -93,37 +148,31 @@ export default function ModelManagementPage() {
     }
   };
 
+  const PRSubtitle = (
+    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '8px' }}>
+      <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>At threshold <strong style={{color: 'var(--text-main)'}}>{threshold.toFixed(2)}</strong>:</span>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'rgb(96, 165, 250)', fontSize: '0.8rem', fontWeight: 600 }}>Flagged: {currentStats.flaggedPct.toFixed(1)}%</span>
+        <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'rgb(52, 211, 153)', fontSize: '0.8rem', fontWeight: 600 }}>Precision: {(currentStats.precision * 100).toFixed(1)}%</span>
+        <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'rgb(251, 191, 36)', fontSize: '0.8rem', fontWeight: 600 }}>Recall: {(currentStats.recall * 100).toFixed(1)}%</span>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
-      {/* Model Card */}
-      <div style={{ 
-        backgroundColor: 'var(--bg-surface)', 
-        border: '1px solid var(--border-color)', 
-        borderRadius: 'var(--radius-lg)', 
-        padding: 'var(--space-lg)',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--space-md)'
-      }}>
-        <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)' }}>{activeModel ? `XGBoost ${activeModel.version}` : 'Loading...'}</h2>
-        <StatusBadge status="active" label="Live" />
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>·</span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Deployed {activeModel && activeModel.deployed_at ? new Date(activeModel.deployed_at).toLocaleDateString() : 'Unknown'}</span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>·</span>
-        <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Trained on IEEE-CIS</span>
-      </div>
-
       {/* KPI Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-md)' }}>
-        <StatCard label="PR-AUC" value={prAuc.toFixed(3)} delta={2.1} deltaDirection="up" status="good" />
-        <StatCard label="ROC-AUC" value={rocAuc.toFixed(3)} delta={0.5} deltaDirection="up" status="good" />
-        <StatCard label="Accuracy" value="0.990" delta={0.1} deltaDirection="up" status="good" />
-        <StatCard label="F1 Score" value={f1.toFixed(3)} delta={1.2} deltaDirection="up" status="good" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'var(--space-md)' }}>
+        <StatCard label="PR-AUC" value={prAuc.toFixed(3)} />
+        <StatCard label="ROC-AUC" value={rocAuc.toFixed(3)} />
+        <StatCard label="Recall" value={recall.toFixed(3)} />
+        <StatCard label="Precision" value={precision.toFixed(3)} />
+        <StatCard label="F1 Score" value={f1.toFixed(3)} />
       </div>
 
       {/* 2-Column: PR Curve & SHAP */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
-        <ChartCard title="Precision / Recall vs. Threshold" subtitle={`At threshold ${threshold.toFixed(2)}: ${currentStats.flaggedPct.toFixed(1)}% flagged, ${(currentStats.precision*100).toFixed(1)}% precision, ${(currentStats.recall*100).toFixed(1)}% recall`}>
+        <ChartCard title="Precision / Recall vs. Threshold" subtitle={PRSubtitle}>
           <div style={{ height: 250, marginBottom: 'var(--space-lg)' }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={precisionRecallData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -131,6 +180,7 @@ export default function ModelManagementPage() {
                 <XAxis dataKey="threshold" stroke="var(--text-secondary)" tick={{fontSize: 12}} type="number" domain={[0, 1]} />
                 <YAxis stroke="var(--text-secondary)" tick={{fontSize: 12}} domain={[0, 1]} />
                 <Tooltip 
+                  formatter={(value: any) => typeof value === 'number' ? value.toFixed(3) : value}
                   contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
                   itemStyle={{ color: 'var(--text-primary)' }}
                 />
@@ -145,18 +195,24 @@ export default function ModelManagementPage() {
         </ChartCard>
 
         <ChartCard title="Feature Importance (SHAP)" subtitle="Top 10 features by mean absolute SHAP value">
-          <div style={{ height: 280 }}>
+          <div style={{ height: 350 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={featureImportanceData} margin={{ top: 10, right: 10, left: 40, bottom: 0 }}>
+              <BarChart layout="vertical" data={featureImportanceData} margin={{ top: 10, right: 60, left: 40, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" horizontal={false} />
                 <XAxis type="number" stroke="var(--text-secondary)" tick={{fontSize: 12}} />
-                <YAxis dataKey="feature" type="category" stroke="var(--text-secondary)" tick={{fontSize: 12}} width={120} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
-                  itemStyle={{ color: 'var(--text-primary)' }}
-                  cursor={{fill: 'var(--bg-surface-hover)'}}
-                />
-                <Bar dataKey="value" fill="var(--accent)" radius={[0, 4, 4, 0]} />
+                <YAxis dataKey="feature" type="category" width={140} interval={0} tick={(props: any) => {
+                  const { x, y, payload } = props;
+                  return (
+                    <g transform={`translate(${x},${y})`}>
+                      <text x={-10} y={4} fill="#ffffff" fontSize={12} textAnchor="end" alignmentBaseline="middle">
+                        {payload.value}
+                      </text>
+                    </g>
+                  );
+                }} />
+                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} activeBar={false}>
+                  <LabelList dataKey="value" position="right" formatter={(val: any) => typeof val === 'number' ? `${(val * 100).toFixed(0)}%` : val} fill="#ffffff" fontSize={12} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -172,6 +228,7 @@ export default function ModelManagementPage() {
               <XAxis dataKey="date" stroke="var(--text-secondary)" tick={{fontSize: 12}} />
               <YAxis stroke="var(--text-secondary)" tick={{fontSize: 12}} />
               <Tooltip 
+                formatter={(value: any) => typeof value === 'number' ? value.toFixed(3) : value}
                 contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
                 itemStyle={{ color: 'var(--text-primary)' }}
               />
@@ -214,28 +271,42 @@ export default function ModelManagementPage() {
       {/* Retrain Section */}
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>Retrain Jobs</h3>
-          <button
+          <h2 className="text-xl font-semibold text-white">Retrain Jobs</h2>
+          <button 
             onClick={() => setIsRetrainOpen(true)}
-            style={{ backgroundColor: 'var(--accent)', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+            disabled={isRetraining}
+            style={{
+              backgroundColor: 'transparent',
+              border: 'none',
+              color: '#ffffff',
+              cursor: isRetraining ? 'not-allowed' : 'pointer',
+              fontSize: '1rem',
+              fontWeight: 500,
+              padding: 0,
+              opacity: isRetraining ? 0.5 : 1
+            }}
           >
-            Trigger Retrain
+            {isRetraining ? 'Training...' : 'Trigger Retrain'}
           </button>
         </div>
-        <DataTable
-          columns={[
-            { key: 'id', header: 'Job ID' },
-            { key: 'status', header: 'Status', render: (row: any) => (
-              <StatusBadge 
-                status={row.status === 'completed' ? 'active' : row.status === 'failed' ? 'critical' : 'pending'} 
-                label={row.status} 
-              />
-            )},
-            { key: 'startedAt', header: 'Started' },
-            { key: 'durationSec', header: 'Duration', render: (row: any) => row.durationSec ? `${Math.floor(row.durationSec / 60)}m ${row.durationSec % 60}s` : '-' }
-          ]}
-          rows={retrainJobs}
-        />
+        {loadingJobs ? (
+          <div className="text-gray-400 py-4 text-center">Loading jobs...</div>
+        ) : (
+          <DataTable
+            columns={[
+              { key: 'id', header: 'Job ID' },
+              { key: 'status', header: 'Status', render: (row: any) => (
+                <StatusBadge 
+                  status={row.status === 'completed' ? 'active' : row.status === 'failed' ? 'critical' : 'pending'} 
+                  label={row.status} 
+                />
+              )},
+              { key: 'startedAt', header: 'Started', render: (row: any) => new Date(row.startedAt).toLocaleString() },
+              { key: 'durationSec', header: 'Duration', render: (row: any) => row.durationSec ? `${Math.floor(row.durationSec / 60)}m ${row.durationSec % 60}s` : '-' }
+            ]}
+            rows={retrainJobsData}
+          />
+        )}
       </div>
 
       {/* Modals */}
@@ -252,10 +323,10 @@ export default function ModelManagementPage() {
       <ConfirmDialog
         isOpen={isRetrainOpen}
         title="Trigger Model Retrain"
-        description="This will start a new training job using the latest 30 days of data. The job typically takes 45-60 minutes to complete."
-        confirmLabel="Start Training"
-        onConfirm={() => setIsRetrainOpen(false)}
+        description="This will start a new training job using the latest data. The job typically takes 45-60 minutes to complete. Do you want to proceed?"
+        onConfirm={handleTriggerRetrain}
         onCancel={() => setIsRetrainOpen(false)}
+        confirmLabel="Start Retrain"
       />
     </div>
   );

@@ -2,7 +2,7 @@ import React from 'react';
 
 interface ChartCardProps {
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   liveIndicator?: boolean;
   externalLink?: string;
   children: React.ReactNode;

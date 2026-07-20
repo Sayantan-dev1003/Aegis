@@ -142,6 +142,12 @@ func main() {
 	queueRepo := repository.NewQueueRepository(pgPool)
 	intRepo := repository.NewIntegrationRepository(pgPool)
 	modelRepo := repository.NewModelRepository(pgPool)
+	retrainRepo := repository.NewRetrainRepository(pgPool)
+
+	// Cleanup any zombie retrain jobs left over from a previous crash
+	if err := retrainRepo.CleanupZombieJobs(ctx); err != nil {
+		log.Error().Err(err).Msg("Failed to clean up zombie retrain jobs")
+	}
 
 	configService := service.NewConfigService(configRepo, redisClient, &log.Logger)
 	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub)
@@ -159,6 +165,7 @@ func main() {
 	queueHandler := handler.NewQueueHandler(queueRepo, auditRepo)
 	intHandler := handler.NewIntegrationHandler(intRepo, auditRepo)
 	modelHandler := handler.NewModelHandler(modelRepo, auditRepo)
+	retrainHandler := handler.NewRetrainHandler(retrainRepo, modelRepo)
 
 	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, fraudService)
 	wg.Add(1)
@@ -270,6 +277,9 @@ func main() {
 			r.Get("/admin/models", modelHandler.List)
 			r.Post("/admin/models/{id}/deploy", modelHandler.Deploy)
 			r.Post("/admin/models/{id}/rollback", modelHandler.Rollback)
+			
+			r.Get("/admin/retrain-jobs", retrainHandler.List)
+			r.Post("/admin/retrain-jobs", retrainHandler.Trigger)
 			
 			// Phase 3 Route
 			metricsAdminHandler := handler.NewMetricsHandler()

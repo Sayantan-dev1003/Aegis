@@ -1,0 +1,4 @@
+ALTER TABLE model_versions
+ADD COLUMN accuracy NUMERIC(5,4),
+ADD COLUMN roc_auc NUMERIC(5,4),
+ADD COLUMN pr_auc NUMERIC(5,4);

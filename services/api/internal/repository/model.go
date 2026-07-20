@@ -17,7 +17,7 @@ func NewModelRepository(db *pgxpool.Pool) *ModelRepository {
 
 func (r *ModelRepository) List(ctx context.Context) ([]model.ModelVersion, error) {
 	query := `
-		SELECT id, version, artifact_path, is_active, f1_score, precision, recall, trained_at, deployed_at
+		SELECT id, version, artifact_path, is_active, f1_score, precision, recall, accuracy, roc_auc, pr_auc, trained_at, deployed_at
 		FROM model_versions
 		ORDER BY trained_at DESC
 	`
@@ -31,7 +31,7 @@ func (r *ModelRepository) List(ctx context.Context) ([]model.ModelVersion, error
 	for rows.Next() {
 		var m model.ModelVersion
 		err := rows.Scan(
-			&m.ID, &m.Version, &m.ArtifactPath, &m.IsActive, &m.F1Score, &m.Precision, &m.Recall, &m.TrainedAt, &m.DeployedAt,
+			&m.ID, &m.Version, &m.ArtifactPath, &m.IsActive, &m.F1Score, &m.Precision, &m.Recall, &m.Accuracy, &m.RocAuc, &m.PrAuc, &m.TrainedAt, &m.DeployedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -43,13 +43,13 @@ func (r *ModelRepository) List(ctx context.Context) ([]model.ModelVersion, error
 
 func (r *ModelRepository) GetByID(ctx context.Context, id string) (*model.ModelVersion, error) {
 	query := `
-		SELECT id, version, artifact_path, is_active, f1_score, precision, recall, trained_at, deployed_at
+		SELECT id, version, artifact_path, is_active, f1_score, precision, recall, accuracy, roc_auc, pr_auc, trained_at, deployed_at
 		FROM model_versions
 		WHERE id = $1
 	`
 	var m model.ModelVersion
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&m.ID, &m.Version, &m.ArtifactPath, &m.IsActive, &m.F1Score, &m.Precision, &m.Recall, &m.TrainedAt, &m.DeployedAt,
+		&m.ID, &m.Version, &m.ArtifactPath, &m.IsActive, &m.F1Score, &m.Precision, &m.Recall, &m.Accuracy, &m.RocAuc, &m.PrAuc, &m.TrainedAt, &m.DeployedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -59,14 +59,14 @@ func (r *ModelRepository) GetByID(ctx context.Context, id string) (*model.ModelV
 
 func (r *ModelRepository) GetActive(ctx context.Context) (*model.ModelVersion, error) {
 	query := `
-		SELECT id, version, artifact_path, is_active, f1_score, precision, recall, trained_at, deployed_at
+		SELECT id, version, artifact_path, is_active, f1_score, precision, recall, accuracy, roc_auc, pr_auc, trained_at, deployed_at
 		FROM model_versions
 		WHERE is_active = true
 		LIMIT 1
 	`
 	var m model.ModelVersion
 	err := r.db.QueryRow(ctx, query).Scan(
-		&m.ID, &m.Version, &m.ArtifactPath, &m.IsActive, &m.F1Score, &m.Precision, &m.Recall, &m.TrainedAt, &m.DeployedAt,
+		&m.ID, &m.Version, &m.ArtifactPath, &m.IsActive, &m.F1Score, &m.Precision, &m.Recall, &m.Accuracy, &m.RocAuc, &m.PrAuc, &m.TrainedAt, &m.DeployedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -99,4 +99,13 @@ func (r *ModelRepository) Deploy(ctx context.Context, id string) error {
 func (r *ModelRepository) Rollback(ctx context.Context, id string) error {
 	// Functionally the same as deploy, but named rollback for semantic clarity
 	return r.Deploy(ctx, id)
+}
+
+func (r *ModelRepository) CreateVersion(ctx context.Context, id, version, artifactPath string, f1Score, precision, recall, accuracy, rocAuc, prAuc float64) error {
+	query := `
+		INSERT INTO model_versions (id, version, artifact_path, is_active, f1_score, precision, recall, accuracy, roc_auc, pr_auc, trained_at)
+		VALUES ($1, $2, $3, false, $4, $5, $6, $7, $8, $9, NOW())
+	`
+	_, err := r.db.Exec(ctx, query, id, version, artifactPath, f1Score, precision, recall, accuracy, rocAuc, prAuc)
+	return err
 }
