@@ -17,7 +17,7 @@ export const Toggle: React.FC<ToggleProps> = ({ checked, onChange, disabled }) =
       style={{
         width: '40px',
         height: '22px',
-        backgroundColor: checked ? 'var(--accent)' : 'var(--bg-surface-hover)',
+        backgroundColor: checked ? 'var(--primary-color)' : 'rgba(255, 255, 255, 0.15)',
         border: '1px solid var(--border-color)',
         borderRadius: '11px',
         position: 'relative',
@@ -38,7 +38,7 @@ export const Toggle: React.FC<ToggleProps> = ({ checked, onChange, disabled }) =
           borderRadius: '50%',
           transform: checked ? 'translateX(19px)' : 'translateX(1px)',
           transition: 'transform 0.2s',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+          boxShadow: checked ? '0 0 8px rgba(255, 255, 255, 0.5)' : '0 2px 4px rgba(0,0,0,0.2)'
         }}
       />
     </button>

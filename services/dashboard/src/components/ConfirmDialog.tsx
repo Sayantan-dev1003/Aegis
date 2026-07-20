@@ -50,14 +50,14 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
         ref={dialogRef}
         tabIndex={-1}
         style={{
-          backgroundColor: 'var(--bg-surface)',
-          border: '1px solid var(--border-color)',
+          backgroundColor: '#1a1f2e',
+          border: '1px solid rgba(99, 102, 241, 0.3)',
           borderRadius: 'var(--radius-lg)',
           padding: '24px',
           maxWidth: '400px',
           width: '100%',
           outline: 'none',
-          boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+          boxShadow: '0 20px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,102,241,0.1)'
         }}
       >
         <h2 style={{ margin: '0 0 8px 0', fontSize: '1.25rem', color: 'var(--text-primary)' }}>{title}</h2>
@@ -82,13 +82,14 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
           <button
             onClick={onConfirm}
             style={{
-              padding: '8px 16px',
-              backgroundColor: danger ? 'var(--risk-critical)' : 'var(--accent)',
+              padding: '8px 20px',
+              background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)',
               border: 'none',
               color: '#fff',
               borderRadius: 'var(--radius-md)',
               cursor: 'pointer',
-              fontWeight: 500
+              fontWeight: 600,
+              boxShadow: '0 0 12px rgba(99,102,241,0.4)'
             }}
           >
             {confirmLabel}

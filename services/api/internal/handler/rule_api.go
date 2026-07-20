@@ -44,12 +44,14 @@ func (h *RuleHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *RuleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var rule model.Rule
 	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		fmt.Printf("Error decoding request payload: %v\n", err)
 		h.respondError(w, "invalid request payload", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
 	if err := h.ruleRepo.Create(r.Context(), &rule); err != nil {
+		fmt.Printf("Error creating rule in DB: %v\n", err)
 		h.respondError(w, "failed to create rule", http.StatusInternalServerError)
 		return
 	}

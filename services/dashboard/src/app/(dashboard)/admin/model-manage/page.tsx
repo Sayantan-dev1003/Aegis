@@ -163,11 +163,11 @@ export default function ModelManagementPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
       {/* KPI Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'var(--space-md)' }}>
-        <StatCard label="PR-AUC" value={prAuc.toFixed(3)} />
-        <StatCard label="ROC-AUC" value={rocAuc.toFixed(3)} />
-        <StatCard label="Recall" value={recall.toFixed(3)} />
-        <StatCard label="Precision" value={precision.toFixed(3)} />
-        <StatCard label="F1 Score" value={f1.toFixed(3)} />
+        <StatCard label="PR-AUC" value={prAuc.toFixed(3)} status="good" />
+        <StatCard label="ROC-AUC" value={rocAuc.toFixed(3)} status="good" />
+        <StatCard label="Recall" value={recall.toFixed(3)} status="good" />
+        <StatCard label="Precision" value={precision.toFixed(3)} status="good" />
+        <StatCard label="F1 Score" value={f1.toFixed(3)} status="good" />
       </div>
 
       {/* 2-Column: PR Curve & SHAP */}

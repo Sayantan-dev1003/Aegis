@@ -105,3 +105,21 @@
   padding: var(--space-xl);
   overflow-y: auto;
 }
+
+.signOutBtn {
+  background: linear-gradient(135deg, var(--primary-color) 0%, #7E8DF9 100%);
+  border: none;
+  color: #fff;
+  padding: 0.4rem 1rem;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(92, 110, 248, 0.3);
+  font-size: 0.85rem;
+}
+
+.signOutBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(92, 110, 248, 0.5);
+}

@@ -7,9 +7,10 @@ import { Toggle } from '@/components/Toggle';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Modal } from '@/components/Modal';
 import { EmptyState } from '@/components/EmptyState';
+import styles from './rules.module.css';
 
-// Dummy Velocity Config (Assuming velocity config table was meant to be managed similarly, but keeping simple for now)
-const velocityConfigs = [
+// Default Velocity Config
+const DEFAULT_VELOCITY_CONFIGS = [
   { entity: 'Card', windows: ['1h', '24h', '7d'] },
   { entity: 'User', windows: ['24h', '7d', '30d'] },
   { entity: 'IP', windows: ['1h', '24h'] },
@@ -20,6 +21,9 @@ export default function RulesPage() {
   const [rules, setRules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
+  const [windowModalEntity, setWindowModalEntity] = useState<string | null>(null);
+  const [newWindowValue, setNewWindowValue] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   
   // Create Rule State
@@ -31,6 +35,52 @@ export default function RulesPage() {
   const [selectedRuleId, setSelectedRuleId] = useState<string>('');
   const [backtestResult, setBacktestResult] = useState<{triggerCount: number, overlapWithMlPct: number, estimatedPrecision: number} | null>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
+
+  // Velocity Config State
+  const [velocityConfigs, setVelocityConfigs] = useState<{entity: string, windows: string[]}[]>(DEFAULT_VELOCITY_CONFIGS);
+
+  useEffect(() => {
+    const stored = localStorage.getItem('velocityConfigs');
+    if (stored) {
+      try {
+        setVelocityConfigs(JSON.parse(stored));
+      } catch (e) {
+        console.error("Failed to parse velocity configs", e);
+      }
+    }
+  }, []);
+
+  const handleAddWindowClick = (entity: string) => {
+    setWindowModalEntity(entity);
+    setNewWindowValue('');
+  };
+
+  const confirmAddWindow = () => {
+    if (!windowModalEntity || !newWindowValue.trim()) return;
+    const newWindow = newWindowValue.trim();
+    
+    const updated = velocityConfigs.map(c => {
+      if (c.entity === windowModalEntity) {
+        if (c.windows.includes(newWindow)) return c;
+        return { ...c, windows: [...c.windows, newWindow] };
+      }
+      return c;
+    });
+    setVelocityConfigs(updated);
+    localStorage.setItem('velocityConfigs', JSON.stringify(updated));
+    setWindowModalEntity(null);
+  };
+
+  const handleRemoveWindow = (entity: string, windowToRemove: string) => {
+    const updated = velocityConfigs.map(c => {
+      if (c.entity === entity) {
+        return { ...c, windows: c.windows.filter(w => w !== windowToRemove) };
+      }
+      return c;
+    });
+    setVelocityConfigs(updated);
+    localStorage.setItem('velocityConfigs', JSON.stringify(updated));
+  };
 
   const loadRules = async () => {
     try {
@@ -62,11 +112,12 @@ export default function RulesPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this rule?")) return;
+  const confirmDelete = async () => {
+    if (!ruleToDelete) return;
     try {
-      await fetchApi(`http://localhost:8080/admin/rules/${id}`, { method: "DELETE" });
-      setRules(rules.filter(r => r.id !== id));
+      await fetchApi(`http://localhost:8080/admin/rules/${ruleToDelete}`, { method: "DELETE" });
+      setRules(rules.filter(r => r.id !== ruleToDelete));
+      setRuleToDelete(null);
     } catch (err) {
       console.error("Failed to delete rule", err);
       alert("Failed to delete rule");
@@ -90,9 +141,9 @@ export default function RulesPage() {
       setIsCreateModalOpen(false);
       setNewRule({ name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag' });
       loadRules();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to create rule", err);
-      alert("Failed to create rule");
+      alert(`Failed to create rule: ${err.message || "Unknown error"}`);
     }
   };
 
@@ -118,38 +169,39 @@ export default function RulesPage() {
   if (loading) return <div style={{ padding: "2rem" }}>Loading rules...</div>;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
+    <div className={styles.pageContainer}>
       {/* Header Row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <input 
-          type="text" 
-          placeholder="Search rules..." 
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          style={{
-            padding: '8px 12px',
-            backgroundColor: 'var(--bg-surface)',
-            border: '1px solid var(--border-color)',
-            color: 'var(--text-primary)',
-            borderRadius: 'var(--radius-md)',
-            width: '300px'
-          }}
-        />
+      <div className={styles.headerRow}>
+        <div className={styles.searchContainer}>
+          <svg className={styles.searchIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input 
+            type="text" 
+            placeholder="Search custom rules..." 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className={styles.searchInput}
+          />
+        </div>
         <button
           onClick={() => setIsCreateModalOpen(true)}
-          style={{ backgroundColor: 'var(--accent)', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 500 }}
+          className={styles.createButton}
         >
-          + Create Rule
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Create Rule
         </button>
       </div>
 
       {/* Rules Table */}
-      <div>
+      <div style={{ animation: "fadeIn 0.5s ease-out" }}>
         <DataTable
           columns={[
             { key: 'name', header: 'Name', render: (r: any) => <span style={{ fontWeight: 600 }}>{r.name}</span> },
-            { key: 'conditionSummary', header: 'Condition', render: (r: any) => <code style={{ backgroundColor: 'var(--bg-base)', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem' }}>{`${r.metric} ${r.operator} ${r.value}`}</code> },
-            { key: 'entity', header: 'Entity' },
+            { key: 'conditionSummary', header: 'Condition', render: (r: any) => <code style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>{`${r.metric} ${r.operator} ${r.value}`}</code> },
+            { key: 'entity', header: 'Entity', render: (r: any) => <span style={{ textTransform: 'capitalize' }}>{r.entity}</span> },
             { key: 'window', header: 'Window' },
             { key: 'action', header: 'Action', render: (r: any) => (
               <StatusBadge 
@@ -163,7 +215,7 @@ export default function RulesPage() {
               <Toggle checked={r.is_active} onChange={(c) => handleToggleActive(r.id, c)} />
             )},
             { key: 'actions', header: '', render: (r: any) => (
-              <button onClick={() => handleDelete(r.id)} style={{ background: 'none', border: 'none', color: 'var(--risk-critical)', cursor: 'pointer' }}>Delete</button>
+              <button onClick={() => setRuleToDelete(r.id)} style={{ background: 'none', border: 'none', color: 'var(--risk-critical)', cursor: 'pointer', opacity: 0.8, transition: 'opacity 0.2s' }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}>Delete</button>
             )}
           ]}
           rows={filteredRules}
@@ -180,31 +232,19 @@ export default function RulesPage() {
       </div>
 
       {/* Velocity Config Panel */}
-      <div>
-        <h3 style={{ margin: '0 0 var(--space-md) 0', color: 'var(--text-primary)' }}>Velocity Configuration</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'var(--space-md)' }}>
+      <div style={{ animation: "fadeIn 0.6s ease-out" }}>
+        <h3 className={styles.sectionTitle}>Velocity Configuration</h3>
+        <div className={styles.velocityGrid}>
           {velocityConfigs.map((config) => (
-            <div key={config.entity} style={{ 
-              backgroundColor: 'var(--bg-surface)', 
-              border: '1px solid var(--border-color)', 
-              borderRadius: 'var(--radius-lg)', 
-              padding: 'var(--space-lg)' 
-            }}>
-              <h4 style={{ margin: '0 0 var(--space-md) 0', color: 'var(--text-primary)' }}>{config.entity} Velocity</h4>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div key={config.entity} className={styles.velocityCard}>
+              <h4 className={styles.velocityCardTitle}>{config.entity} Velocity</h4>
+              <div className={styles.windowTags}>
                 {config.windows.map(w => (
-                  <span key={w} style={{ 
-                    display: 'inline-flex', alignItems: 'center', gap: '4px',
-                    padding: '4px 8px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', 
-                    borderRadius: '9999px', fontSize: '0.75rem', color: 'var(--text-secondary)'
-                  }}>
-                    {w} <button style={{ background: 'none', border: 'none', color: 'inherit', padding: 0, cursor: 'pointer' }}>×</button>
+                  <span key={w} className={styles.windowTag}>
+                    {w} <button onClick={() => handleRemoveWindow(config.entity, w)} style={{ cursor: 'pointer', background: 'none', border: 'none', color: 'inherit', padding: '0 0 0 4px', fontSize: '1.1em', lineHeight: '1' }}>&times;</button>
                   </span>
                 ))}
-                <button style={{
-                  padding: '4px 8px', backgroundColor: 'transparent', border: '1px dashed var(--border-color)', 
-                  borderRadius: '9999px', fontSize: '0.75rem', color: 'var(--text-secondary)', cursor: 'pointer'
-                }}>+ Add Window</button>
+                <button onClick={() => handleAddWindowClick(config.entity)} className={styles.addWindowBtn}>+ Add</button>
               </div>
             </div>
           ))}
@@ -212,117 +252,163 @@ export default function RulesPage() {
       </div>
 
       {/* Backtest Sandbox */}
-      <div style={{ 
-        backgroundColor: 'var(--bg-surface)', 
-        border: '1px solid var(--border-color)', 
-        borderRadius: 'var(--radius-lg)', 
-        padding: 'var(--space-lg)' 
-      }}>
-        <h3 style={{ margin: '0 0 var(--space-md) 0', color: 'var(--text-primary)' }}>Backtest Sandbox</h3>
-        <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'center', marginBottom: 'var(--space-lg)' }}>
+      <div className={styles.sandboxContainer} style={{ animation: "fadeIn 0.7s ease-out" }}>
+        <h3 className={styles.sectionTitle}>Backtest Sandbox</h3>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-md)', fontSize: '0.9rem' }}>Test the impact of a rule against historical data before enforcing it.</p>
+        <div className={styles.sandboxControls}>
           <select 
             value={selectedRuleId} 
             onChange={e => setSelectedRuleId(e.target.value)}
-            style={{ padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}
+            className={styles.selectInput}
           >
-            <option value="">Select a rule...</option>
+            <option value="">Select a rule to backtest...</option>
             {rules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <select style={{ padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+          <select className={styles.selectInput}>
             <option>Last 7 days</option>
             <option>Last 30 days</option>
           </select>
           <button
             onClick={handleRunBacktest}
             disabled={!selectedRuleId || isBacktesting}
-            style={{ backgroundColor: 'var(--accent)', opacity: (selectedRuleId && !isBacktesting) ? 1 : 0.5, border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '6px', cursor: (selectedRuleId && !isBacktesting) ? 'pointer' : 'not-allowed', fontWeight: 500 }}
+            className={styles.runBtn}
           >
             {isBacktesting ? "Running..." : "Run Backtest"}
           </button>
         </div>
         
         {backtestResult && (
-          <div style={{ padding: '16px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
-            <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Would trigger {backtestResult.triggerCount.toLocaleString()} times</span>
-            <span style={{ color: 'var(--text-secondary)', margin: '0 8px' }}>·</span>
-            <span style={{ color: 'var(--info)' }}>{backtestResult.overlapWithMlPct}% overlap with ML flags</span>
-            <span style={{ color: 'var(--text-secondary)', margin: '0 8px' }}>·</span>
-            <span style={{ color: 'var(--risk-low)' }}>Est. precision {backtestResult.estimatedPrecision}%</span>
+          <div className={styles.resultPanel}>
+            <div className={styles.resultItem}>
+              <span style={{ color: 'var(--text-main)' }}>Would trigger</span>
+              <span style={{ color: 'var(--primary-color)', fontSize: '1.2rem' }}>{backtestResult.triggerCount.toLocaleString()}</span>
+              <span style={{ color: 'var(--text-main)' }}>times</span>
+            </div>
+            <span className={styles.resultDot}>•</span>
+            <div className={styles.resultItem}>
+              <span style={{ color: 'var(--text-main)' }}>Overlap with ML:</span>
+              <span style={{ color: 'var(--risk-info)' }}>{backtestResult.overlapWithMlPct}%</span>
+            </div>
+            <span className={styles.resultDot}>•</span>
+            <div className={styles.resultItem}>
+              <span style={{ color: 'var(--text-main)' }}>Est. Precision:</span>
+              <span style={{ color: 'var(--risk-low)' }}>{backtestResult.estimatedPrecision}%</span>
+            </div>
           </div>
         )}
       </div>
 
       {/* Create Rule Modal */}
-      <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Create Rule" width="600px">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-          <div>
-            <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Rule Name</label>
-            <input type="text" value={newRule.name} onChange={e => setNewRule({...newRule, name: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }} placeholder="e.g. High Velocity" />
+      <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Create Custom Rule" width="600px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          <div className={styles.modalInputGroup}>
+            <label className={styles.modalLabel}>Rule Name</label>
+            <input type="text" value={newRule.name} onChange={e => setNewRule({...newRule, name: e.target.value})} className={styles.modalInput} placeholder="e.g. High Card Velocity" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
-            <div>
-              <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Entity</label>
-              <select value={newRule.entity} onChange={e => setNewRule({...newRule, entity: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+          
+          <div className={styles.modalGrid2}>
+            <div className={styles.modalInputGroup}>
+              <label className={styles.modalLabel}>Entity</label>
+              <select value={newRule.entity} onChange={e => setNewRule({...newRule, entity: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
                 <option value="card">Card</option>
                 <option value="user">User</option>
                 <option value="ip">IP</option>
                 <option value="device">Device</option>
               </select>
             </div>
-            <div>
-              <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Metric</label>
-              <select value={newRule.metric} onChange={e => setNewRule({...newRule, metric: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+            <div className={styles.modalInputGroup}>
+              <label className={styles.modalLabel}>Metric</label>
+              <select value={newRule.metric} onChange={e => setNewRule({...newRule, metric: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
                 <option value="velocity">Velocity</option>
                 <option value="amount">Amount</option>
               </select>
             </div>
           </div>
           
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-md)' }}>
-            <div>
-              <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Operator</label>
-              <select value={newRule.operator} onChange={e => setNewRule({...newRule, operator: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
+          <div className={styles.modalGrid3}>
+            <div className={styles.modalInputGroup}>
+              <label className={styles.modalLabel}>Operator</label>
+              <select value={newRule.operator} onChange={e => setNewRule({...newRule, operator: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
                 <option value=">=">&gt;=</option>
                 <option value=">">&gt;</option>
                 <option value="<">&lt;</option>
                 <option value="==">==</option>
               </select>
             </div>
-            <div>
-              <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Value</label>
-              <input type="number" value={newRule.value} onChange={e => setNewRule({...newRule, value: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }} placeholder="e.g. 5" />
+            <div className={styles.modalInputGroup}>
+              <label className={styles.modalLabel}>Value</label>
+              <input type="number" value={newRule.value} onChange={e => setNewRule({...newRule, value: e.target.value})} className={styles.modalInput} placeholder="e.g. 5" />
             </div>
-            <div>
-              <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Window</label>
-              <select value={newRule.window} onChange={e => setNewRule({...newRule, window: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
-                <option value="1h">1h</option>
-                <option value="24h">24h</option>
-                <option value="7d">7d</option>
+            <div className={styles.modalInputGroup}>
+              <label className={styles.modalLabel}>Window</label>
+              <select value={newRule.window} onChange={e => setNewRule({...newRule, window: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
+                <option value="1h">1 Hour</option>
+                <option value="24h">24 Hours</option>
+                <option value="7d">7 Days</option>
               </select>
             </div>
           </div>
 
-          <div>
-            <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Action</label>
-            <select value={newRule.action} onChange={e => setNewRule({...newRule, action: e.target.value})} style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }}>
-              <option value="flag">Flag for Review</option>
-              <option value="step_up">Step-up Auth</option>
-              <option value="block">Block</option>
+          <div className={styles.modalInputGroup}>
+            <label className={styles.modalLabel}>Action (Consequence)</label>
+            <select value={newRule.action} onChange={e => setNewRule({...newRule, action: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
+              <option value="flag">Flag for Review (Low Friction)</option>
+              <option value="step_up">Step-up Auth (Medium Friction)</option>
+              <option value="block">Block Transaction (High Friction)</option>
             </select>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-            <button
-              onClick={() => setIsCreateModalOpen(false)}
-              style={{ padding: '8px 16px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
-            >
+          <div className={styles.modalActions}>
+            <button onClick={() => setIsCreateModalOpen(false)} className={styles.cancelBtn}>
               Cancel
             </button>
-            <button
-              onClick={handleCreateRule}
-              style={{ padding: '8px 16px', backgroundColor: 'var(--accent)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
-            >
+            <button onClick={handleCreateRule} className={styles.createButton} style={{ margin: 0 }}>
               Save Rule
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={!!ruleToDelete} onClose={() => setRuleToDelete(null)} title="Confirm Deletion" width="400px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          <p style={{ color: 'var(--text-main)', margin: 0, fontSize: '0.95rem', lineHeight: 1.5 }}>
+            Are you sure you want to delete this rule? This action cannot be undone.
+          </p>
+          <div className={styles.modalActions}>
+            <button onClick={() => setRuleToDelete(null)} className={styles.cancelBtn}>
+              Cancel
+            </button>
+            <button onClick={confirmDelete} className={styles.createButton} style={{ margin: 0, background: 'var(--risk-critical)', boxShadow: 'none' }}>
+              Delete Rule
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add Window Modal */}
+      <Modal isOpen={!!windowModalEntity} onClose={() => setWindowModalEntity(null)} title={`Add ${windowModalEntity} Window`} width="400px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          <div className={styles.modalInputGroup}>
+            <label className={styles.modalLabel}>Window Duration</label>
+            <input 
+              type="text" 
+              value={newWindowValue} 
+              onChange={e => setNewWindowValue(e.target.value)} 
+              className={styles.modalInput} 
+              placeholder="e.g. 12h, 48h, 90d" 
+              autoFocus
+              onKeyDown={e => {
+                if (e.key === 'Enter') confirmAddWindow();
+              }}
+            />
+          </div>
+          <div className={styles.modalActions}>
+            <button onClick={() => setWindowModalEntity(null)} className={styles.cancelBtn}>
+              Cancel
+            </button>
+            <button onClick={confirmAddWindow} className={styles.createButton} style={{ margin: 0 }}>
+              Add Window
             </button>
           </div>
         </div>
@@ -330,4 +416,3 @@ export default function RulesPage() {
     </div>
   );
 }
-

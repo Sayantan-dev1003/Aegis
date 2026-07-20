@@ -17,7 +17,7 @@ func NewRuleRepository(db *pgxpool.Pool) *RuleRepository {
 
 func (r *RuleRepository) List(ctx context.Context) ([]model.Rule, error) {
 	query := `
-		SELECT id, name, entity, metric, operator, value, window, action, is_active, created_at, updated_at
+		SELECT id, name, entity, metric, operator, value, "window", action, is_active, created_at, updated_at
 		FROM rules
 		ORDER BY created_at DESC
 	`
@@ -44,7 +44,7 @@ func (r *RuleRepository) List(ctx context.Context) ([]model.Rule, error) {
 
 func (r *RuleRepository) Create(ctx context.Context, rule *model.Rule) error {
 	query := `
-		INSERT INTO rules (name, entity, metric, operator, value, window, action)
+		INSERT INTO rules (name, entity, metric, operator, value, "window", action)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING id, is_active, created_at, updated_at
 	`
@@ -55,7 +55,7 @@ func (r *RuleRepository) Create(ctx context.Context, rule *model.Rule) error {
 
 func (r *RuleRepository) GetByID(ctx context.Context, id string) (*model.Rule, error) {
 	query := `
-		SELECT id, name, entity, metric, operator, value, window, action, is_active, created_at, updated_at
+		SELECT id, name, entity, metric, operator, value, "window", action, is_active, created_at, updated_at
 		FROM rules
 		WHERE id = $1
 	`

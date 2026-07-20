@@ -50,7 +50,7 @@ export default function LoginPage() {
 
   return (
     <div className={styles.loginWrapper}>
-      <div className={`card ${styles.loginCard}`}>
+      <div className={styles.loginCard}>
         <h1 className={styles.title}>Aegis</h1>
         <p className={styles.subtitle}>Fraud Defense System</p>
 
@@ -61,7 +61,7 @@ export default function LoginPage() {
             <label className={styles.label}>Username</label>
             <input
               type="text"
-              className="input-field"
+              className={styles.inputField}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -72,7 +72,7 @@ export default function LoginPage() {
             <label className={styles.label}>Password</label>
             <input
               type="password"
-              className="input-field"
+              className={styles.inputField}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -81,7 +81,7 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className={`btn-primary ${styles.submitBtn}`}
+            className={styles.submitBtn}
             disabled={isLoading}
           >
             {isLoading ? "Authenticating..." : "Sign In"}

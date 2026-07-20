@@ -18,13 +18,18 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
 
     if (isOpen) {
       document.addEventListener('keydown', handleKeyDown);
-      setTimeout(() => dialogRef.current?.focus(), 0);
     }
     
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => dialogRef.current?.focus(), 0);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -37,13 +42,14 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 100,
-      backdropFilter: 'blur(2px)'
+      backdropFilter: 'blur(8px)',
+      WebkitBackdropFilter: 'blur(8px)'
     }}>
       <div 
         ref={dialogRef}
         tabIndex={-1}
         style={{
-          backgroundColor: 'var(--bg-base)',
+          backgroundColor: 'var(--surface-color)',
           border: '1px solid var(--border-color)',
           borderRadius: 'var(--radius-lg)',
           width: '100%',
@@ -62,9 +68,9 @@ export const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children, 
           alignItems: 'center',
           padding: '16px 24px',
           borderBottom: '1px solid var(--border-color)',
-          backgroundColor: 'var(--bg-surface)'
+          backgroundColor: 'var(--surface-color)'
         }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-primary)' }}>{title}</h2>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-main)', fontWeight: 600 }}>{title}</h2>
           <button 
             onClick={onClose}
             style={{

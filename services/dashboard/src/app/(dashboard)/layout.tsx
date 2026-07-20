@@ -81,7 +81,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-main)", lineHeight: 1.2 }}>{user?.full_name || "Analyst"}</span>
                 <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Role: {user?.role || "analyst"}</span>
               </div>
-              <button onClick={logout} className="btn-secondary" style={{ padding: "0.4rem 0.75rem", fontSize: "0.85rem" }}>
+              <button onClick={logout} className={styles.signOutBtn}>
                 Sign Out
               </button>
             </div>
