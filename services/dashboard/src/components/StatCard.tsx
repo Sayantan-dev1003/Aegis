@@ -10,34 +10,75 @@ interface StatCardProps {
 
 export const StatCard: React.FC<StatCardProps> = ({ label, value, delta, deltaDirection, status }) => {
   let statusColor = 'transparent';
-  if (status === 'good') statusColor = 'var(--risk-low)';
-  if (status === 'warn') statusColor = 'var(--risk-medium)';
-  if (status === 'critical') statusColor = 'var(--risk-critical)';
+  let gradientColor = 'transparent';
+  if (status === 'good') {
+    statusColor = 'var(--risk-low)';
+    gradientColor = 'rgba(16, 185, 129, 0.15)';
+  }
+  if (status === 'warn') {
+    statusColor = 'var(--risk-medium)';
+    gradientColor = 'rgba(245, 158, 11, 0.15)';
+  }
+  if (status === 'critical') {
+    statusColor = 'var(--risk-critical)';
+    gradientColor = 'rgba(244, 63, 94, 0.15)';
+  }
 
-  // Determine delta color simply based on status if provided, else neutral
-  const deltaColor = status ? statusColor : 'var(--text-secondary)';
+  const deltaColor = status ? statusColor : 'var(--text-muted)';
 
   return (
     <div style={{
-      backgroundColor: 'var(--bg-surface)',
+      backgroundColor: 'var(--surface-color)',
       border: '1px solid var(--border-color)',
-      borderRadius: 'var(--radius-md)',
+      borderRadius: 'var(--radius-lg)',
       padding: 'var(--space-lg)',
       display: 'flex',
       flexDirection: 'column',
       gap: 'var(--space-sm)',
-      borderTop: status ? `3px solid ${statusColor}` : '1px solid var(--border-color)'
+      position: 'relative',
+      overflow: 'hidden',
+      boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)'
     }}>
-      <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', fontWeight: 500 }}>{label}</div>
-      <div style={{ color: 'var(--text-primary)', fontSize: '1.75rem', fontWeight: 700, fontFamily: 'var(--font-jetbrains-mono)' }}>{value}</div>
+      {status && (
+        <div style={{
+          position: 'absolute',
+          top: '-50%',
+          right: '-20%',
+          width: '150px',
+          height: '150px',
+          background: `radial-gradient(circle, ${gradientColor} 0%, rgba(0,0,0,0) 70%)`,
+          borderRadius: '50%',
+          pointerEvents: 'none'
+        }} />
+      )}
+      
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', position: 'relative', zIndex: 1 }}>
+        <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontWeight: 600 }}>{label}</div>
+        {status && (
+          <div style={{ 
+            width: '12px', 
+            height: '12px', 
+            borderRadius: '50%', 
+            backgroundColor: statusColor,
+            boxShadow: `0 0 10px ${statusColor}`
+          }} />
+        )}
+      </div>
+
+      <div style={{ color: 'var(--text-main)', fontSize: '2rem', fontWeight: 700, position: 'relative', zIndex: 1 }}>
+        {value}
+      </div>
+
       {delta !== undefined && (
         <div style={{ 
           color: deltaColor,
-          fontSize: '0.8rem',
+          fontSize: '0.85rem',
           display: 'flex',
           alignItems: 'center',
           gap: '4px',
-          fontWeight: 500
+          fontWeight: 600,
+          position: 'relative',
+          zIndex: 1
         }}>
           {deltaDirection === 'down' ? '↓' : '↑'} {Math.abs(delta)}%
         </div>

@@ -11,7 +11,7 @@ interface ChartCardProps {
 export const ChartCard: React.FC<ChartCardProps> = ({ title, subtitle, liveIndicator, externalLink, children }) => {
   return (
     <div style={{
-      backgroundColor: 'var(--bg-surface)',
+      backgroundColor: 'var(--surface-color)',
       border: '1px solid var(--border-color)',
       borderRadius: 'var(--radius-md)',
       display: 'flex',
@@ -28,7 +28,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({ title, subtitle, liveIndic
       }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{title}</h3>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-main)', margin: 0 }}>{title}</h3>
             {liveIndicator && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: 'var(--risk-low)', fontWeight: 500 }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--risk-low)', display: 'inline-block', boxShadow: '0 0 6px var(--risk-low)' }} />
@@ -36,10 +36,10 @@ export const ChartCard: React.FC<ChartCardProps> = ({ title, subtitle, liveIndic
               </div>
             )}
           </div>
-          {subtitle && <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{subtitle}</div>}
+          {subtitle && <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{subtitle}</div>}
         </div>
         {externalLink && (
-          <a href={externalLink} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '0.85rem', fontWeight: 500 }}>
+          <a href={externalLink} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary-color)', fontSize: '0.85rem', fontWeight: 500 }}>
             Open ↗
           </a>
         )}

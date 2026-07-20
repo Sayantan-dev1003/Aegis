@@ -75,12 +75,6 @@ export default function SystemHealthPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)' }}>
-      {/* Header */}
-      <div>
-        <h1 style={{ fontSize: "1.75rem", fontWeight: 700, marginBottom: "var(--space-xs)" }}>System Health & Observability</h1>
-        <p style={{ color: "var(--text-muted)" }}>Single pane of glass over the Aegis pipeline.</p>
-      </div>
-
       {/* KPIs */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'var(--space-md)' }}>
         {kpiData.map((kpi, i) => (
@@ -88,78 +82,55 @@ export default function SystemHealthPage() {
         ))}
       </div>
 
-      {/* Charts Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-md)' }}>
+      {/* Graphs - Side by Side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-xl)' }}>
         <ChartCard title="Kafka Consumer Lag" subtitle="Messages behind per topic" liveIndicator externalLink="#">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 15 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-              <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+              <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} tickMargin={10} />
               <YAxis stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
-              <Line type="monotone" dataKey="topicA" name="txns-in" stroke="var(--accent)" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Tooltip contentStyle={{ backgroundColor: 'var(--surface-color)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }} />
+              <Line type="monotone" dataKey="topicA" name="txns-in" stroke="var(--primary-color)" strokeWidth={2} dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="topicB" name="results-out" stroke="var(--risk-info)" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
 
         <ChartCard title="API Latency" subtitle="Response times (ms)" liveIndicator externalLink="#">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 15 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-              <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
+              <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} tickMargin={10} />
               <YAxis stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
+              <Tooltip contentStyle={{ backgroundColor: 'var(--surface-color)', borderColor: 'var(--border-color)', color: 'var(--text-main)' }} />
               <Line type="monotone" dataKey="p50" name="p50" stroke="var(--risk-low)" strokeWidth={2} dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="p95" name="p95" stroke="var(--risk-medium)" strokeWidth={2} dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="p99" name="p99" stroke="var(--risk-critical)" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
-        
-        <ChartCard title="Redis Cache Performance" subtitle="Hit rate & Compute latency" liveIndicator externalLink="#">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-              <XAxis dataKey="time" stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-              <YAxis domain={[80, 100]} stroke="var(--text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }} />
-              <Area type="monotone" dataKey="redisHitRate" name="Hit Rate %" stroke="var(--risk-low)" fill="var(--risk-low)" fillOpacity={0.1} isAnimationActive={false} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </ChartCard>
       </div>
 
-      {/* Service Status Matrix & Incidents */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-md)' }}>
-        <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: 'var(--space-lg)' }}>
-          <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 var(--space-md) 0' }}>Service Matrix</h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
-            {services.map((svc, i) => (
-              <StatusBadge key={i} status={svc.status as any} label={svc.name} />
-            ))}
-          </div>
+      {/* Active Incidents (Full Width) */}
+      <div style={{ backgroundColor: 'var(--surface-color)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: 'var(--space-lg)', display: 'flex', flexDirection: 'column', minHeight: '200px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
+          <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>Active Incidents</h3>
+          {incidents.length > 0 && <span style={{ color: 'var(--risk-critical)', fontSize: '0.85rem', fontWeight: 600 }}>{incidents.length} Active</span>}
         </div>
-
-        <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: 'var(--space-lg)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0 }}>Active Incidents</h3>
-            {incidents.length > 0 && <span style={{ color: 'var(--risk-critical)', fontSize: '0.85rem', fontWeight: 600 }}>{incidents.length} Active</span>}
-          </div>
-          
-          <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.1)', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border-color)' }}>
-            {incidents.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: 'var(--space-xl)' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'rgba(18, 183, 106, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--risk-low)' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                </div>
-                <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>All systems operational</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No active incidents reported across the pipeline.</div>
+        
+        <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border-color)' }}>
+          {incidents.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: 'var(--space-xl)' }}>
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--risk-low)' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
               </div>
-            ) : (
-              <div>Table</div>
-            )}
-          </div>
+              <div style={{ fontWeight: 500, color: 'var(--text-main)' }}>All systems operational</div>
+              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>No active incidents reported.</div>
+            </div>
+          ) : (
+            <div>Table</div>
+          )}
         </div>
       </div>
     </div>

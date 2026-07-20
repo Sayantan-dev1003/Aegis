@@ -40,16 +40,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const role = user?.role || "reviewer";
   const navLinks = role === "admin" ? adminNav : role === "viewer" ? viewerNav : reviewerNav;
 
+  const getPageMeta = (path: string) => {
+    if (path.startsWith("/admin/health")) return { title: "System Health & Observability", subtitle: "Single pane of glass over the Aegis pipeline." };
+    if (path.startsWith("/admin/model-manage")) return { title: "Model Management", subtitle: "Manage and deploy ML models." };
+    const route = navLinks.find(l => path.startsWith(l.path));
+    return { title: route?.name || "Aegis Dashboard", subtitle: "" };
+  };
+  
+  const pageMeta = getPageMeta(pathname);
+
   return (
     <div className={styles.layoutWrapper}>
       <aside className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
-          <div className={styles.sidebarTitle}>Aegis</div>
+          <div className={styles.sidebarTitle}>AEGIS</div>
         </div>
         <ul className={styles.navList}>
           {navLinks.map((link) => (
             <li key={link.path} className={styles.navItem}>
-              <Link 
+               <Link 
                 href={link.path} 
                 className={`${styles.navLink} ${pathname.startsWith(link.path) ? styles.navLinkActive : ""}`}
               >
@@ -58,22 +67,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </li>
           ))}
         </ul>
-        <div className={styles.userSection}>
-          <div className={styles.userName}>{user?.full_name || "Analyst"}</div>
-          <div style={{ color: "var(--text-muted)", marginBottom: "var(--space-md)" }}>
-            Role: {user?.role || "analyst"}
-          </div>
-          <button onClick={logout} className="btn-secondary" style={{ width: "100%", padding: "0.25rem" }}>
-            Sign Out
-          </button>
-        </div>
       </aside>
 
       <main className={styles.mainContent}>
         <header className={styles.topBar}>
-          <div className={styles.connectionStatus}>
-            <span className={`${styles.statusDot} ${isConnected ? styles.statusConnected : styles.statusDisconnected}`}></span>
-            {isConnected ? "Live Data Connected" : "Disconnected"}
+          <div>
+            <h1 style={{ fontSize: "1.5rem", fontWeight: 700, margin: 0, color: "var(--text-main)", lineHeight: 1.2 }}>{pageMeta.title}</h1>
+            {pageMeta.subtitle && <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", margin: "4px 0 0 0" }}>{pageMeta.subtitle}</p>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-md)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-md)" }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+                <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-main)", lineHeight: 1.2 }}>{user?.full_name || "Analyst"}</span>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Role: {user?.role || "analyst"}</span>
+              </div>
+              <button onClick={logout} className="btn-secondary" style={{ padding: "0.4rem 0.75rem", fontSize: "0.85rem" }}>
+                Sign Out
+              </button>
+            </div>
           </div>
         </header>
         <div className={styles.contentArea}>

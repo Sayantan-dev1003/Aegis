@@ -21,9 +21,9 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, label }) => {
       gap: '6px',
       padding: '4px 10px',
       borderRadius: '9999px',
-      backgroundColor: 'var(--bg-surface)',
+      backgroundColor: 'var(--surface-color)',
       border: '1px solid var(--border-color)',
-      color: 'var(--text-primary)',
+      color: 'var(--text-main)',
       fontSize: '0.75rem',
       fontWeight: 600,
       lineHeight: 1
