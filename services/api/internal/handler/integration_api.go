@@ -65,8 +65,9 @@ func (h *IntegrationHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,
@@ -92,8 +93,9 @@ func (h *IntegrationHandler) RevokeAPIKey(w http.ResponseWriter, r *http.Request
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,
@@ -136,8 +138,9 @@ func (h *IntegrationHandler) CreateWebhook(w http.ResponseWriter, r *http.Reques
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,
@@ -171,8 +174,9 @@ func (h *IntegrationHandler) UpdateWebhook(w http.ResponseWriter, r *http.Reques
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,
@@ -197,8 +201,9 @@ func (h *IntegrationHandler) DeleteWebhook(w http.ResponseWriter, r *http.Reques
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,

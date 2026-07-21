@@ -120,8 +120,9 @@ func (h *AdminHandler) UpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Audit log
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,
@@ -256,8 +257,9 @@ func (h *AdminHandler) RequeueDLQ(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		newValue := fmt.Sprintf(`{"requeue_count":%d}`, tx.RequeueCount+1)
 		h.auditRepo.Create(bgCtx, &model.AuditLog{

@@ -17,3 +17,12 @@ type AuditLog struct {
 	UserAgent    *string   `json:"user_agent" db:"user_agent"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
+
+type contextKey string
+
+const RequestInfoKey contextKey = "requestInfo"
+
+type RequestInfo struct {
+	IPAddress *string
+	UserAgent *string
+}

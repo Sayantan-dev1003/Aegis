@@ -55,8 +55,9 @@ func (h *QueueHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,
@@ -90,8 +91,9 @@ func (h *QueueHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,
@@ -116,8 +118,9 @@ func (h *QueueHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
 			ActorID:      info.ID,

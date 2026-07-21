@@ -117,8 +117,9 @@ func (h *AnalystHandler) CreateAnalyst(w http.ResponseWriter, r *http.Request) {
 
 	// Audit log
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
 	go func() {
-		bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 		defer cancel()
 		newVal := fmt.Sprintf(`{"email":"%s","role":"%s"}`, analyst.Email, analyst.Role)
 		h.auditRepo.Create(bgCtx, &model.AuditLog{
@@ -169,9 +170,10 @@ func (h *AnalystHandler) UpdateAnalyst(w http.ResponseWriter, r *http.Request) {
 			h.respondError(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		
+
+		ctxWithInfo := auditContext(r)
 		go func() {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 			defer cancel()
 			oldVal := analyst.Role
 			newVal := *req.Role
@@ -193,8 +195,9 @@ func (h *AnalystHandler) UpdateAnalyst(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		ctxWithInfo := auditContext(r)
 		go func() {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
 			defer cancel()
 			oldVal := fmt.Sprintf("%t", analyst.IsActive)
 			newVal := fmt.Sprintf("%t", *req.IsActive)

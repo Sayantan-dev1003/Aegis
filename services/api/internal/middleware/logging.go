@@ -1,10 +1,12 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/Sayantan-dev1003/aegis/api/internal/logger"
+	"github.com/Sayantan-dev1003/aegis/api/internal/model"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
@@ -15,22 +17,39 @@ func RequestLogger() func(next http.Handler) http.Handler {
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			t1 := time.Now()
 
+			ip := r.Header.Get("X-Forwarded-For")
+			if ip == "" {
+				ip = r.RemoteAddr
+			}
+			ua := r.UserAgent()
+
+			reqInfo := model.RequestInfo{}
+			if ip != "" {
+				reqInfo.IPAddress = &ip
+			}
+			if ua != "" {
+				reqInfo.UserAgent = &ua
+			}
+
+			ctx := context.WithValue(r.Context(), model.RequestInfoKey, reqInfo)
+			rWithCtx := r.WithContext(ctx)
+
 			defer func() {
 				duration := time.Since(t1)
 
 				// Extract request ID from context if present
-				reqID := GetRequestID(r.Context())
+				reqID := GetRequestID(rWithCtx.Context())
 
-				logger.FromContext(r.Context()).Info().
+				logger.FromContext(rWithCtx.Context()).Info().
 					Str("request_id", reqID).
-					Str("method", r.Method).
-					Str("path", r.URL.Path).
+					Str("method", rWithCtx.Method).
+					Str("path", rWithCtx.URL.Path).
 					Int("status", ww.Status()).
 					Dur("duration", duration).
 					Msg("HTTP request processed")
 			}()
 
-			next.ServeHTTP(ww, r)
+			next.ServeHTTP(ww, rWithCtx)
 		})
 	}
 }
