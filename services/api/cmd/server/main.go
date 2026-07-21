@@ -158,7 +158,7 @@ func main() {
 	reviewHandler := handler.NewReviewHandler(reviewService)
 	statsHandler := handler.NewStatsHandler(statsRepo, redisClient)
 	adminHandler := handler.NewAdminHandler(configRepo, txRepo, auditRepo, configService, kafkaProducer)
-	analystHandler := handler.NewAnalystHandler(analystRepo, auditRepo)
+	analystHandler := handler.NewAnalystHandler(analystRepo, auditRepo, authService)
 	
 	// Phase 2 Handlers
 	ruleHandler := handler.NewRuleHandler(ruleRepo, auditRepo)
@@ -250,6 +250,7 @@ func main() {
 			r.Post("/admin/dlq/{id}/requeue", adminHandler.RequeueDLQ)
 			r.Get("/admin/audit", adminHandler.ListAuditLogs)
 			r.Get("/admin/analysts", analystHandler.ListAnalysts)
+			r.Post("/admin/analysts", analystHandler.CreateAnalyst)
 			r.Patch("/admin/analysts/{id}", analystHandler.UpdateAnalyst)
 			
 			// Phase 2 Routes

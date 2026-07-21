@@ -137,6 +137,30 @@ func (r *AnalystRepository) UpdateRole(ctx context.Context, id string, role stri
 	return err
 }
 
+// Create inserts a new analyst into the database.
+func (r *AnalystRepository) Create(ctx context.Context, email, passwordHash, fullName, role string) (*model.Analyst, error) {
+	query := `
+		INSERT INTO analysts (email, password_hash, full_name, role, is_active, created_at)
+		VALUES ($1, $2, $3, $4, true, NOW())
+		RETURNING id, email, full_name, role, is_active, created_at, last_login
+	`
+
+	var a model.Analyst
+	err := r.db.QueryRow(ctx, query, email, passwordHash, fullName, role).Scan(
+		&a.ID,
+		&a.Email,
+		&a.FullName,
+		&a.Role,
+		&a.IsActive,
+		&a.CreatedAt,
+		&a.LastLogin,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
 // SetActive updates the active status of an analyst.
 func (r *AnalystRepository) SetActive(ctx context.Context, id string, isActive bool) error {
 	query := `

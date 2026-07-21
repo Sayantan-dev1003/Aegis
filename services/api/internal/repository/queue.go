@@ -19,7 +19,7 @@ func (r *QueueRepository) List(ctx context.Context) ([]model.Queue, error) {
 	query := `
 		SELECT q.id, q.name, q.description, q.status, q.sla_target_minutes, q.assignment_rule, 
 		       q.coverage_start, q.coverage_end, q.timezone, q.created_at, q.updated_at,
-		       (SELECT COUNT(*) FROM reviews r WHERE r.queue_id = q.id AND r.status = 'pending') AS open_cases
+		       0 AS open_cases
 		FROM queues q
 		ORDER BY q.created_at DESC
 	`

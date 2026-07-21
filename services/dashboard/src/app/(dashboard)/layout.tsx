@@ -41,8 +41,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navLinks = role === "admin" ? adminNav : role === "viewer" ? viewerNav : reviewerNav;
 
   const getPageMeta = (path: string) => {
-    if (path.startsWith("/admin/health")) return { title: "System Health & Observability", subtitle: "Single pane of glass over the Aegis pipeline." };
-    if (path.startsWith("/admin/model-manage")) return { title: "Model Management", subtitle: "Manage and deploy ML models." };
+    const metaMap: Record<string, { title: string, subtitle: string }> = {
+      "/admin/health": { title: "System Health & Observability", subtitle: "Single pane of glass over the Aegis pipeline." },
+      "/admin/model-manage": { title: "Model Management", subtitle: "Manage and deploy ML models." },
+      "/admin/rules": { title: "Rules & Velocity", subtitle: "Configure fraud detection rules and velocity checks." },
+      "/admin/users": { title: "User Management", subtitle: "Manage analyst accounts, roles, and permissions." },
+      "/admin/queue": { title: "Queue Config", subtitle: "Manage routing rules and SLAs for manual review workflows." },
+      "/admin/audit": { title: "Audit Log", subtitle: "Track system changes and analyst actions." },
+      "/admin/integrations": { title: "Integrations", subtitle: "Manage programmatic access and event subscriptions." },
+    };
+
+    const match = Object.keys(metaMap).find(k => path.startsWith(k));
+    if (match) return metaMap[match];
+
     const route = navLinks.find(l => path.startsWith(l.path));
     return { title: route?.name || "Aegis Dashboard", subtitle: "" };
   };

@@ -51,6 +51,11 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<any>(null);
   const [deactivatingUserId, setDeactivatingUserId] = useState<string | null>(null);
 
+  // Invite form state
+  const [inviteForm, setInviteForm] = useState({ full_name: '', email: '', password: '', role: 'viewer' });
+  const [inviteError, setInviteError] = useState('');
+  const [inviteLoading, setInviteLoading] = useState(false);
+
   const loadUsers = async () => {
     try {
       const data = await fetchApi("http://localhost:8080/admin/analysts");
@@ -78,6 +83,27 @@ export default function UsersPage() {
     } catch (err) {
       console.error("Failed to update user", err);
       alert("Failed to update user");
+    }
+  };
+
+  const handleInviteUser = async () => {
+    setInviteError('');
+    if (!inviteForm.full_name.trim()) { setInviteError('Full name is required.'); return; }
+    if (!inviteForm.email.trim()) { setInviteError('Email is required.'); return; }
+    if (!inviteForm.password.trim()) { setInviteError('Password is required.'); return; }
+    setInviteLoading(true);
+    try {
+      await fetchApi('http://localhost:8080/admin/analysts', {
+        method: 'POST',
+        body: JSON.stringify(inviteForm)
+      });
+      setIsInviteModalOpen(false);
+      setInviteForm({ full_name: '', email: '', password: '', role: 'viewer' });
+      loadUsers();
+    } catch (err: any) {
+      setInviteError(err?.message || 'Failed to create user. The email may already be in use.');
+    } finally {
+      setInviteLoading(false);
     }
   };
 
@@ -219,31 +245,58 @@ export default function UsersPage() {
       </div>
 
       {/* Invite Modal */}
-      <Modal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} title="Add User" width="400px">
+      <Modal isOpen={isInviteModalOpen} onClose={() => { setIsInviteModalOpen(false); setInviteError(''); setInviteForm({ full_name: '', email: '', password: '', role: 'viewer' }); }} title="Add User" width="400px">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {inviteError && (
+            <div style={{ padding: '10px 14px', backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: '#f87171', fontSize: '0.85rem' }}>
+              {inviteError}
+            </div>
+          )}
           <div>
             <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Full Name</label>
-            <input type="text" style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }} placeholder="John Doe" />
+            <input
+              type="text"
+              value={inviteForm.full_name}
+              onChange={(e) => setInviteForm({ ...inviteForm, full_name: e.target.value })}
+              style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)', boxSizing: 'border-box' }}
+              placeholder="John Doe"
+            />
           </div>
           <div>
             <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Email Address</label>
-            <input type="email" style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }} placeholder="user@aegis.com" />
+            <input
+              type="email"
+              value={inviteForm.email}
+              onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+              style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)', boxSizing: 'border-box' }}
+              placeholder="user@aegis.com"
+            />
           </div>
           <div>
             <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Password</label>
-            <input type="password" style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)' }} placeholder="Enter password" />
+            <input
+              type="password"
+              value={inviteForm.password}
+              onChange={(e) => setInviteForm({ ...inviteForm, password: e.target.value })}
+              style={{ width: '100%', padding: '8px 12px', backgroundColor: 'var(--bg-base)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)', boxSizing: 'border-box' }}
+              placeholder="Enter password"
+            />
           </div>
           <div>
             <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>Role</label>
-            <select style={{ width: '100%', padding: '8px 12px', backgroundColor: '#1a1f2e', border: '1px solid var(--border-color)', color: '#e2e8f0', borderRadius: 'var(--radius-md)', colorScheme: 'dark' }}>
-              <option style={{ backgroundColor: '#1a1f2e', color: '#e2e8f0' }}>Viewer</option>
-              <option style={{ backgroundColor: '#1a1f2e', color: '#e2e8f0' }}>Reviewer</option>
-              <option style={{ backgroundColor: '#1a1f2e', color: '#e2e8f0' }}>Admin</option>
+            <select
+              value={inviteForm.role}
+              onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
+              style={{ width: '100%', padding: '8px 12px', backgroundColor: '#1a1f2e', border: '1px solid var(--border-color)', color: '#e2e8f0', borderRadius: 'var(--radius-md)', colorScheme: 'dark', appearance: 'auto' }}
+            >
+              <option value="viewer" style={{ backgroundColor: '#1a1f2e', color: '#e2e8f0' }}>Viewer</option>
+              <option value="reviewer" style={{ backgroundColor: '#1a1f2e', color: '#e2e8f0' }}>Reviewer</option>
+              <option value="admin" style={{ backgroundColor: '#1a1f2e', color: '#e2e8f0' }}>Admin</option>
             </select>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '8px' }}>
-            <button onClick={() => setIsInviteModalOpen(false)} style={{ padding: '8px 16px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>Cancel</button>
-            <button onClick={() => setIsInviteModalOpen(false)} style={{ padding: '8px 20px', background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', cursor: 'pointer', fontWeight: 600, boxShadow: '0 0 12px rgba(99,102,241,0.4)' }}>Add User</button>
+            <button onClick={() => { setIsInviteModalOpen(false); setInviteError(''); setInviteForm({ full_name: '', email: '', password: '', role: 'viewer' }); }} style={{ padding: '8px 16px', backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={handleInviteUser} disabled={inviteLoading} style={{ padding: '8px 20px', background: inviteLoading ? '#4338ca' : 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', cursor: inviteLoading ? 'not-allowed' : 'pointer', fontWeight: 600, boxShadow: '0 0 12px rgba(99,102,241,0.4)', opacity: inviteLoading ? 0.7 : 1 }}>{inviteLoading ? 'Adding...' : 'Add User'}</button>
           </div>
         </div>
       </Modal>

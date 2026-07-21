@@ -113,10 +113,6 @@ export default function IntegrationsPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
       {/* Header */}
-      <div>
-        <h1 style={{ margin: '0 0 4px 0', fontSize: '1.5rem', color: 'var(--text-primary)' }}>Integrations</h1>
-        <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Manage programmatic access and event subscriptions.</p>
-      </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', gap: '24px' }}>
