@@ -2,22 +2,22 @@
 
 import React, { useState, useEffect } from 'react';
 import { fetchApi } from "../../../lib/api";
-import { StatCard } from '@/components/StatCard';
-import { ChartCard } from '@/components/ChartCard';
-import { StatusBadge } from '@/components/StatusBadge';
-import { DataTable } from '@/components/DataTable';
-import { Slider } from '@/components/Slider';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, BarChart, Bar, CartesianGrid, Legend, LabelList } from 'recharts';
+import { Slider } from '@/components/Slider';
+import {
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  ReferenceLine, BarChart, Bar, CartesianGrid, Legend, LabelList
+} from 'recharts';
 
-// Dummy Data for charts (no backend provided for these)
+// ─── Chart data ───────────────────────────────────────────────────────────────
+
 const precisionRecallData = Array.from({ length: 100 }, (_, i) => {
   const threshold = i / 100;
   return {
     threshold,
     precision: Math.min(1, 0.4 + threshold * 0.6 + Math.random() * 0.05),
     recall: Math.max(0, 1 - Math.pow(threshold, 2) + Math.random() * 0.05),
-    flaggedPct: Math.max(0, (1 - threshold) * 15)
+    flaggedPct: Math.max(0, (1 - threshold) * 15),
   };
 });
 
@@ -31,7 +31,7 @@ const featureImportanceData = [
   { feature: 'ip_risk_score', value: 0.38 },
   { feature: 'is_foreign', value: 0.31 },
   { feature: 'card_age_days', value: 0.25 },
-  { feature: 'email_domain_risk', value: 0.19 }
+  { feature: 'email_domain_risk', value: 0.19 },
 ];
 
 const driftData = Array.from({ length: 30 }, (_, i) => ({
@@ -41,7 +41,93 @@ const driftData = Array.from({ length: 30 }, (_, i) => ({
   ip_risk_score: 0.05 + Math.random() * 0.08 + (i > 20 ? 0.1 : 0),
 }));
 
+// ─── Tooltip style ────────────────────────────────────────────────────────────
 
+const ttStyle = {
+  contentStyle: { backgroundColor: '#0D1117', borderColor: 'rgba(255,255,255,0.1)', borderRadius: '8px', color: '#E8EDF4', fontSize: '0.8rem' },
+  labelStyle: { color: '#8D9AAB' },
+};
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
+
+const BrainIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.16"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.16"/>
+  </svg>
+);
+
+const RefreshIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>
+  </svg>
+);
+
+// ─── Reusable primitives ──────────────────────────────────────────────────────
+
+const KpiCard = ({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) => (
+  <div style={{
+    background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '12px', padding: '16px 20px',
+    position: 'relative', overflow: 'hidden',
+  }}>
+    <div style={{ fontSize: '0.72rem', color: '#8D9AAB', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
+    <div style={{ fontSize: '1.6rem', fontWeight: 700, color: accent, lineHeight: 1, fontFamily: 'monospace' }}>{value}</div>
+    {sub && <div style={{ fontSize: '0.7rem', color: '#4E5A6B', marginTop: '4px' }}>{sub}</div>}
+    <div style={{
+      position: 'absolute', top: '-20px', right: '-20px', width: '70px', height: '70px',
+      borderRadius: '50%', background: `radial-gradient(circle, ${accent}12 0%, transparent 70%)`,
+      pointerEvents: 'none',
+    }} />
+  </div>
+);
+
+const ChartCard = ({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) => (
+  <div style={{
+    background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)',
+    borderRadius: '14px', overflow: 'hidden',
+  }}>
+    <div style={{ padding: '14px 20px', borderBottom: '1px solid rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.02)' }}>
+      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#E8EDF4' }}>{title}</div>
+      {subtitle && <div style={{ fontSize: '0.75rem', color: '#8D9AAB', marginTop: '2px' }}>{subtitle}</div>}
+    </div>
+    <div style={{ padding: '16px 20px 20px' }}>{children}</div>
+  </div>
+);
+
+// ─── Version status badge ─────────────────────────────────────────────────────
+
+const VersionBadge = ({ active }: { active: boolean }) => (
+  <span style={{
+    display: 'inline-flex', alignItems: 'center', gap: '5px',
+    padding: '3px 10px', borderRadius: '20px', fontSize: '0.72rem', fontWeight: 700,
+    background: active ? 'rgba(52,211,153,0.1)' : 'rgba(148,163,184,0.08)',
+    border: `1px solid ${active ? 'rgba(52,211,153,0.3)' : 'rgba(148,163,184,0.15)'}`,
+    color: active ? '#34D399' : '#8D9AAB',
+    textTransform: 'uppercase', letterSpacing: '0.05em',
+  }}>
+    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: active ? '#34D399' : '#8D9AAB', flexShrink: 0 }} />
+    {active ? 'Live' : 'Archived'}
+  </span>
+);
+
+const JobStatusBadge = ({ status }: { status: string }) => {
+  const map: Record<string, { color: string; bg: string; border: string }> = {
+    completed: { color: '#34D399', bg: 'rgba(52,211,153,0.1)', border: 'rgba(52,211,153,0.3)' },
+    failed:    { color: '#F43F5E', bg: 'rgba(244,63,94,0.1)',   border: 'rgba(244,63,94,0.3)'   },
+    pending:   { color: '#F59E0B', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)'  },
+    running:   { color: '#22D3EE', bg: 'rgba(34,211,238,0.1)',  border: 'rgba(34,211,238,0.3)'  },
+  };
+  const m = map[status] || map.pending;
+  return (
+    <span style={{
+      display: 'inline-block', padding: '3px 9px', borderRadius: '20px',
+      fontSize: '0.72rem', fontWeight: 700, textTransform: 'capitalize',
+      color: m.color, background: m.bg, border: `1px solid ${m.border}`,
+    }}>{status}</span>
+  );
+};
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ModelManagementPage() {
   const [threshold, setThreshold] = useState(0.62);
@@ -49,11 +135,9 @@ export default function ModelManagementPage() {
   const [isRetrainOpen, setIsRetrainOpen] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
 
-  // Live Data
   const [models, setModels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  const [retrainJobsData, setRetrainJobsData] = useState<any[]>([]);
+  const [retrainJobs, setRetrainJobs] = useState<any[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [isRetraining, setIsRetraining] = useState(false);
 
@@ -61,133 +145,105 @@ export default function ModelManagementPage() {
 
   const loadModels = async () => {
     try {
-      const data = await fetchApi("http://localhost:8080/admin/models");
+      const data = await fetchApi('http://localhost:8080/admin/models');
       setModels(data || []);
-    } catch (err) {
-      console.error("Failed to load models", err);
+    } catch (e) {
       setModels([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadRetrainJobs = async () => {
+  const loadJobs = async () => {
     try {
-      const data = await fetchApi("http://localhost:8080/admin/retrain-jobs");
-      setRetrainJobsData(data || []);
-      // Check if any job is pending to continue polling
-      const hasPending = data && data.some((job: any) => job.status === 'pending');
-      setIsRetraining(hasPending);
-    } catch (err) {
-      console.error("Failed to load retrain jobs", err);
+      const data = await fetchApi('http://localhost:8080/admin/retrain-jobs');
+      setRetrainJobs(data || []);
+      setIsRetraining(data && data.some((j: any) => j.status === 'pending'));
+    } catch (e) {
+      // noop
     } finally {
       setLoadingJobs(false);
     }
   };
 
-  useEffect(() => {
-    loadModels();
-    loadRetrainJobs();
-  }, []);
+  useEffect(() => { loadModels(); loadJobs(); }, []);
 
-  // Dynamic polling mechanism with backoff
   useEffect(() => {
-    let timeoutId: NodeJS.Timeout;
-    let currentInterval = 5000; // start at 5s
-    const maxInterval = 30000;  // cap at 30s
-
+    let tid: NodeJS.Timeout;
+    let interval = 5000;
     const poll = async () => {
       if (!isRetraining) return;
-      await loadRetrainJobs();
-      await loadModels();
-      currentInterval = Math.min(currentInterval * 1.5, maxInterval);
-      timeoutId = setTimeout(poll, currentInterval);
+      await loadJobs(); await loadModels();
+      interval = Math.min(interval * 1.5, 30000);
+      tid = setTimeout(poll, interval);
     };
-
-    if (isRetraining) {
-      timeoutId = setTimeout(poll, currentInterval);
-    }
-
-    return () => {
-      if (timeoutId) clearTimeout(timeoutId);
-    };
+    if (isRetraining) tid = setTimeout(poll, interval);
+    return () => { if (tid) clearTimeout(tid); };
   }, [isRetraining]);
 
   const handleTriggerRetrain = async () => {
     try {
       setIsRetraining(true);
-      await fetchApi("http://localhost:8080/admin/retrain-jobs", {
-        method: "POST"
-      });
+      await fetchApi('http://localhost:8080/admin/retrain-jobs', { method: 'POST' });
       setIsRetrainOpen(false);
-      loadRetrainJobs(); // immediately reload jobs
-    } catch (error) {
-      console.error("Failed to trigger retrain", error);
+      loadJobs();
+    } catch (e) {
       setIsRetraining(false);
     }
   };
 
-  const activeModel = models.find(m => m.is_active) || models[0] || {};
-  const prAuc = activeModel.pr_auc || 0.000; 
-  const rocAuc = activeModel.roc_auc || 0.000; 
-  const recall = activeModel.recall || 0.000;
-  const precision = activeModel.precision || 0.000;
-  const f1 = activeModel.f1_score || 0.000; 
-
   const handleRollback = async () => {
     if (!selectedVersion) return;
     try {
-      await fetchApi(`http://localhost:8080/admin/models/${selectedVersion}/rollback`, {
-        method: "POST"
-      });
+      await fetchApi(`http://localhost:8080/admin/models/${selectedVersion}/rollback`, { method: 'POST' });
       setIsRollbackOpen(false);
       loadModels();
-    } catch (err) {
-      console.error("Failed to rollback", err);
-      alert("Failed to rollback model");
+    } catch (e) {
+      alert('Failed to rollback model');
     }
   };
 
-  const PRSubtitle = (
-    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '8px' }}>
-      <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>At threshold <strong style={{color: 'var(--text-main)'}}>{threshold.toFixed(2)}</strong>:</span>
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'rgb(96, 165, 250)', fontSize: '0.8rem', fontWeight: 600 }}>Flagged: {currentStats.flaggedPct.toFixed(1)}%</span>
-        <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: 'rgb(52, 211, 153)', fontSize: '0.8rem', fontWeight: 600 }}>Precision: {(currentStats.precision * 100).toFixed(1)}%</span>
-        <span style={{ padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: 'rgb(251, 191, 36)', fontSize: '0.8rem', fontWeight: 600 }}>Recall: {(currentStats.recall * 100).toFixed(1)}%</span>
-      </div>
-    </div>
-  );
+  const active = models.find(m => m.is_active) || models[0] || {};
+
+  const kpis = [
+    { label: 'PR-AUC',    value: (active.pr_auc    || 0).toFixed(3), sub: 'precision-recall area', accent: '#5C6EF8' },
+    { label: 'ROC-AUC',   value: (active.roc_auc   || 0).toFixed(3), sub: 'discriminative power',  accent: '#22D3EE' },
+    { label: 'Recall',    value: (active.recall     || 0).toFixed(3), sub: 'true-positive rate',   accent: '#34D399' },
+    { label: 'Precision', value: (active.precision  || 0).toFixed(3), sub: 'positive pred. value',  accent: '#F59E0B' },
+    { label: 'F1 Score',  value: (active.f1_score   || 0).toFixed(3), sub: 'harmonic mean',         accent: '#8B5CF6' },
+  ];
+
+  const selectStyle: React.CSSProperties = {
+    padding: '8px 12px', backgroundColor: '#0D1117',
+    border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4',
+    borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem', cursor: 'pointer',
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px' }}>
+
       {/* KPI Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'var(--space-md)' }}>
-        <StatCard label="PR-AUC" value={prAuc.toFixed(3)} status="good" />
-        <StatCard label="ROC-AUC" value={rocAuc.toFixed(3)} status="good" />
-        <StatCard label="Recall" value={recall.toFixed(3)} status="good" />
-        <StatCard label="Precision" value={precision.toFixed(3)} status="good" />
-        <StatCard label="F1 Score" value={f1.toFixed(3)} status="good" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px' }}>
+        {kpis.map(k => <KpiCard key={k.label} {...k} />)}
       </div>
 
-      {/* 2-Column: PR Curve & SHAP */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
-        <ChartCard title="Precision / Recall vs. Threshold" subtitle={PRSubtitle}>
-          <div style={{ height: 250, marginBottom: 'var(--space-lg)' }}>
+      {/* PR Curve + SHAP */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+        <ChartCard
+          title="Precision / Recall vs. Threshold"
+          subtitle={`At threshold ${threshold.toFixed(2)} — flagged: ${currentStats.flaggedPct.toFixed(1)}%  ·  precision: ${(currentStats.precision * 100).toFixed(1)}%  ·  recall: ${(currentStats.recall * 100).toFixed(1)}%`}
+        >
+          <div style={{ height: 240, marginBottom: '12px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={precisionRecallData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-                <XAxis dataKey="threshold" stroke="var(--text-secondary)" tick={{fontSize: 12}} type="number" domain={[0, 1]} />
-                <YAxis stroke="var(--text-secondary)" tick={{fontSize: 12}} domain={[0, 1]} />
-                <Tooltip 
-                  formatter={(value: any) => typeof value === 'number' ? value.toFixed(3) : value}
-                  contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
-                  itemStyle={{ color: 'var(--text-primary)' }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="precision" stroke="var(--info)" strokeWidth={2} dot={false} name="Precision" />
-                <Line type="monotone" dataKey="recall" stroke="var(--risk-low)" strokeWidth={2} dot={false} name="Recall" />
-                <ReferenceLine x={threshold} stroke="var(--text-primary)" strokeDasharray="3 3" />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                <XAxis dataKey="threshold" stroke="#4E5A6B" tick={{ fontSize: 11 }} type="number" domain={[0, 1]} />
+                <YAxis stroke="#4E5A6B" tick={{ fontSize: 11 }} domain={[0, 1]} />
+                <Tooltip {...ttStyle} formatter={(v: any) => typeof v === 'number' ? v.toFixed(3) : v} />
+                <Legend wrapperStyle={{ fontSize: '0.78rem', color: '#8D9AAB' }} />
+                <Line type="monotone" dataKey="precision" stroke="#22D3EE" strokeWidth={2} dot={false} name="Precision" />
+                <Line type="monotone" dataKey="recall"    stroke="#34D399" strokeWidth={2} dot={false} name="Recall" />
+                <ReferenceLine x={threshold} stroke="rgba(255,255,255,0.4)" strokeDasharray="4 4" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -195,23 +251,21 @@ export default function ModelManagementPage() {
         </ChartCard>
 
         <ChartCard title="Feature Importance (SHAP)" subtitle="Top 10 features by mean absolute SHAP value">
-          <div style={{ height: 350 }}>
+          <div style={{ height: 320 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={featureImportanceData} margin={{ top: 10, right: 60, left: 40, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" horizontal={false} />
-                <XAxis type="number" stroke="var(--text-secondary)" tick={{fontSize: 12}} />
+              <BarChart layout="vertical" data={featureImportanceData} margin={{ top: 5, right: 50, left: 40, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
+                <XAxis type="number" stroke="#4E5A6B" tick={{ fontSize: 11 }} />
                 <YAxis dataKey="feature" type="category" width={140} interval={0} tick={(props: any) => {
                   const { x, y, payload } = props;
                   return (
                     <g transform={`translate(${x},${y})`}>
-                      <text x={-10} y={4} fill="#ffffff" fontSize={12} textAnchor="end" alignmentBaseline="middle">
-                        {payload.value}
-                      </text>
+                      <text x={-8} y={4} fill="#8D9AAB" fontSize={11} textAnchor="end" alignmentBaseline="middle">{payload.value}</text>
                     </g>
                   );
                 }} />
-                <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} activeBar={false}>
-                  <LabelList dataKey="value" position="right" formatter={(val: any) => typeof val === 'number' ? `${(val * 100).toFixed(0)}%` : val} fill="#ffffff" fontSize={12} />
+                <Bar dataKey="value" fill="#5C6EF8" radius={[0, 4, 4, 0]} activeBar={false}>
+                  <LabelList dataKey="value" position="right" formatter={(v: any) => typeof v === 'number' ? `${(v * 100).toFixed(0)}%` : v} fill="#8D9AAB" fontSize={11} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -219,114 +273,157 @@ export default function ModelManagementPage() {
         </ChartCard>
       </div>
 
-      {/* Feature Drift Chart */}
-      <ChartCard title="Feature Drift (Population Stability Index)" subtitle="Monitoring key features for distribution shifts over 30 days">
-        <div style={{ height: 250 }}>
+      {/* Feature Drift */}
+      <ChartCard title="Feature Drift (Population Stability Index)" subtitle="Distribution shifts across key features over 30 days">
+        <div style={{ height: 220 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={driftData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" vertical={false} />
-              <XAxis dataKey="date" stroke="var(--text-secondary)" tick={{fontSize: 12}} />
-              <YAxis stroke="var(--text-secondary)" tick={{fontSize: 12}} />
-              <Tooltip 
-                formatter={(value: any) => typeof value === 'number' ? value.toFixed(3) : value}
-                contentStyle={{ backgroundColor: 'var(--bg-surface)', borderColor: 'var(--border-color)' }}
-                itemStyle={{ color: 'var(--text-primary)' }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="amount" stroke="var(--info)" strokeWidth={2} dot={false} name="amount" />
-              <Line type="monotone" dataKey="velocity_24h" stroke="var(--risk-low)" strokeWidth={2} dot={false} name="velocity_24h" />
-              <Line type="monotone" dataKey="ip_risk_score" stroke="var(--risk-medium)" strokeWidth={2} dot={false} name="ip_risk_score" />
-              <ReferenceLine y={0.1} stroke="var(--risk-critical)" strokeDasharray="3 3" label={{ position: 'insideTopLeft', value: 'Warning Threshold', fill: 'var(--risk-critical)', fontSize: 12 }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis dataKey="date" stroke="#4E5A6B" tick={{ fontSize: 11 }} />
+              <YAxis stroke="#4E5A6B" tick={{ fontSize: 11 }} />
+              <Tooltip {...ttStyle} formatter={(v: any) => typeof v === 'number' ? v.toFixed(3) : v} />
+              <Legend wrapperStyle={{ fontSize: '0.78rem', color: '#8D9AAB' }} />
+              <Line type="monotone" dataKey="amount"        stroke="#22D3EE" strokeWidth={2} dot={false} name="amount" />
+              <Line type="monotone" dataKey="velocity_24h"  stroke="#34D399" strokeWidth={2} dot={false} name="velocity_24h" />
+              <Line type="monotone" dataKey="ip_risk_score" stroke="#F59E0B" strokeWidth={2} dot={false} name="ip_risk_score" />
+              <ReferenceLine y={0.1} stroke="#F43F5E" strokeDasharray="4 4" label={{ position: 'insideTopLeft', value: 'Warning threshold', fill: '#F43F5E', fontSize: 11 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
       </ChartCard>
 
-      {/* Model Version History */}
+      {/* Version History */}
       <div>
-        <h3 style={{ margin: '0 0 var(--space-md) 0', color: 'var(--text-primary)' }}>Version History</h3>
-        {loading ? <div>Loading version history...</div> : (
-          <DataTable
-            columns={[
-              { key: 'version', header: 'Version' },
-              { key: 'deployedAt', header: 'Deployed At', render: (row: any) => row.deployed_at ? new Date(row.deployed_at).toLocaleString() : '-' },
-              { key: 'prAuc', header: 'Precision / Recall', render: (row: any) => `${row.precision?.toFixed(3) || 0} / ${row.recall?.toFixed(3) || 0}` },
-              { key: 'status', header: 'Status', render: (row: any) => <StatusBadge status={row.is_active ? 'active' : 'inactive'} label={row.is_active ? 'live' : 'archived'} /> },
-              { key: 'actions', header: '', render: (row: any) => (
-                row.is_active ? null : (
-                  <button
-                    onClick={() => { setSelectedVersion(row.id); setIsRollbackOpen(true); }}
-                    style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer' }}
-                  >
-                    Rollback
-                  </button>
-                )
-              )}
-            ]}
-            rows={models}
-          />
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '1rem', color: '#E8EDF4' }}>Version History</div>
+            <div style={{ fontSize: '0.8rem', color: '#8D9AAB', marginTop: '2px' }}>Deployed model versions and rollback controls</div>
+          </div>
+        </div>
+        <div style={{
+          background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)',
+          borderRadius: '14px', overflow: 'hidden',
+        }}>
+          {loading ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#4E5A6B', fontSize: '0.875rem' }}>Loading version history…</div>
+          ) : models.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#4E5A6B', fontSize: '0.875rem' }}>No model versions found.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+                  {['Version', 'Deployed At', 'Precision / Recall', 'Status', ''].map(h => (
+                    <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#4E5A6B', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {models.map((m, i) => (
+                  <tr key={m.id} style={{ borderBottom: i < models.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                    <td style={{ padding: '14px 18px' }}>
+                      <span style={{ fontFamily: 'monospace', color: '#A5B4FC', fontWeight: 600 }}>{m.version}</span>
+                    </td>
+                    <td style={{ padding: '14px 18px', color: '#8D9AAB', fontSize: '0.82rem' }}>
+                      {m.deployed_at ? new Date(m.deployed_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                    </td>
+                    <td style={{ padding: '14px 18px' }}>
+                      <span style={{ fontFamily: 'monospace', color: '#E8EDF4' }}>
+                        {(m.precision || 0).toFixed(3)} / {(m.recall || 0).toFixed(3)}
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 18px' }}><VersionBadge active={m.is_active} /></td>
+                    <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                      {!m.is_active && (
+                        <button
+                          onClick={() => { setSelectedVersion(m.id); setIsRollbackOpen(true); }}
+                          style={{
+                            padding: '5px 12px', borderRadius: '6px', cursor: 'pointer',
+                            background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
+                            color: '#FCD34D', fontSize: '0.75rem', fontWeight: 600,
+                          }}
+                        >
+                          Rollback
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
-      {/* Retrain Section */}
+      {/* Retrain Jobs */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-md)' }}>
-          <h2 className="text-xl font-semibold text-white">Retrain Jobs</h2>
-          <button 
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '1rem', color: '#E8EDF4' }}>Retrain Jobs</div>
+            <div style={{ fontSize: '0.8rem', color: '#8D9AAB', marginTop: '2px' }}>Training job history and current status</div>
+          </div>
+          <button
             onClick={() => setIsRetrainOpen(true)}
             disabled={isRetraining}
             style={{
-              backgroundColor: 'transparent',
-              border: 'none',
-              color: '#ffffff',
-              cursor: isRetraining ? 'not-allowed' : 'pointer',
-              fontSize: '1rem',
-              fontWeight: 500,
-              padding: 0,
-              opacity: isRetraining ? 0.5 : 1
+              display: 'flex', alignItems: 'center', gap: '7px',
+              padding: '9px 18px', borderRadius: '8px', border: 'none', cursor: isRetraining ? 'not-allowed' : 'pointer',
+              background: isRetraining ? 'rgba(92,110,248,0.3)' : 'linear-gradient(135deg, #5C6EF8 0%, #7E8DF9 100%)',
+              color: '#fff', fontWeight: 600, fontSize: '0.875rem',
+              boxShadow: isRetraining ? 'none' : '0 4px 14px rgba(92,110,248,0.35)',
+              opacity: isRetraining ? 0.7 : 1,
             }}
           >
-            {isRetraining ? 'Training...' : 'Trigger Retrain'}
+            <RefreshIcon />
+            {isRetraining ? 'Training…' : 'Trigger Retrain'}
           </button>
         </div>
-        {loadingJobs ? (
-          <div className="text-gray-400 py-4 text-center">Loading jobs...</div>
-        ) : (
-          <DataTable
-            columns={[
-              { key: 'id', header: 'Job ID' },
-              { key: 'status', header: 'Status', render: (row: any) => (
-                <StatusBadge 
-                  status={row.status === 'completed' ? 'active' : row.status === 'failed' ? 'critical' : 'pending'} 
-                  label={row.status} 
-                />
-              )},
-              { key: 'startedAt', header: 'Started', render: (row: any) => new Date(row.startedAt).toLocaleString() },
-              { key: 'durationSec', header: 'Duration', render: (row: any) => row.durationSec ? `${Math.floor(row.durationSec / 60)}m ${row.durationSec % 60}s` : '-' }
-            ]}
-            rows={retrainJobsData}
-          />
-        )}
+
+        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', overflow: 'hidden' }}>
+          {loadingJobs ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#4E5A6B', fontSize: '0.875rem' }}>Loading jobs…</div>
+          ) : retrainJobs.length === 0 ? (
+            <div style={{ padding: '32px', textAlign: 'center', color: '#4E5A6B', fontSize: '0.875rem' }}>No retrain jobs found.</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+                  {['Job ID', 'Status', 'Started', 'Duration'].map(h => (
+                    <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#4E5A6B', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {retrainJobs.map((j, i) => (
+                  <tr key={j.id} style={{ borderBottom: i < retrainJobs.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                    <td style={{ padding: '14px 18px', fontFamily: 'monospace', color: '#8D9AAB', fontSize: '0.8rem' }}>{j.id?.slice(0, 12)}…</td>
+                    <td style={{ padding: '14px 18px' }}><JobStatusBadge status={j.status} /></td>
+                    <td style={{ padding: '14px 18px', color: '#8D9AAB', fontSize: '0.82rem' }}>{j.startedAt ? new Date(j.startedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                    <td style={{ padding: '14px 18px', color: '#E8EDF4', fontFamily: 'monospace' }}>{j.durationSec ? `${Math.floor(j.durationSec / 60)}m ${j.durationSec % 60}s` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
-      {/* Modals */}
+      {/* Dialogs */}
       <ConfirmDialog
         isOpen={isRollbackOpen}
         title="Confirm Rollback"
-        description={`Are you sure you want to rollback to this model version? This will immediately direct all live scoring traffic to the older model.`}
+        description="Are you sure you want to rollback to this model version? All live scoring traffic will immediately redirect to the older model."
         confirmLabel="Rollback"
         danger={true}
         onConfirm={handleRollback}
         onCancel={() => setIsRollbackOpen(false)}
       />
-
       <ConfirmDialog
         isOpen={isRetrainOpen}
         title="Trigger Model Retrain"
-        description="This will start a new training job using the latest data. The job typically takes 45-60 minutes to complete. Do you want to proceed?"
+        description="This will start a new training job using the latest data. Training typically takes 45–60 minutes. Do you want to proceed?"
+        confirmLabel="Start Retrain"
         onConfirm={handleTriggerRetrain}
         onCancel={() => setIsRetrainOpen(false)}
-        confirmLabel="Start Retrain"
       />
     </div>
   );

@@ -2,417 +2,516 @@
 
 import React, { useState, useEffect } from 'react';
 import { fetchApi } from "../../../lib/api";
-import { DataTable } from '@/components/DataTable';
-import { Toggle } from '@/components/Toggle';
-import { StatusBadge } from '@/components/StatusBadge';
-import { Modal } from '@/components/Modal';
-import { EmptyState } from '@/components/EmptyState';
-import styles from './rules.module.css';
 
-// Default Velocity Config
+// ─── Icons ────────────────────────────────────────────────────────────────────
+
+const PlusIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 5v14M5 12h14"/>
+  </svg>
+);
+
+const SearchIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="m19 6-.867 12.142A2 2 0 0 1 16.138 20H7.862a2 2 0 0 1-1.995-1.858L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+  </svg>
+);
+
+const FlaskIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 3h6l1 6-4 12-4-12 1-6z"/><path d="M5 9h14"/>
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 6 6 18M6 6l12 12"/>
+  </svg>
+);
+
+const ShieldIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+  </svg>
+);
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const DEFAULT_VELOCITY_CONFIGS = [
-  { entity: 'Card', windows: ['1h', '24h', '7d'] },
-  { entity: 'User', windows: ['24h', '7d', '30d'] },
-  { entity: 'IP', windows: ['1h', '24h'] },
-  { entity: 'Device', windows: ['1h', '24h', '7d'] }
+  { entity: 'Card',   windows: ['1h', '24h', '7d'] },
+  { entity: 'User',   windows: ['24h', '7d', '30d'] },
+  { entity: 'IP',     windows: ['1h', '24h'] },
+  { entity: 'Device', windows: ['1h', '24h', '7d'] },
 ];
 
+// ─── Shared styles ────────────────────────────────────────────────────────────
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '9px 12px',
+  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+  borderRadius: '8px', color: '#E8EDF4', fontSize: '0.875rem', outline: 'none',
+};
+
+const selectStyle: React.CSSProperties = {
+  ...inputStyle, colorScheme: 'dark', cursor: 'pointer',
+};
+
+const FormField = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+    <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#8D9AAB', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</label>
+    {children}
+  </div>
+);
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+const IntModal = ({ isOpen, onClose, title, width = '460px', children }: {
+  isOpen: boolean; onClose: () => void; title: string; width?: string; children: React.ReactNode;
+}) => {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    if (isOpen) window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [isOpen, onClose]);
+  if (!isOpen) return null;
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={onClose} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
+      <div style={{
+        position: 'relative', width: '100%', maxWidth: width,
+        background: 'linear-gradient(145deg, #0f1117 0%, #0D1117 100%)',
+        border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px',
+        boxShadow: '0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(92,110,248,0.1)',
+        overflow: 'hidden', animation: 'modalIn 0.18s ease',
+      }}>
+        <style>{`@keyframes modalIn { from { opacity:0; transform:scale(0.95) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+          <span style={{ fontWeight: 700, fontSize: '1rem', color: '#E8EDF4' }}>{title}</span>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8D9AAB', padding: '4px', borderRadius: '6px', display: 'flex', alignItems: 'center' }}><CloseIcon /></button>
+        </div>
+        <div style={{ padding: '24px' }}>{children}</div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Action badge ─────────────────────────────────────────────────────────────
+
+const ActionBadge = ({ action }: { action: string }) => {
+  const map: Record<string, { color: string; bg: string }> = {
+    block:   { color: '#F43F5E', bg: 'rgba(244,63,94,0.12)'  },
+    step_up: { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
+    flag:    { color: '#34D399', bg: 'rgba(52,211,153,0.12)' },
+  };
+  const m = map[action] || { color: '#8D9AAB', bg: 'rgba(148,163,184,0.1)' };
+  return (
+    <span style={{ display: 'inline-block', padding: '3px 9px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 700, color: m.color, background: m.bg, textTransform: 'capitalize' }}>
+      {action.replace('_', ' ')}
+    </span>
+  );
+};
+
+// ─── Toggle ───────────────────────────────────────────────────────────────────
+
+const Toggle = ({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) => (
+  <button
+    onClick={() => onChange(!checked)}
+    style={{
+      width: '40px', height: '22px', borderRadius: '11px', border: 'none', cursor: 'pointer',
+      background: checked ? 'linear-gradient(135deg, #5C6EF8, #7E8DF9)' : 'rgba(255,255,255,0.1)',
+      position: 'relative', transition: 'background 0.2s',
+      boxShadow: checked ? '0 0 8px rgba(92,110,248,0.4)' : 'none',
+    }}
+  >
+    <span style={{
+      position: 'absolute', top: '3px', left: checked ? '21px' : '3px',
+      width: '16px', height: '16px', borderRadius: '50%', background: '#fff',
+      transition: 'left 0.2s', boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+    }} />
+  </button>
+);
+
+// ─── Btn helpers ──────────────────────────────────────────────────────────────
+
+const PrimaryBtn = ({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: React.ReactNode }) => (
+  <button onClick={onClick} disabled={disabled} style={{
+    display: 'flex', alignItems: 'center', gap: '7px', padding: '9px 18px', borderRadius: '8px',
+    border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+    background: 'linear-gradient(135deg, #5C6EF8 0%, #7E8DF9 100%)',
+    color: '#fff', fontWeight: 600, fontSize: '0.875rem',
+    boxShadow: '0 4px 14px rgba(92,110,248,0.35)', opacity: disabled ? 0.5 : 1,
+  }}>
+    {children}
+  </button>
+);
+
+const CancelBtn = ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) => (
+  <button onClick={onClick} style={{ padding: '8px 16px', borderRadius: '7px', border: '1px solid rgba(255,255,255,0.1)', background: 'transparent', color: '#8D9AAB', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500 }}>
+    {children}
+  </button>
+);
+
+const DangerBtn = ({ onClick, children }: { onClick: () => void; children: React.ReactNode }) => (
+  <button onClick={onClick} style={{ padding: '9px 18px', borderRadius: '8px', cursor: 'pointer', background: 'rgba(244,63,94,0.15)', border: '1px solid rgba(244,63,94,0.3)', color: '#FCA5A5', fontWeight: 600, fontSize: '0.875rem' }}>
+    {children}
+  </button>
+);
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function RulesPage() {
-  const [rules, setRules] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
-  const [windowModalEntity, setWindowModalEntity] = useState<string | null>(null);
-  const [newWindowValue, setNewWindowValue] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  // Create Rule State
+  const [rules, setRules]                 = useState<any[]>([]);
+  const [loading, setLoading]             = useState(true);
+  const [isCreateOpen, setIsCreateOpen]   = useState(false);
+  const [ruleToDelete, setRuleToDelete]   = useState<string | null>(null);
+  const [windowEntity, setWindowEntity]   = useState<string | null>(null);
+  const [newWindow, setNewWindow]         = useState('');
+  const [search, setSearch]               = useState('');
+  const [velocityConfigs, setVelocityConfigs] = useState(DEFAULT_VELOCITY_CONFIGS);
+
   const [newRule, setNewRule] = useState({
-    name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag'
+    name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag',
   });
 
-  // Backtest state
-  const [selectedRuleId, setSelectedRuleId] = useState<string>('');
-  const [backtestResult, setBacktestResult] = useState<{triggerCount: number, overlapWithMlPct: number, estimatedPrecision: number} | null>(null);
-  const [isBacktesting, setIsBacktesting] = useState(false);
-
-  // Velocity Config State
-  const [velocityConfigs, setVelocityConfigs] = useState<{entity: string, windows: string[]}[]>(DEFAULT_VELOCITY_CONFIGS);
+  const [selectedRuleId, setSelectedRuleId] = useState('');
+  const [backtestResult, setBacktestResult] = useState<any>(null);
+  const [isBacktesting, setIsBacktesting]   = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('velocityConfigs');
-    if (stored) {
-      try {
-        setVelocityConfigs(JSON.parse(stored));
-      } catch (e) {
-        console.error("Failed to parse velocity configs", e);
-      }
-    }
+    if (stored) { try { setVelocityConfigs(JSON.parse(stored)); } catch (e) {} }
   }, []);
-
-  const handleAddWindowClick = (entity: string) => {
-    setWindowModalEntity(entity);
-    setNewWindowValue('');
-  };
-
-  const confirmAddWindow = () => {
-    if (!windowModalEntity || !newWindowValue.trim()) return;
-    const newWindow = newWindowValue.trim();
-    
-    const updated = velocityConfigs.map(c => {
-      if (c.entity === windowModalEntity) {
-        if (c.windows.includes(newWindow)) return c;
-        return { ...c, windows: [...c.windows, newWindow] };
-      }
-      return c;
-    });
-    setVelocityConfigs(updated);
-    localStorage.setItem('velocityConfigs', JSON.stringify(updated));
-    setWindowModalEntity(null);
-  };
-
-  const handleRemoveWindow = (entity: string, windowToRemove: string) => {
-    const updated = velocityConfigs.map(c => {
-      if (c.entity === entity) {
-        return { ...c, windows: c.windows.filter(w => w !== windowToRemove) };
-      }
-      return c;
-    });
-    setVelocityConfigs(updated);
-    localStorage.setItem('velocityConfigs', JSON.stringify(updated));
-  };
 
   const loadRules = async () => {
     try {
-      const data = await fetchApi("http://localhost:8080/admin/rules");
+      const data = await fetchApi('http://localhost:8080/admin/rules');
       setRules(data || []);
-    } catch (err) {
-      console.error("Failed to load rules", err);
+    } catch (e) {
+      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadRules();
-  }, []);
+  useEffect(() => { loadRules(); }, []);
 
-  const filteredRules = rules.filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase()));
-
-  const handleToggleActive = async (id: string, active: boolean) => {
+  const handleToggle = async (id: string, active: boolean) => {
     try {
-      await fetchApi(`http://localhost:8080/admin/rules/${id}/toggle`, {
-        method: "PATCH",
-        body: JSON.stringify({ is_active: active })
-      });
+      await fetchApi(`http://localhost:8080/admin/rules/${id}/toggle`, { method: 'PATCH', body: JSON.stringify({ is_active: active }) });
       setRules(rules.map(r => r.id === id ? { ...r, is_active: active } : r));
-    } catch (err) {
-      console.error("Failed to toggle rule", err);
-      alert("Failed to toggle rule");
-    }
+    } catch (e) { alert('Failed to toggle rule'); }
   };
 
   const confirmDelete = async () => {
     if (!ruleToDelete) return;
     try {
-      await fetchApi(`http://localhost:8080/admin/rules/${ruleToDelete}`, { method: "DELETE" });
+      await fetchApi(`http://localhost:8080/admin/rules/${ruleToDelete}`, { method: 'DELETE' });
       setRules(rules.filter(r => r.id !== ruleToDelete));
       setRuleToDelete(null);
-    } catch (err) {
-      console.error("Failed to delete rule", err);
-      alert("Failed to delete rule");
-    }
+    } catch (e) { alert('Failed to delete rule'); }
   };
 
-  const handleCreateRule = async () => {
+  const handleCreate = async () => {
     try {
-      await fetchApi("http://localhost:8080/admin/rules", {
-        method: "POST",
-        body: JSON.stringify({
-          name: newRule.name,
-          entity: newRule.entity,
-          metric: newRule.metric,
-          operator: newRule.operator,
-          value: parseFloat(newRule.value),
-          window: newRule.window,
-          action: newRule.action
-        })
+      await fetchApi('http://localhost:8080/admin/rules', {
+        method: 'POST',
+        body: JSON.stringify({ ...newRule, value: parseFloat(newRule.value) }),
       });
-      setIsCreateModalOpen(false);
+      setIsCreateOpen(false);
       setNewRule({ name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag' });
       loadRules();
-    } catch (err: any) {
-      console.error("Failed to create rule", err);
-      alert(`Failed to create rule: ${err.message || "Unknown error"}`);
-    }
+    } catch (e: any) { alert(`Failed to create rule: ${e.message || 'Unknown error'}`); }
   };
 
-  const handleRunBacktest = async () => {
+  const handleBacktest = async () => {
     if (!selectedRuleId) return;
-    setIsBacktesting(true);
-    setBacktestResult(null);
+    setIsBacktesting(true); setBacktestResult(null);
     try {
-      const data = await fetchApi(`http://localhost:8080/admin/rules/${selectedRuleId}/backtest`, { method: "POST" });
-      setBacktestResult({
-        triggerCount: data.match_count || 0,
-        overlapWithMlPct: 85, // Stub
-        estimatedPrecision: Math.round((data.precision || 0) * 100)
-      });
-    } catch (err) {
-      console.error("Backtest failed", err);
-      alert("Backtest failed");
-    } finally {
-      setIsBacktesting(false);
-    }
+      const data = await fetchApi(`http://localhost:8080/admin/rules/${selectedRuleId}/backtest`, { method: 'POST' });
+      setBacktestResult({ triggerCount: data.match_count || 0, overlap: 85, precision: Math.round((data.precision || 0) * 100) });
+    } catch (e) { alert('Backtest failed'); }
+    finally { setIsBacktesting(false); }
   };
 
-  if (loading) return <div style={{ padding: "2rem" }}>Loading rules...</div>;
+  const saveVelocityToLocal = (updated: typeof velocityConfigs) => {
+    setVelocityConfigs(updated);
+    localStorage.setItem('velocityConfigs', JSON.stringify(updated));
+  };
+
+  const confirmAddWindow = () => {
+    if (!windowEntity || !newWindow.trim()) return;
+    const updated = velocityConfigs.map(c =>
+      c.entity === windowEntity && !c.windows.includes(newWindow.trim())
+        ? { ...c, windows: [...c.windows, newWindow.trim()] }
+        : c
+    );
+    saveVelocityToLocal(updated);
+    setWindowEntity(null);
+  };
+
+  const removeWindow = (entity: string, w: string) => {
+    saveVelocityToLocal(velocityConfigs.map(c => c.entity === entity ? { ...c, windows: c.windows.filter(x => x !== w) } : c));
+  };
+
+  const filtered = rules.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+
+  if (loading) return <div style={{ padding: '40px', color: '#8D9AAB' }}>Loading rules…</div>;
+
+  const activeCount = rules.filter(r => r.is_active).length;
+  const blockCount  = rules.filter(r => r.action === 'block').length;
 
   return (
-    <div className={styles.pageContainer}>
-      {/* Header Row */}
-      <div className={styles.headerRow}>
-        <div className={styles.searchContainer}>
-          <svg className={styles.searchIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input 
-            type="text" 
-            placeholder="Search custom rules..." 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className={styles.searchInput}
-          />
-        </div>
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className={styles.createButton}
-        >
-          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Create Rule
-        </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px' }}>
+
+      {/* Stats row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px' }}>
+        {[
+          { label: 'Total Rules', value: String(rules.length), sub: 'custom fraud rules', accent: '#5C6EF8', glow: 'rgba(92,110,248,0.12)' },
+          { label: 'Active Rules', value: String(activeCount), sub: 'currently enforced', accent: '#34D399', glow: 'rgba(52,211,153,0.12)' },
+          { label: 'Block Actions', value: String(blockCount), sub: 'hard-block rules', accent: '#F43F5E', glow: 'rgba(244,63,94,0.12)' },
+        ].map(s => (
+          <div key={s.label} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '16px 20px', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ fontSize: '0.72rem', color: '#8D9AAB', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '3px' }}>{s.label}</div>
+            <div style={{ fontSize: '1.6rem', fontWeight: 700, color: '#E8EDF4', lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: '0.7rem', color: '#4E5A6B', marginTop: '3px' }}>{s.sub}</div>
+            <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '70px', height: '70px', borderRadius: '50%', background: `radial-gradient(circle, ${s.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
+          </div>
+        ))}
       </div>
 
-      {/* Rules Table */}
-      <div style={{ animation: "fadeIn 0.5s ease-out" }}>
-        <DataTable
-          columns={[
-            { key: 'name', header: 'Name', render: (r: any) => <span style={{ fontWeight: 600 }}>{r.name}</span> },
-            { key: 'conditionSummary', header: 'Condition', render: (r: any) => <code style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.85rem' }}>{`${r.metric} ${r.operator} ${r.value}`}</code> },
-            { key: 'entity', header: 'Entity', render: (r: any) => <span style={{ textTransform: 'capitalize' }}>{r.entity}</span> },
-            { key: 'window', header: 'Window' },
-            { key: 'action', header: 'Action', render: (r: any) => (
-              <StatusBadge 
-                status={r.action === 'block' ? 'critical' : r.action === 'step_up' ? 'warning' : 'active'} 
-                label={r.action.replace('_', ' ')} 
-              />
-            )},
-            { key: 'triggerCount24h', header: 'Triggers (24h)', render: (r: any) => r.triggers_24h || '-' },
-            { key: 'precisionPct', header: 'Precision %', render: (r: any) => r.precision ? `${Math.round(r.precision * 100)}%` : '-' },
-            { key: 'active', header: 'Active', render: (r: any) => (
-              <Toggle checked={r.is_active} onChange={(c) => handleToggleActive(r.id, c)} />
-            )},
-            { key: 'actions', header: '', render: (r: any) => (
-              <button onClick={() => setRuleToDelete(r.id)} style={{ background: 'none', border: 'none', color: 'var(--risk-critical)', cursor: 'pointer', opacity: 0.8, transition: 'opacity 0.2s' }} onMouseEnter={e => e.currentTarget.style.opacity = '1'} onMouseLeave={e => e.currentTarget.style.opacity = '0.8'}>Delete</button>
-            )}
-          ]}
-          rows={filteredRules}
-          emptyState={
-            <EmptyState 
-              icon="🛡️"
-              title="No custom rules yet" 
-              description="Fraud is currently only caught by the ML model. Add a rule to layer in deterministic checks."
-              actionLabel="Create Rule"
-              onAction={() => setIsCreateModalOpen(true)}
+      {/* ── Rules Table ─────────────────────────────────────────────────────── */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          {/* Search */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px 12px', width: '260px' }}>
+            <SearchIcon /><span style={{ color: '#4E5A6B' }}>|</span>
+            <input
+              type="text" placeholder="Search rules…" value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ background: 'none', border: 'none', outline: 'none', color: '#E8EDF4', fontSize: '0.875rem', flex: 1 }}
             />
-          }
-        />
+          </div>
+          <PrimaryBtn onClick={() => setIsCreateOpen(true)}>
+            <PlusIcon /> Create Rule
+          </PrimaryBtn>
+        </div>
+
+        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', overflow: 'hidden' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '56px 24px', textAlign: 'center' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'rgba(92,110,248,0.08)', border: '1px solid rgba(92,110,248,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(92,110,248,0.6)', margin: '0 auto 12px' }}>
+                <ShieldIcon />
+              </div>
+              <div style={{ color: '#E8EDF4', fontWeight: 600, fontSize: '0.95rem' }}>No custom rules yet</div>
+              <div style={{ color: '#8D9AAB', fontSize: '0.82rem', marginTop: '4px' }}>Fraud is currently caught only by the ML model. Add a rule for deterministic checks.</div>
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+                  {['Name', 'Condition', 'Entity', 'Window', 'Action', 'Triggers (24h)', 'Precision', 'Active', ''].map(h => (
+                    <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#4E5A6B', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r, i) => (
+                  <tr key={r.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                    <td style={{ padding: '13px 16px', fontWeight: 600, color: '#E8EDF4' }}>{r.name}</td>
+                    <td style={{ padding: '13px 16px' }}>
+                      <code style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '5px', fontSize: '0.8rem', color: '#A5B4FC', fontFamily: 'monospace' }}>
+                        {r.metric} {r.operator} {r.value}
+                      </code>
+                    </td>
+                    <td style={{ padding: '13px 16px', color: '#8D9AAB', textTransform: 'capitalize' }}>{r.entity}</td>
+                    <td style={{ padding: '13px 16px', color: '#8D9AAB', fontFamily: 'monospace', fontSize: '0.82rem' }}>{r.window}</td>
+                    <td style={{ padding: '13px 16px' }}><ActionBadge action={r.action} /></td>
+                    <td style={{ padding: '13px 16px', color: '#E8EDF4', fontFamily: 'monospace' }}>{r.triggers_24h ?? '—'}</td>
+                    <td style={{ padding: '13px 16px', color: r.precision ? '#34D399' : '#4E5A6B', fontFamily: 'monospace' }}>{r.precision ? `${Math.round(r.precision * 100)}%` : '—'}</td>
+                    <td style={{ padding: '13px 16px' }}><Toggle checked={r.is_active} onChange={v => handleToggle(r.id, v)} /></td>
+                    <td style={{ padding: '13px 16px', textAlign: 'right' }}>
+                      <button onClick={() => setRuleToDelete(r.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', color: '#FCA5A5', fontSize: '0.75rem', fontWeight: 600 }}>
+                        <TrashIcon /> Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
 
-      {/* Velocity Config Panel */}
-      <div style={{ animation: "fadeIn 0.6s ease-out" }}>
-        <h3 className={styles.sectionTitle}>Velocity Configuration</h3>
-        <div className={styles.velocityGrid}>
-          {velocityConfigs.map((config) => (
-            <div key={config.entity} className={styles.velocityCard}>
-              <h4 className={styles.velocityCardTitle}>{config.entity} Velocity</h4>
-              <div className={styles.windowTags}>
-                {config.windows.map(w => (
-                  <span key={w} className={styles.windowTag}>
-                    {w} <button onClick={() => handleRemoveWindow(config.entity, w)} style={{ cursor: 'pointer', background: 'none', border: 'none', color: 'inherit', padding: '0 0 0 4px', fontSize: '1.1em', lineHeight: '1' }}>&times;</button>
+      {/* ── Velocity Config ──────────────────────────────────────────────────── */}
+      <div>
+        <div style={{ marginBottom: '14px' }}>
+          <div style={{ fontWeight: 600, fontSize: '1rem', color: '#E8EDF4' }}>Velocity Configuration</div>
+          <div style={{ fontSize: '0.8rem', color: '#8D9AAB', marginTop: '2px' }}>Time windows used for velocity tracking per entity type</div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
+          {velocityConfigs.map(cfg => (
+            <div key={cfg.entity} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '16px' }}>
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#A5B4FC', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '10px' }}>
+                {cfg.entity} Velocity
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                {cfg.windows.map(w => (
+                  <span key={w} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(92,110,248,0.1)', border: '1px solid rgba(92,110,248,0.25)', color: '#A5B4FC' }}>
+                    {w}
+                    <button onClick={() => removeWindow(cfg.entity, w)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(165,180,252,0.6)', padding: 0, fontSize: '1rem', lineHeight: 1, display: 'flex' }}>×</button>
                   </span>
                 ))}
-                <button onClick={() => handleAddWindowClick(config.entity)} className={styles.addWindowBtn}>+ Add</button>
+                <button onClick={() => { setWindowEntity(cfg.entity); setNewWindow(''); }} style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.12)', color: '#8D9AAB', cursor: 'pointer' }}>
+                  + Add
+                </button>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Backtest Sandbox */}
-      <div className={styles.sandboxContainer} style={{ animation: "fadeIn 0.7s ease-out" }}>
-        <h3 className={styles.sectionTitle}>Backtest Sandbox</h3>
-        <p style={{ color: 'var(--text-muted)', marginBottom: 'var(--space-md)', fontSize: '0.9rem' }}>Test the impact of a rule against historical data before enforcing it.</p>
-        <div className={styles.sandboxControls}>
-          <select 
-            value={selectedRuleId} 
-            onChange={e => setSelectedRuleId(e.target.value)}
-            className={styles.selectInput}
-          >
-            <option value="">Select a rule to backtest...</option>
+      {/* ── Backtest Sandbox ─────────────────────────────────────────────────── */}
+      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '20px 24px' }}>
+        <div style={{ marginBottom: '14px' }}>
+          <div style={{ fontWeight: 600, fontSize: '1rem', color: '#E8EDF4' }}>Backtest Sandbox</div>
+          <div style={{ fontSize: '0.8rem', color: '#8D9AAB', marginTop: '2px' }}>Simulate a rule against historical data before enforcing it.</div>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={selectedRuleId} onChange={e => setSelectedRuleId(e.target.value)} style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem', minWidth: '200px' }}>
+            <option value="">Select a rule to backtest…</option>
             {rules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
-          <select className={styles.selectInput}>
+          <select style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem' }}>
             <option>Last 7 days</option>
             <option>Last 30 days</option>
           </select>
           <button
-            onClick={handleRunBacktest}
+            onClick={handleBacktest}
             disabled={!selectedRuleId || isBacktesting}
-            className={styles.runBtn}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px',
+              borderRadius: '8px', border: 'none', cursor: (!selectedRuleId || isBacktesting) ? 'not-allowed' : 'pointer',
+              background: 'linear-gradient(135deg, #5C6EF8 0%, #7E8DF9 100%)',
+              color: '#fff', fontWeight: 600, fontSize: '0.875rem',
+              opacity: (!selectedRuleId || isBacktesting) ? 0.5 : 1,
+              boxShadow: '0 4px 14px rgba(92,110,248,0.3)',
+            }}
           >
-            {isBacktesting ? "Running..." : "Run Backtest"}
+            <FlaskIcon />
+            {isBacktesting ? 'Running…' : 'Run Backtest'}
           </button>
         </div>
-        
+
         {backtestResult && (
-          <div className={styles.resultPanel}>
-            <div className={styles.resultItem}>
-              <span style={{ color: 'var(--text-main)' }}>Would trigger</span>
-              <span style={{ color: 'var(--primary-color)', fontSize: '1.2rem' }}>{backtestResult.triggerCount.toLocaleString()}</span>
-              <span style={{ color: 'var(--text-main)' }}>times</span>
-            </div>
-            <span className={styles.resultDot}>•</span>
-            <div className={styles.resultItem}>
-              <span style={{ color: 'var(--text-main)' }}>Overlap with ML:</span>
-              <span style={{ color: 'var(--risk-info)' }}>{backtestResult.overlapWithMlPct}%</span>
-            </div>
-            <span className={styles.resultDot}>•</span>
-            <div className={styles.resultItem}>
-              <span style={{ color: 'var(--text-main)' }}>Est. Precision:</span>
-              <span style={{ color: 'var(--risk-low)' }}>{backtestResult.estimatedPrecision}%</span>
-            </div>
+          <div style={{ marginTop: '16px', display: 'flex', gap: '24px', flexWrap: 'wrap', padding: '14px 18px', borderRadius: '10px', background: 'rgba(92,110,248,0.06)', border: '1px solid rgba(92,110,248,0.15)' }}>
+            {[
+              { label: 'Would trigger', value: backtestResult.triggerCount.toLocaleString(), sub: 'times', color: '#A5B4FC' },
+              { label: 'Overlap with ML', value: `${backtestResult.overlap}%`, sub: '', color: '#22D3EE' },
+              { label: 'Est. Precision', value: `${backtestResult.precision}%`, sub: '', color: '#34D399' },
+            ].map(r => (
+              <div key={r.label} style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                <span style={{ color: '#8D9AAB', fontSize: '0.82rem' }}>{r.label}:</span>
+                <span style={{ color: r.color, fontWeight: 700, fontSize: '1.1rem', fontFamily: 'monospace' }}>{r.value}</span>
+                {r.sub && <span style={{ color: '#8D9AAB', fontSize: '0.82rem' }}>{r.sub}</span>}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Create Rule Modal */}
-      <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Create Custom Rule" width="600px">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          <div className={styles.modalInputGroup}>
-            <label className={styles.modalLabel}>Rule Name</label>
-            <input type="text" value={newRule.name} onChange={e => setNewRule({...newRule, name: e.target.value})} className={styles.modalInput} placeholder="e.g. High Card Velocity" />
-          </div>
-          
-          <div className={styles.modalGrid2}>
-            <div className={styles.modalInputGroup}>
-              <label className={styles.modalLabel}>Entity</label>
-              <select value={newRule.entity} onChange={e => setNewRule({...newRule, entity: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
+      {/* ── Modals ───────────────────────────────────────────────────────────── */}
+
+      {/* Create Rule */}
+      <IntModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} title="Create Custom Rule" width="560px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField label="Rule Name">
+            <input style={inputStyle} type="text" placeholder="e.g. High Card Velocity" value={newRule.name} onChange={e => setNewRule({ ...newRule, name: e.target.value })} />
+          </FormField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <FormField label="Entity">
+              <select style={selectStyle} value={newRule.entity} onChange={e => setNewRule({ ...newRule, entity: e.target.value })}>
                 <option value="card">Card</option>
                 <option value="user">User</option>
                 <option value="ip">IP</option>
                 <option value="device">Device</option>
               </select>
-            </div>
-            <div className={styles.modalInputGroup}>
-              <label className={styles.modalLabel}>Metric</label>
-              <select value={newRule.metric} onChange={e => setNewRule({...newRule, metric: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
+            </FormField>
+            <FormField label="Metric">
+              <select style={selectStyle} value={newRule.metric} onChange={e => setNewRule({ ...newRule, metric: e.target.value })}>
                 <option value="velocity">Velocity</option>
                 <option value="amount">Amount</option>
               </select>
-            </div>
+            </FormField>
           </div>
-          
-          <div className={styles.modalGrid3}>
-            <div className={styles.modalInputGroup}>
-              <label className={styles.modalLabel}>Operator</label>
-              <select value={newRule.operator} onChange={e => setNewRule({...newRule, operator: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            <FormField label="Operator">
+              <select style={selectStyle} value={newRule.operator} onChange={e => setNewRule({ ...newRule, operator: e.target.value })}>
                 <option value=">=">&gt;=</option>
                 <option value=">">&gt;</option>
                 <option value="<">&lt;</option>
                 <option value="==">==</option>
               </select>
-            </div>
-            <div className={styles.modalInputGroup}>
-              <label className={styles.modalLabel}>Value</label>
-              <input type="number" value={newRule.value} onChange={e => setNewRule({...newRule, value: e.target.value})} className={styles.modalInput} placeholder="e.g. 5" />
-            </div>
-            <div className={styles.modalInputGroup}>
-              <label className={styles.modalLabel}>Window</label>
-              <select value={newRule.window} onChange={e => setNewRule({...newRule, window: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
+            </FormField>
+            <FormField label="Value">
+              <input style={inputStyle} type="number" placeholder="e.g. 5" value={newRule.value} onChange={e => setNewRule({ ...newRule, value: e.target.value })} />
+            </FormField>
+            <FormField label="Window">
+              <select style={selectStyle} value={newRule.window} onChange={e => setNewRule({ ...newRule, window: e.target.value })}>
                 <option value="1h">1 Hour</option>
                 <option value="24h">24 Hours</option>
                 <option value="7d">7 Days</option>
               </select>
-            </div>
+            </FormField>
           </div>
-
-          <div className={styles.modalInputGroup}>
-            <label className={styles.modalLabel}>Action (Consequence)</label>
-            <select value={newRule.action} onChange={e => setNewRule({...newRule, action: e.target.value})} className={styles.selectInput} style={{ width: '100%' }}>
+          <FormField label="Action (Consequence)">
+            <select style={selectStyle} value={newRule.action} onChange={e => setNewRule({ ...newRule, action: e.target.value })}>
               <option value="flag">Flag for Review (Low Friction)</option>
               <option value="step_up">Step-up Auth (Medium Friction)</option>
               <option value="block">Block Transaction (High Friction)</option>
             </select>
-          </div>
-
-          <div className={styles.modalActions}>
-            <button onClick={() => setIsCreateModalOpen(false)} className={styles.cancelBtn}>
-              Cancel
-            </button>
-            <button onClick={handleCreateRule} className={styles.createButton} style={{ margin: 0 }}>
-              Save Rule
-            </button>
+          </FormField>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+            <CancelBtn onClick={() => setIsCreateOpen(false)}>Cancel</CancelBtn>
+            <PrimaryBtn onClick={handleCreate} disabled={!newRule.name.trim() || !newRule.value}>Save Rule</PrimaryBtn>
           </div>
         </div>
-      </Modal>
+      </IntModal>
 
-      {/* Delete Confirmation Modal */}
-      <Modal isOpen={!!ruleToDelete} onClose={() => setRuleToDelete(null)} title="Confirm Deletion" width="400px">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          <p style={{ color: 'var(--text-main)', margin: 0, fontSize: '0.95rem', lineHeight: 1.5 }}>
+      {/* Delete Confirm */}
+      <IntModal isOpen={!!ruleToDelete} onClose={() => setRuleToDelete(null)} title="Delete Rule" width="380px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <p style={{ color: '#E8EDF4', fontSize: '0.9rem', lineHeight: 1.6, margin: 0 }}>
             Are you sure you want to delete this rule? This action cannot be undone.
           </p>
-          <div className={styles.modalActions}>
-            <button onClick={() => setRuleToDelete(null)} className={styles.cancelBtn}>
-              Cancel
-            </button>
-            <button onClick={confirmDelete} className={styles.createButton} style={{ margin: 0, background: 'var(--risk-critical)', boxShadow: 'none' }}>
-              Delete Rule
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <CancelBtn onClick={() => setRuleToDelete(null)}>Cancel</CancelBtn>
+            <DangerBtn onClick={confirmDelete}>Delete Rule</DangerBtn>
           </div>
         </div>
-      </Modal>
+      </IntModal>
 
-      {/* Add Window Modal */}
-      <Modal isOpen={!!windowModalEntity} onClose={() => setWindowModalEntity(null)} title={`Add ${windowModalEntity} Window`} width="400px">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          <div className={styles.modalInputGroup}>
-            <label className={styles.modalLabel}>Window Duration</label>
-            <input 
-              type="text" 
-              value={newWindowValue} 
-              onChange={e => setNewWindowValue(e.target.value)} 
-              className={styles.modalInput} 
-              placeholder="e.g. 12h, 48h, 90d" 
+      {/* Add Window */}
+      <IntModal isOpen={!!windowEntity} onClose={() => setWindowEntity(null)} title={`Add ${windowEntity} Window`} width="360px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField label="Window Duration">
+            <input style={inputStyle} type="text" placeholder="e.g. 12h, 48h, 90d" value={newWindow}
+              onChange={e => setNewWindow(e.target.value)}
               autoFocus
-              onKeyDown={e => {
-                if (e.key === 'Enter') confirmAddWindow();
-              }}
+              onKeyDown={e => { if (e.key === 'Enter') confirmAddWindow(); }}
             />
-          </div>
-          <div className={styles.modalActions}>
-            <button onClick={() => setWindowModalEntity(null)} className={styles.cancelBtn}>
-              Cancel
-            </button>
-            <button onClick={confirmAddWindow} className={styles.createButton} style={{ margin: 0 }}>
-              Add Window
-            </button>
+          </FormField>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <CancelBtn onClick={() => setWindowEntity(null)}>Cancel</CancelBtn>
+            <PrimaryBtn onClick={confirmAddWindow} disabled={!newWindow.trim()}>Add Window</PrimaryBtn>
           </div>
         </div>
-      </Modal>
+      </IntModal>
     </div>
   );
 }
