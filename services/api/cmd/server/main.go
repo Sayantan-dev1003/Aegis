@@ -101,7 +101,9 @@ func main() {
 	// Initialize Ingest Services & Repositories
 	txRepo := repository.NewTransactionRepository(pgPool)
 	outboxRepo := repository.NewOutboxRepository(pgPool)
-	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo)
+	ruleRepo := repository.NewRuleRepository(pgPool)
+	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo)
+	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo, rulesEngine)
 	
 	velocityStore := repository.NewVelocityStore(redisClient, &log.Logger)
 	ingestHandler := handler.NewIngestHandler(ingestService, velocityStore)
@@ -138,7 +140,6 @@ func main() {
 	statsRepo := repository.NewStatsRepository(pgPool)
 	
 	// Phase 2 Repositories
-	ruleRepo := repository.NewRuleRepository(pgPool)
 	queueRepo := repository.NewQueueRepository(pgPool)
 	intRepo := repository.NewIntegrationRepository(pgPool)
 	modelRepo := repository.NewModelRepository(pgPool)

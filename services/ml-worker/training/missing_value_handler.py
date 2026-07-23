@@ -147,7 +147,7 @@ class MissingValueHandler:
         logger.info("Fitting the imputer on training data...")
         start_time = time.time()
         
-        numeric_transformer = SimpleImputer(strategy="median")
+        numeric_transformer = SimpleImputer(strategy="mean")
         categorical_transformer = SimpleImputer(strategy="most_frequent")
         
         self.imputer = ColumnTransformer(
@@ -160,7 +160,9 @@ class MissingValueHandler:
         )
         
         self.imputer.set_output(transform="pandas")
-        self.imputer.fit(self.train_df)
+        # Drop excluded columns before fitting so the imputer doesn't memorize them
+        cols_to_drop = list(self.excluded_cols.intersection(self.train_df.columns))
+        self.imputer.fit(self.train_df.drop(columns=cols_to_drop))
         
         fit_time = time.time() - start_time
         logger.info(f"Imputer fitted in {fit_time:.4f} seconds.")
@@ -184,7 +186,7 @@ class MissingValueHandler:
 
     def transform(self) -> None:
         """Transforms both training and validation datasets."""
-        logger.info("Transforming training data...")
+        logger.info("Transforming training data using memory-efficient pandas fillna...")
         
         # Calculate missing values before for report
         train_missing_before = {k: int(v) for k, v in self.train_df.isna().sum().items()}
@@ -202,18 +204,23 @@ class MissingValueHandler:
         self.train_excluded_vals = self.train_df[excluded_present].copy()
         self.val_excluded_vals = self.val_df[excluded_present].copy()
         
+        # Extract fill values from scikit-learn imputer
+        num_stats = self.imputer.named_transformers_["num"].statistics_
+        cat_stats = self.imputer.named_transformers_["cat"].statistics_
+        
+        fill_dict = dict(zip(self.numerical_cols, num_stats))
+        fill_dict.update(dict(zip(self.categorical_cols, cat_stats)))
+        
         # Transform train
         start_time = time.time()
-        self.train_df = self.imputer.transform(self.train_df)
-        self.train_df = self._restore_schema(self.train_df)
+        self.train_df.fillna(value=fill_dict, inplace=True)
         train_transform_time = time.time() - start_time
         logger.info(f"Training data transformed in {train_transform_time:.4f} seconds.")
         
         # Transform validation
         logger.info("Transforming validation data...")
         start_time = time.time()
-        self.val_df = self.imputer.transform(self.val_df)
-        self.val_df = self._restore_schema(self.val_df)
+        self.val_df.fillna(value=fill_dict, inplace=True)
         val_transform_time = time.time() - start_time
         logger.info(f"Validation data transformed in {val_transform_time:.4f} seconds.")
         

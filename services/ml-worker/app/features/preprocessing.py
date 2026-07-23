@@ -15,20 +15,25 @@ class Preprocessor:
         self.imputer = artifacts.imputer
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        # Capture original columns BEFORE transform.
-        # get_feature_names_out() on a ColumnTransformer may prefix column names
-        # (e.g. "remainder__TransactionAmt"), which would break all downstream lookups.
-        # The imputer only fills gaps — it never adds or removes columns — so the
-        # original column list is always the correct one to reconstruct with.
         original_cols = df.columns.tolist()
 
-        transformed_data = self.imputer.transform(df)
+        try:
+            num_features = self.imputer.transformers_[0][2]
+            num_stats = self.imputer.named_transformers_["num"].statistics_
+            
+            cat_features = self.imputer.transformers_[1][2]
+            cat_stats = self.imputer.named_transformers_["cat"].statistics_
+            
+            fill_dict = dict(zip(num_features, num_stats))
+            fill_dict.update(dict(zip(cat_features, cat_stats)))
+            
+            # Fill NA in place
+            df.fillna(value=fill_dict, inplace=True)
+            
+        except Exception as e:
+            logger.error(f"Failed to manually apply imputer stats: {e}, falling back to transform")
+            # If for some reason extraction fails, we can fall back (though it will likely fail on missing columns)
+            transformed_data = self.imputer.transform(df)
+            df = pd.DataFrame(transformed_data, columns=original_cols, index=df.index)
 
-        if transformed_data.shape[1] != len(original_cols):
-            raise ValueError(
-                f"Imputer changed column count: expected {len(original_cols)}, "
-                f"got {transformed_data.shape[1]}. This indicates an unexpected "
-                "ColumnTransformer configuration."
-            )
-
-        return pd.DataFrame(transformed_data, columns=original_cols, index=df.index)
+        return df

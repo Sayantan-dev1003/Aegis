@@ -38,8 +38,22 @@ python -m training.feature_selection
 echo "8/10: Hyperparameter Optimization..."
 python -m training.hyperparameter_optimization || true # explicitly skip but don't fail for now if it's intentionally skipped
 
-echo "9/10: Best Model Training (XGBoost)..."
+echo "9/14: Best Model Training (XGBoost)..."
 python -m training.train
 
-echo "10/10: Export Artifacts (completed inside train.py)"
+echo "10/14: Probability Calibration..."
+python -m training.probability_calibration
+
+echo "11/14: Model Evaluation..."
+python -m training.evaluate
+
+echo "12/14: Threshold Optimization..."
+python -m training.threshold_optimizer
+
+echo "13/14: SHAP Explainability..."
+python -m training.shap_explainability
+
+echo "14/14: Export Artifacts (Packaging Deployment)..."
+python -m training.export_artifacts
+
 echo "ML Pipeline Completed Successfully."

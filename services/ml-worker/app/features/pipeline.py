@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 from typing import Any
 
@@ -53,10 +54,14 @@ def _derive_raw_columns(artifacts: RuntimeArtifacts) -> list[str]:
     imputer = artifacts.imputer
     if hasattr(imputer, "feature_names_in_") and imputer.feature_names_in_ is not None:
         raw_cols = list(imputer.feature_names_in_)
-        # Remove excluded columns (TransactionID, isFraud) that the imputer saw
-        # but which are never present in the Kafka inference payload.
         excluded = {"TransactionID", "isFraud"}
         raw_cols = [c for c in raw_cols if c not in excluded]
+        
+        # Strip engineered features that the imputer saw during training 
+        # but which will be generated at runtime, so the Cleaner does not
+        # expect them in the raw payload.
+        raw_cols = _derive_raw_columns_fallback(raw_cols)
+        
         logger.info(
             "raw_columns_sourced_from_imputer",
             count=len(raw_cols),
@@ -180,14 +185,26 @@ class FeaturePipeline:
             # 1. Clean — validate payload, insert missing raw cols as NaN
             df = self.cleaner.clean(raw_dict)
 
-            # 2. Impute — fill NaNs; column names preserved (not prefixed)
-            df = self.preprocessor.transform(df)
-
-            # 3. Engineer — add all derived features
+            # 2. Engineer — add all derived features (before imputation, matching training)
             df = self.feature_engineer.transform(df)
 
+            # 3. Impute — fill NaNs; column names preserved (not prefixed)
+            df = self.preprocessor.transform(df)
+
             # 4. Encode — categorical columns → one-hot / ordinal
-            encoded_array = self.encoder.transform(df.copy())
+            # Drop any columns that the encoder wasn't trained on (e.g. velocity
+            # features added at runtime: txn_velocity_1h, txn_velocity_24h,
+            # device_seen_before, AccountID). Passing unknown columns to a fitted
+            # ColumnTransformer raises ValueError: "Feature names unseen at fit time".
+            if hasattr(self.encoder, "feature_names_in_"):
+                known_cols = [c for c in self.encoder.feature_names_in_ if c in df.columns]
+                df_for_encoder = df[known_cols].copy()
+                numeric_cols = [c for c in df.columns if c not in known_cols]
+            else:
+                df_for_encoder = df.copy()
+                numeric_cols = []
+                
+            encoded_array = self.encoder.transform(df_for_encoder)
 
             # Use the encoder's own output names when available; fall back to
             # positional names only if the encoder doesn't expose them.
@@ -201,16 +218,30 @@ class FeaturePipeline:
                 columns=encoded_cols,
                 index=df.index,
             )
+            
+            # Merge un-encoded numeric features back with encoded features
+            if numeric_cols:
+                df_encoded = pd.concat([df[numeric_cols], df_encoded], axis=1)
 
             # 5. Select — apply boolean mask; use mask to index encoded column names directly
-            selected_array = self.feature_selector.transform(df_encoded.copy())
+            if hasattr(self.feature_selector, "feature_names_in_"):
+                sel_cols = list(self.feature_selector.feature_names_in_)
+                # Ensure df_encoded columns exactly match what the selector expects
+                for c in sel_cols:
+                    if c not in df_encoded.columns:
+                        df_encoded[c] = np.nan
+                df_for_selector = df_encoded[sel_cols].copy()
+            else:
+                df_for_selector = df_encoded.copy()
+                
+            selected_array = self.feature_selector.transform(df_for_selector)
             mask = self.feature_selector.get_support()
-            selected_cols = df_encoded.columns[mask].tolist()
+            selected_cols = df_for_selector.columns[mask].tolist()
 
             final_df = pd.DataFrame(
                 selected_array,
                 columns=selected_cols,
-                index=df_encoded.index,
+                index=df_for_selector.index,
             )
 
             # 6. Validate schema

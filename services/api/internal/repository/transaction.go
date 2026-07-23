@@ -154,7 +154,7 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 
 	query := `
 		SELECT 
-			t.id, t.amount, t.merchant_id, t.status, t.ingested_at,
+			t.id, t.amount, t.currency, t.account_id, t.merchant_id, t.merchant_name, t.merchant_category, t.transaction_type, t.channel, t.country_code, t.ip_address, t.status, t.ingested_at, t.timestamp,
 			fr.fraud_score, fr.is_fraud, fr.created_at as scored_at
 		FROM transactions t
 		LEFT JOIN fraud_results fr ON fr.transaction_id = t.id
@@ -172,7 +172,10 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 	var results []model.TransactionSummary
 	for rows.Next() {
 		var summary model.TransactionSummary
-		err := rows.Scan(&summary.ID, &summary.Amount, &summary.MerchantID, &summary.Status, &summary.CreatedAt, &summary.FraudScore, &summary.IsFraud, &summary.ScoredAt)
+		err := rows.Scan(
+			&summary.ID, &summary.Amount, &summary.Currency, &summary.AccountID, &summary.MerchantID, &summary.MerchantName, &summary.MerchantCategory, &summary.TransactionType, &summary.Channel, &summary.CountryCode, &summary.IPAddress, &summary.Status, &summary.CreatedAt, &summary.Timestamp,
+			&summary.FraudScore, &summary.IsFraud, &summary.ScoredAt,
+		)
 		if err != nil {
 			return nil, "", fmt.Errorf("TransactionRepository.List scan: %w", err)
 		}
@@ -239,4 +242,19 @@ func (r *TransactionRepository) IncrementRequeue(ctx context.Context, id string)
 		return fmt.Errorf("TransactionRepository.IncrementRequeue: %w", pgx.ErrNoRows)
 	}
 	return nil
+}
+
+// CountByAccount gets the number of transactions for an account since a given time.
+func (r *TransactionRepository) CountByAccount(ctx context.Context, accountID string, since time.Time) (int, error) {
+	query := `
+		SELECT COUNT(*)
+		FROM transactions
+		WHERE account_id = $1 AND timestamp >= $2
+	`
+	var count int
+	err := r.db.QueryRow(ctx, query, accountID, since).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("TransactionRepository.CountByAccount: %w", err)
+	}
+	return count, nil
 }

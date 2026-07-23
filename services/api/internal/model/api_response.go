@@ -22,14 +22,23 @@ type PaginationCursor struct {
 
 // TransactionSummary represents a brief overview of a transaction.
 type TransactionSummary struct {
-	ID         string     `json:"id"`
-	Amount     float64    `json:"amount"`
-	MerchantID string     `json:"merchant_id"`
-	Status     string     `json:"status"`
-	FraudScore *float64   `json:"fraud_score,omitempty"`
-	IsFraud    *bool      `json:"is_fraud,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"` // maps to ingested_at
-	ScoredAt   *time.Time `json:"scored_at,omitempty"`
+	ID               string     `json:"id"`
+	Amount           float64    `json:"amount"`
+	Currency         *string    `json:"currency"`
+	AccountID        string     `json:"account_id"`
+	MerchantID       string     `json:"merchant_id"`
+	MerchantName     *string    `json:"merchant_name"`
+	MerchantCategory *string    `json:"merchant_category"`
+	TransactionType  *string    `json:"transaction_type"`
+	Channel          *string    `json:"channel"`
+	CountryCode      *string    `json:"country_code"`
+	IPAddress        *string    `json:"ip_address,omitempty"`
+	Status           string     `json:"status"`
+	FraudScore       *float64   `json:"fraud_score,omitempty"`
+	IsFraud          *bool      `json:"is_fraud,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"` // maps to ingested_at
+	Timestamp        time.Time  `json:"timestamp"`
+	ScoredAt         *time.Time `json:"scored_at,omitempty"`
 }
 
 // ListTransactionsResponse represents the response for listing transactions.

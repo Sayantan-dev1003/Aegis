@@ -767,6 +767,7 @@ class FeatureEngineer:
             "schema_version": ARTIFACT_SCHEMA_VERSION,
             "artifact_version": PIPELINE_VERSION,
             "feature_engineering_version": PIPELINE_VERSION,
+            "pipeline_version": PIPELINE_VERSION,
             "created_at": created_at,
             "aggregation_mappings": self.aggregation_mappings,
             "frequency_mappings": self.frequency_mappings,

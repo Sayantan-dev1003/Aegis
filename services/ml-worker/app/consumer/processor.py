@@ -102,8 +102,15 @@ class Processor:
                 inference_start = time.time()
 
                 from app.features.velocity_features import compute_redis_features
-                account_id = str(raw_message.get("AccountID", raw_message.get("card_id", "")))
-                device_id = raw_message.get("DeviceID", raw_message.get("device_id"))
+                account_id = str(
+                    raw_message.get("account_id") or 
+                    raw_message.get("AccountID") or 
+                    raw_message.get("card_id", "")
+                )
+                device_id = (
+                    raw_message.get("device_id") or 
+                    raw_message.get("DeviceID")
+                )
                 if not device_id and "metadata" in raw_message:
                     device_id = raw_message["metadata"].get("device_id")
                 

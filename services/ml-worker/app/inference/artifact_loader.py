@@ -160,7 +160,7 @@ class ArtifactLoader:
             if not runtime_preprocessing["frequency_mappings"]:
                 raise ArtifactLoadError("frequency_mappings is empty")
 
-            if runtime_preprocessing["schema_version"] != deployment_config.get("schema_version"):
+            if runtime_preprocessing["schema_version"] != deployment_config.get("runtime_preprocessing", {}).get("schema_version"):
                 raise ArtifactLoadError("Schema version mismatch")
             if runtime_preprocessing["pipeline_version"] != deployment_config.get("pipeline_version"):
                 raise ArtifactLoadError("Pipeline version mismatch")
