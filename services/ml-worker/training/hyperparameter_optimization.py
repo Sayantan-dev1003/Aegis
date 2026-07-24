@@ -85,7 +85,8 @@ class HyperparameterOptimizer:
         self.val_df: pd.DataFrame = pd.DataFrame()
         self.candidate_features: List[str] = []
         
-        self.study_path = os.path.join(self.artifact_dir, "optuna_study.pkl")
+        self.study_path = os.path.join(self.artifact_dir, "optuna_study.db")
+        self.storage_url = f"sqlite:///{self.study_path}"
         self.study = None
 
     def _setup_logger(self) -> logging.Logger:
@@ -237,18 +238,17 @@ class HyperparameterOptimizer:
         self._start_time = time.time()
         
         try:
-            if os.path.exists(self.study_path):
-                self.logger.info("Found existing Optuna study. Resuming...")
-                self.study = joblib.load(self.study_path)
-            else:
-                self.logger.info("Creating new Optuna study...")
-                sampler = TPESampler(seed=self.random_state)
-                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=20)
-                self.study = optuna.create_study(
-                    direction="maximize",
-                    sampler=sampler,
-                    pruner=pruner
-                )
+            self.logger.info(f"Initializing Optuna study at {self.storage_url}...")
+            sampler = TPESampler(seed=self.random_state)
+            pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=20)
+            self.study = optuna.create_study(
+                study_name="aegis_optimization",
+                storage=self.storage_url,
+                direction="maximize",
+                sampler=sampler,
+                pruner=pruner,
+                load_if_exists=True
+            )
         except Exception as e:
             self.logger.error(f"Failed to initialize study: {e}")
             raise HyperparameterOptimizationError("Could not initialize Optuna study.") from e
@@ -265,12 +265,11 @@ class HyperparameterOptimizer:
                     catch=(Exception,)
                 )
             except KeyboardInterrupt:
-                self.logger.warning("Optimization interrupted by user. Saving current state...")
+                self.logger.warning("Optimization interrupted by user. State is safely saved in SQLite database.")
             except Exception as e:
                 self.logger.error(f"Optimization error: {e}")
             finally:
-                joblib.dump(self.study, self.study_path)
-                self.logger.info(f"Study saved to {self.study_path}")
+                self.logger.info(f"Study state persisted at {self.study_path}")
         else:
             self.logger.info("Requested number of trials already completed in the loaded study.")
 
