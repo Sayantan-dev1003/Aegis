@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
@@ -70,7 +71,7 @@ func (r *TransactionRepository) FindByID(ctx context.Context, id string) (*model
 		SELECT 
 			id, external_id, account_id, merchant_id, merchant_name, merchant_category,
 			amount, currency, country_code, transaction_type, channel, device_id,
-			ip_address, timestamp, ingested_at, status
+			ip_address::text, timestamp, ingested_at, status
 		FROM transactions
 		WHERE id = $1
 	`
@@ -117,50 +118,99 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 	where := "WHERE 1=1"
 
 	if req.Status != "" {
-		where += " AND t.status = $" + string(rune('0'+argIdx))
+		where += fmt.Sprintf(" AND t.status = $%d", argIdx)
 		args = append(args, req.Status)
 		argIdx++
 	}
 
 	if !req.FromDate.IsZero() {
-		where += " AND t.ingested_at >= $" + string(rune('0'+argIdx))
+		where += fmt.Sprintf(" AND t.timestamp >= $%d", argIdx)
 		args = append(args, req.FromDate)
 		argIdx++
 	}
 
 	if !req.ToDate.IsZero() {
-		where += " AND t.ingested_at <= $" + string(rune('0'+argIdx))
+		where += fmt.Sprintf(" AND t.timestamp <= $%d", argIdx)
 		args = append(args, req.ToDate)
 		argIdx++
 	}
 
 	if req.MinScore > 0 {
-		where += " AND fr.fraud_score >= $" + string(rune('0'+argIdx))
+		where += fmt.Sprintf(" AND fr.fraud_score >= $%d", argIdx)
 		args = append(args, req.MinScore)
 		argIdx++
 	}
 
 	if req.IsFraud != nil {
-		where += " AND fr.is_fraud = $" + string(rune('0'+argIdx))
+		where += fmt.Sprintf(" AND fr.is_fraud = $%d", argIdx)
 		args = append(args, *req.IsFraud)
 		argIdx++
 	}
 
+	if req.MinAmount != nil {
+		where += fmt.Sprintf(" AND t.amount >= $%d", argIdx)
+		args = append(args, *req.MinAmount)
+		argIdx++
+	}
+
+	if req.MaxAmount != nil {
+		where += fmt.Sprintf(" AND t.amount <= $%d", argIdx)
+		args = append(args, *req.MaxAmount)
+		argIdx++
+	}
+
+	if req.Channel != "" {
+		where += fmt.Sprintf(" AND t.channel ILIKE $%d", argIdx)
+		args = append(args, req.Channel)
+		argIdx++
+	}
+
+	if req.TransactionType != "" {
+		where += fmt.Sprintf(" AND t.transaction_type ILIKE $%d", argIdx)
+		args = append(args, req.TransactionType)
+		argIdx++
+	}
+
+	if req.CountryCode != "" {
+		where += fmt.Sprintf(" AND t.country_code ILIKE $%d", argIdx)
+		args = append(args, req.CountryCode)
+		argIdx++
+	}
+
+	if req.Search != "" {
+		searchStr := req.Search
+		if strings.HasPrefix(strings.ToUpper(searchStr), "ACCT_") {
+			where += fmt.Sprintf(" AND t.account_id ILIKE $%d", argIdx)
+			args = append(args, "%"+searchStr+"%")
+			argIdx++
+		} else if len(searchStr) >= 8 && !strings.Contains(searchStr, " ") {
+			where += fmt.Sprintf(" AND (t.id::text ILIKE $%d OR t.merchant_name ILIKE $%d)", argIdx, argIdx)
+			args = append(args, "%"+searchStr+"%")
+			argIdx++
+		} else {
+			where += fmt.Sprintf(" AND t.merchant_name ILIKE $%d", argIdx)
+			args = append(args, "%"+searchStr+"%")
+			argIdx++
+		}
+	}
+
 	if req.CursorID != "" && !req.CursorDate.IsZero() {
-		where += " AND (t.ingested_at, t.id) < ($" + string(rune('0'+argIdx)) + ", $" + string(rune('0'+argIdx+1)) + ")"
+		where += fmt.Sprintf(" AND (t.ingested_at, t.id) < ($%d, $%d)", argIdx, argIdx+1)
 		args = append(args, req.CursorDate, req.CursorID)
 		argIdx += 2
 	}
 
 	query := `
 		SELECT 
-			t.id, t.amount, t.currency, t.account_id, t.merchant_id, t.merchant_name, t.merchant_category, t.transaction_type, t.channel, t.country_code, t.ip_address, t.status, t.ingested_at, t.timestamp,
-			fr.fraud_score, fr.is_fraud, fr.created_at as scored_at
+			t.id, t.amount, t.currency, t.account_id, t.merchant_id, t.merchant_name, t.merchant_category, t.transaction_type, t.channel, t.country_code, t.ip_address::text, t.status, t.ingested_at, t.timestamp,
+			fr.fraud_score, fr.is_fraud, fr.created_at as scored_at,
+			r.decision
 		FROM transactions t
 		LEFT JOIN fraud_results fr ON fr.transaction_id = t.id
+		LEFT JOIN reviews r ON r.transaction_id = t.id
 		` + where + `
 		ORDER BY t.ingested_at DESC, t.id DESC
-		LIMIT $` + string(rune('0'+argIdx))
+		LIMIT $` + fmt.Sprintf("%d", argIdx)
 
 	args = append(args, req.Limit)
 	rows, err := r.db.Query(ctx, query, args...)
@@ -175,6 +225,7 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 		err := rows.Scan(
 			&summary.ID, &summary.Amount, &summary.Currency, &summary.AccountID, &summary.MerchantID, &summary.MerchantName, &summary.MerchantCategory, &summary.TransactionType, &summary.Channel, &summary.CountryCode, &summary.IPAddress, &summary.Status, &summary.CreatedAt, &summary.Timestamp,
 			&summary.FraudScore, &summary.IsFraud, &summary.ScoredAt,
+			&summary.ReviewDecision,
 		)
 		if err != nil {
 			return nil, "", fmt.Errorf("TransactionRepository.List scan: %w", err)

@@ -4,14 +4,20 @@ import "time"
 
 // ListTransactionsRequest represents the query parameters for listing transactions.
 type ListTransactionsRequest struct {
-	CursorID   string    `json:"-"`
-	CursorDate time.Time `json:"-"`
-	Limit      int       `json:"limit"`
-	Status   string    `json:"status"`
-	FromDate time.Time `json:"from_date"`
-	ToDate   time.Time `json:"to_date"`
-	MinScore float64   `json:"min_score"`
-	IsFraud  *bool     `json:"is_fraud"`
+	CursorID        string    `json:"-"`
+	CursorDate      time.Time `json:"-"`
+	Limit           int       `json:"limit"`
+	Status          string    `json:"status"`
+	FromDate        time.Time `json:"from_date"`
+	ToDate          time.Time `json:"to_date"`
+	MinScore        float64   `json:"min_score"`
+	IsFraud         *bool     `json:"is_fraud"`
+	MinAmount       *float64  `json:"min_amount"`
+	MaxAmount       *float64  `json:"max_amount"`
+	Channel         string    `json:"channel"`
+	TransactionType string    `json:"transaction_type"`
+	CountryCode     string    `json:"country_code"`
+	Search          string    `json:"search"`
 }
 
 // PaginationCursor encodes the last seen row for keyset pagination.
@@ -24,16 +30,17 @@ type PaginationCursor struct {
 type TransactionSummary struct {
 	ID               string     `json:"id"`
 	Amount           float64    `json:"amount"`
-	Currency         *string    `json:"currency"`
+	Currency         string     `json:"currency"`
 	AccountID        string     `json:"account_id"`
 	MerchantID       string     `json:"merchant_id"`
-	MerchantName     *string    `json:"merchant_name"`
-	MerchantCategory *string    `json:"merchant_category"`
-	TransactionType  *string    `json:"transaction_type"`
-	Channel          *string    `json:"channel"`
-	CountryCode      *string    `json:"country_code"`
+	MerchantName     string     `json:"merchant_name"`
+	MerchantCategory string     `json:"merchant_category"`
+	TransactionType  string     `json:"transaction_type"`
+	Channel          string     `json:"channel"`
+	CountryCode      string     `json:"country_code"`
 	IPAddress        *string    `json:"ip_address,omitempty"`
 	Status           string     `json:"status"`
+	ReviewDecision   *string    `json:"review_decision,omitempty"`
 	FraudScore       *float64   `json:"fraud_score,omitempty"`
 	IsFraud          *bool      `json:"is_fraud,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"` // maps to ingested_at
@@ -57,14 +64,24 @@ type TransactionDetailResponse struct {
 
 // TransactionDetail provides full details of a transaction.
 type TransactionDetail struct {
-	ID         string    `json:"id"`
-	Amount     float64   `json:"amount"`
-	MerchantID string    `json:"merchant_id"`
-	CardID     string    `json:"card_id"` // mapped from DB account_id
-	Status     string    `json:"status"`
-	Metadata   any       `json:"metadata"` // Raw metadata or standard fields
-	CreatedAt  time.Time `json:"created_at"` // maps to ingested_at
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID               string     `json:"id"`
+	ExternalID       string     `json:"external_id"`
+	Amount           float64    `json:"amount"`
+	Currency         string     `json:"currency"`
+	MerchantID       string     `json:"merchant_id"`
+	MerchantName     string     `json:"merchant_name"`
+	MerchantCategory string     `json:"merchant_category"`
+	CardID           string     `json:"card_id"` // mapped from DB account_id
+	Status           string     `json:"status"`
+	TransactionType  string     `json:"transaction_type"`
+	Channel          string     `json:"channel"`
+	CountryCode      string     `json:"country_code"`
+	IPAddress        *string    `json:"ip_address,omitempty"`
+	DeviceID         *string    `json:"device_id,omitempty"`
+	Metadata         any        `json:"metadata"` // Raw metadata or standard fields
+	CreatedAt        time.Time  `json:"created_at"` // maps to ingested_at
+	Timestamp        time.Time  `json:"timestamp"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // FeatureWeight represents the impact of a specific feature on the fraud score.

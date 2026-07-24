@@ -64,7 +64,7 @@ func (s *ReviewService) SubmitReview(
 		return nil, fmt.Errorf("failed to lock transaction: %w", err)
 	}
 
-	if status != "scored" && status != "auto_blocked" {
+	if status != "scored" && status != "auto_blocked" && status != "escalated" {
 		return nil, fmt.Errorf("transaction is not in a reviewable state: %s", status)
 	}
 

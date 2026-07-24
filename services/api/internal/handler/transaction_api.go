@@ -105,6 +105,36 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if minAmountStr := q.Get("min_amount"); minAmountStr != "" {
+		a, err := strconv.ParseFloat(minAmountStr, 64)
+		if err == nil {
+			req.MinAmount = &a
+		}
+	}
+
+	if maxAmountStr := q.Get("max_amount"); maxAmountStr != "" {
+		a, err := strconv.ParseFloat(maxAmountStr, 64)
+		if err == nil {
+			req.MaxAmount = &a
+		}
+	}
+
+	if channel := q.Get("channel"); channel != "" {
+		req.Channel = channel
+	}
+
+	if txType := q.Get("transaction_type"); txType != "" {
+		req.TransactionType = txType
+	}
+
+	if country := q.Get("country_code"); country != "" {
+		req.CountryCode = country
+	}
+
+	if search := q.Get("search"); search != "" {
+		req.Search = search
+	}
+
 	span.SetAttributes(
 		attribute.String("filter.status", req.Status),
 		attribute.Int("pagination.limit", req.Limit),
@@ -137,7 +167,7 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	results, _, err := h.txRepo.List(ctx, req)
 	if err != nil {
-		h.respondError(w, "internal server error", http.StatusInternalServerError)
+		h.respondError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -182,13 +212,23 @@ func (h *TransactionHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 	resp := model.TransactionDetailResponse{
 		Transaction: model.TransactionDetail{
-			ID:         tx.ID,
-			Amount:     tx.Amount,
-			MerchantID: tx.MerchantID,
-			CardID:     tx.AccountID,
-			Status:     tx.Status,
-			CreatedAt:  tx.IngestedAt,
-			UpdatedAt:  tx.UpdatedAt,
+			ID:               tx.ID,
+			ExternalID:       tx.ExternalID,
+			Amount:           tx.Amount,
+			Currency:         tx.Currency,
+			MerchantID:       tx.MerchantID,
+			MerchantName:     tx.MerchantName,
+			MerchantCategory: tx.MerchantCategory,
+			CardID:           tx.AccountID,
+			Status:           tx.Status,
+			TransactionType:  tx.TransactionType,
+			Channel:          tx.Channel,
+			CountryCode:      tx.CountryCode,
+			IPAddress:        tx.IPAddress,
+			DeviceID:         tx.DeviceID,
+			CreatedAt:        tx.IngestedAt,
+			Timestamp:        tx.Timestamp,
+			UpdatedAt:        tx.UpdatedAt,
 		},
 	}
 
