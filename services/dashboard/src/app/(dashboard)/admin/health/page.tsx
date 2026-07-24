@@ -152,7 +152,7 @@ export default function SystemHealthPage() {
   const [kpiData, setKpiData] = useState<any>({});
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState('2m');
+  const [timeRange, setTimeRange] = useState('8s');
   const [incidents, setIncidents] = useState<any[]>([]);
 
   useEffect(() => {
