@@ -49,3 +49,22 @@ func (r *IncidentRepository) ListActive(ctx context.Context) ([]model.Incident, 
 
 	return incidents, nil
 }
+
+func (r *IncidentRepository) Create(ctx context.Context, incident *model.Incident) error {
+	query := `
+		INSERT INTO incidents (title, description, status, severity, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NOW(), NOW())
+		RETURNING id, created_at, updated_at
+	`
+	err := r.db.QueryRow(ctx, query,
+		incident.Title,
+		incident.Description,
+		incident.Status,
+		incident.Severity,
+	).Scan(&incident.ID, &incident.CreatedAt, &incident.UpdatedAt)
+	
+	if err != nil {
+		return fmt.Errorf("IncidentRepository.Create: failed to insert incident: %w", err)
+	}
+	return nil
+}

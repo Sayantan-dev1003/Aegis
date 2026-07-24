@@ -188,7 +188,7 @@ class ArtifactExporter:
                 dst = os.path.join(self.deployment_dir, file_name)
                 if os.path.exists(src):
                     original_sha = self._compute_sha256(src)
-                    shutil.copy2(src, dst)
+                    shutil.copyfile(src, dst)
                     copied_sha = self._compute_sha256(dst)
                     if copied_sha != original_sha:
                         self.checksum_verified = False

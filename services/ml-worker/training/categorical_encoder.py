@@ -101,7 +101,8 @@ class CategoricalEncoder:
         train_dtypes = train_df.dtypes
         val_dtypes = val_df.dtypes
         if not train_dtypes.equals(val_dtypes):
-            raise CategoricalEncoderError("Train and validation dtypes do not match.")
+            mismatches = [(col, train_dtypes[col], val_dtypes[col]) for col in train_df.columns if train_dtypes[col] != val_dtypes[col]]
+            raise CategoricalEncoderError(f"Train and validation dtypes do not match. Mismatches: {mismatches}")
 
     def detect_categorical_columns(self, train_df: pd.DataFrame):
         """Detects categorical columns based on dtype (object, category, string)."""

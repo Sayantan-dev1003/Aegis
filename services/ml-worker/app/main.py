@@ -87,14 +87,18 @@ def bootstrap() -> None:
         logger.critical("bootstrap_failed_unknown", error=str(e))
         sys.exit(1)
 
-def main() -> None:
+def init_background():
     bootstrap()
-    
-    # Start consumer in a separate thread
-    consumer_thread = threading.Thread(target=container.kafka_consumer.start, daemon=True)
-    consumer_thread.start()
-    
-    # Signal handlers for graceful shutdown
+    # Start consumer in this background thread
+    if hasattr(container, 'kafka_consumer') and container.kafka_consumer:
+        container.kafka_consumer.start()
+
+def main() -> None:
+    # Start background initialization thread
+    bg_thread = threading.Thread(target=init_background, daemon=True)
+    bg_thread.start()
+
+    # Graceful shutdown handler
     def handle_sigterm(signum, frame):
         logger.info("sigterm_received_shutting_down")
         
@@ -104,7 +108,7 @@ def main() -> None:
         
         if container.kafka_consumer:
             container.kafka_consumer.stop()
-        consumer_thread.join(timeout=30.0)
+        bg_thread.join(timeout=30.0)
         if container.kafka_producer:
             container.kafka_producer.close(timeout=5.0)
         if container.redis_client:
@@ -128,7 +132,7 @@ def main() -> None:
     
     # Run FastAPI server for health/metrics
     config = get_config()
-    uvicorn.run(api, host="0.0.0.0", port=config.settings.PROMETHEUS_PORT, log_level="warning")
+    uvicorn.run(api, host="0.0.0.0", port=config.settings.METRICS_PORT, log_level="warning")
 
 if __name__ == "__main__":
     main()

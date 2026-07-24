@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
-	"os/exec"
-	"time"
 	"path/filepath"
+	"time"
 
 	"github.com/Sayantan-dev1003/aegis/api/internal/middleware"
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
@@ -18,12 +18,17 @@ import (
 )
 
 type RetrainHandler struct {
-	retrainRepo *repository.RetrainRepository
-	modelRepo   *repository.ModelRepository
+	retrainRepo  *repository.RetrainRepository
+	modelRepo    *repository.ModelRepository
+	incidentRepo *repository.IncidentRepository
 }
 
-func NewRetrainHandler(retrainRepo *repository.RetrainRepository, modelRepo *repository.ModelRepository) *RetrainHandler {
-	return &RetrainHandler{retrainRepo: retrainRepo, modelRepo: modelRepo}
+func NewRetrainHandler(retrainRepo *repository.RetrainRepository, modelRepo *repository.ModelRepository, incidentRepo *repository.IncidentRepository) *RetrainHandler {
+	return &RetrainHandler{
+		retrainRepo:  retrainRepo,
+		modelRepo:    modelRepo,
+		incidentRepo: incidentRepo,
+	}
 }
 
 func (h *RetrainHandler) respondError(w http.ResponseWriter, msg string, code int) {
@@ -50,7 +55,7 @@ func (h *RetrainHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		log.Warn().Msg("AnalystInfo not found in context")
 	}
-	
+
 	hasPending, err := h.retrainRepo.HasPendingJob(r.Context())
 	if err != nil {
 		h.respondError(w, "failed to check pending jobs", http.StatusInternalServerError)
@@ -70,7 +75,7 @@ func (h *RetrainHandler) Trigger(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.retrainRepo.Create(r.Context(), job); err != nil {
-		h.respondError(w, "failed to create retrain job", http.StatusInternalServerError)
+		h.respondError(w, "failed to trigger retrain", http.StatusInternalServerError)
 		return
 	}
 
@@ -97,21 +102,50 @@ func (h *RetrainHandler) runMLPipeline(jobID string) {
 		}
 		mlWorkerDir = filepath.Join(cwd, "..", "ml-worker")
 	}
-	scriptPath := filepath.Join(mlWorkerDir, "run_pipeline.sh")
 
-	log.Info().Str("job_id", jobID).Msg("Starting ML Pipeline execution")
+	mlWorkerURL := os.Getenv("ML_WORKER_URL")
+	if mlWorkerURL == "" {
+		mlWorkerURL = "http://ml-worker:8000"
+	}
 
-	cmd := exec.Command("bash", scriptPath)
-	cmd.Dir = mlWorkerDir
+	// Make a POST request to trigger retraining
+	// Use a client with no timeout, as the ML pipeline can take several minutes
+	client := &http.Client{}
+	req, err := http.NewRequest("POST", mlWorkerURL+"/retrain", nil)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create HTTP request for ML pipeline")
+	}
 
-	// In a real environment, you'd capture stdout/stderr to a log file
-	out, err := cmd.CombinedOutput()
-	
+	var out []byte
+	if err == nil {
+		resp, reqErr := client.Do(req)
+		err = reqErr
+		if err == nil {
+			defer resp.Body.Close()
+			out, _ = io.ReadAll(resp.Body)
+			if resp.StatusCode != 200 {
+				err = fmt.Errorf("ML Worker returned status %d", resp.StatusCode)
+			}
+		}
+	}
+
 	durationSec := int(time.Since(start).Seconds())
-	
+
 	if err != nil {
 		log.Error().Err(err).Str("output", string(out)).Msg("ML Pipeline failed")
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
+
+		// Create an incident
+		desc := fmt.Sprintf("Retraining job %s failed. Error: %s\n\nOutput:\n%s", jobID, err.Error(), string(out))
+		incident := &model.Incident{
+			Title:       "ML Pipeline Failure",
+			Description: &desc,
+			Status:      "active",
+			Severity:    "critical",
+		}
+		if incErr := h.incidentRepo.Create(ctx, incident); incErr != nil {
+			log.Error().Err(incErr).Msg("Failed to create incident for ML pipeline failure")
+		}
 		return
 	}
 
@@ -133,7 +167,7 @@ func (h *RetrainHandler) runMLPipeline(jobID string) {
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
 		return
 	}
-	
+
 	// Parse metrics strictly without fallback
 	f1Score, ok := metadata["f1_score"].(float64)
 	if !ok {
@@ -141,57 +175,75 @@ func (h *RetrainHandler) runMLPipeline(jobID string) {
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
 		return
 	}
-	
+
 	precision, ok := metadata["precision"].(float64)
 	if !ok {
 		log.Error().Msg("precision missing from metadata")
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
 		return
 	}
-	
+
 	recall, ok := metadata["recall"].(float64)
 	if !ok {
 		log.Error().Msg("recall missing from metadata")
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
 		return
 	}
-	
+
 	accuracy, ok := metadata["accuracy"].(float64)
 	if !ok {
 		log.Error().Msg("accuracy missing from metadata")
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
 		return
 	}
-	
+
 	rocAuc, ok := metadata["roc_auc"].(float64)
 	if !ok {
 		log.Error().Msg("roc_auc missing from metadata")
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
 		return
 	}
-	
+
 	prAuc, ok := metadata["pr_auc"].(float64)
 	if !ok {
 		log.Error().Msg("pr_auc missing from metadata")
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
 		return
 	}
-	
+
+	// Read threshold metrics
+	thresholdPath := filepath.Join(mlWorkerDir, "reports", "threshold_analysis.json")
+	thresholdBytes, err := os.ReadFile(thresholdPath)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to read threshold_analysis.json, continuing with empty metrics")
+		thresholdBytes = []byte("[]")
+	}
+
+	// Read SHAP metrics
+	shapPath := filepath.Join(mlWorkerDir, "reports", "shap_feature_importance.json")
+	shapBytes, err := os.ReadFile(shapPath)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to read shap_feature_importance.json, continuing with empty metrics")
+		shapBytes = []byte("[]")
+	}
+
 	// Create a new model version in the database
 	newVersion := fmt.Sprintf("v%s", time.Now().Format("20060102.1504"))
-	
-	err = h.modelRepo.CreateVersion(ctx, 
-		"mod-"+uuid.New().String()[:8], 
-		newVersion, 
+
+	err = h.modelRepo.CreateVersion(ctx,
+		uuid.New().String(),
+		newVersion,
 		filepath.Join(mlWorkerDir, "deployment"),
-		f1Score, 
-		precision, 
+		f1Score,
+		precision,
 		recall,
 		accuracy,
 		rocAuc,
 		prAuc,
+		thresholdBytes,
+		shapBytes,
 	)
-	
+
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to insert new model version")
 		h.retrainRepo.UpdateStatus(ctx, jobID, "failed", &durationSec)
@@ -200,4 +252,28 @@ func (h *RetrainHandler) runMLPipeline(jobID string) {
 
 	// Mark job as completed
 	h.retrainRepo.UpdateStatus(ctx, jobID, "completed", &durationSec)
+}
+
+// Status returns the current readiness status of the ML Worker
+func (h *RetrainHandler) Status(w http.ResponseWriter, r *http.Request) {
+	mlWorkerURL := os.Getenv("ML_WORKER_URL")
+	if mlWorkerURL == "" {
+		mlWorkerURL = "http://ml-worker:8000"
+	}
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(mlWorkerURL + "/ready")
+	
+	status := "offline"
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			status = "live"
+		} else if resp.StatusCode == 503 {
+			status = "loading"
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": status})
 }

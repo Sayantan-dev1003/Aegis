@@ -60,7 +60,10 @@ class DataLoader:
         print("=" * 60)
 
         self.transaction = pd.read_csv(TRANSACTION_FILE)
+        self.transaction = optimize_memory(self.transaction)
+
         self.identity = pd.read_csv(IDENTITY_FILE)
+        self.identity = optimize_memory(self.identity)
 
         print(f"Transaction Shape : {self.transaction.shape}")
         print(f"Identity Shape    : {self.identity.shape}")
@@ -74,6 +77,12 @@ class DataLoader:
             how="left",
             on="TransactionID"
         )
+        
+        # Free up memory immediately
+        del self.transaction
+        del self.identity
+        import gc
+        gc.collect()
 
         print(f"Merged Shape : {self.df.shape}")
 

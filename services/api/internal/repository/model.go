@@ -101,11 +101,26 @@ func (r *ModelRepository) Rollback(ctx context.Context, id string) error {
 	return r.Deploy(ctx, id)
 }
 
-func (r *ModelRepository) CreateVersion(ctx context.Context, id, version, artifactPath string, f1Score, precision, recall, accuracy, rocAuc, prAuc float64) error {
+func (r *ModelRepository) CreateVersion(ctx context.Context, id, version, artifactPath string, f1Score, precision, recall, accuracy, rocAuc, prAuc float64, thresholdMetrics []byte, shapImportance []byte) error {
 	query := `
-		INSERT INTO model_versions (id, version, artifact_path, is_active, f1_score, precision, recall, accuracy, roc_auc, pr_auc, trained_at)
-		VALUES ($1, $2, $3, false, $4, $5, $6, $7, $8, $9, NOW())
+		INSERT INTO model_versions (id, version, artifact_path, is_active, f1_score, precision, recall, accuracy, roc_auc, pr_auc, trained_at, threshold_metrics, shap_importance)
+		VALUES ($1, $2, $3, false, $4, $5, $6, $7, $8, $9, NOW(), $10, $11)
 	`
-	_, err := r.db.Exec(ctx, query, id, version, artifactPath, f1Score, precision, recall, accuracy, rocAuc, prAuc)
+	_, err := r.db.Exec(ctx, query, id, version, artifactPath, f1Score, precision, recall, accuracy, rocAuc, prAuc, thresholdMetrics, shapImportance)
 	return err
+}
+
+func (r *ModelRepository) GetActiveMetrics(ctx context.Context) (*model.ModelVersion, error) {
+	query := `
+		SELECT threshold_metrics, shap_importance
+		FROM model_versions
+		WHERE is_active = true
+		LIMIT 1
+	`
+	var m model.ModelVersion
+	err := r.db.QueryRow(ctx, query).Scan(&m.ThresholdMetrics, &m.ShapImportance)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }

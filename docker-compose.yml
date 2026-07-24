@@ -199,6 +199,7 @@ services:
       MIGRATIONS_PATH: /app/migrations
     volumes:
       - ./migrations:/app/migrations
+      - ./services/ml-worker:/ml-worker
     networks:
       - aegis-network
     restart: unless-stopped
@@ -225,6 +226,8 @@ services:
       OTEL_SERVICE_NAME: aegis-ml-worker
       OTEL_RESOURCE_ATTRIBUTES: service.version=1.0.0,deployment.environment=development
       METRICS_PORT: "8000"
+    volumes:
+      - ./services/ml-worker:/app
     networks:
       - aegis-network
     restart: unless-stopped

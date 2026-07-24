@@ -24,6 +24,9 @@ def _deep_freeze(obj: Any) -> Any:
     if isinstance(obj, dict):
         return MappingProxyType({k: _deep_freeze(v) for k, v in obj.items()})
     if isinstance(obj, list):
+        # Optimization: if the list is non-empty and contains primitives, bypass deep recursion
+        if obj and type(obj[0]) in (int, float, str, bool):
+            return tuple(obj)
         return tuple(_deep_freeze(v) for v in obj)
     return obj
 

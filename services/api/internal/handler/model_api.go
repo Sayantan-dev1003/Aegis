@@ -106,3 +106,15 @@ func (h *ModelHandler) Rollback(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf(`{"message": "Rolled back to model %s successfully"}`, targetModel.Version)))
 }
+
+func (h *ModelHandler) ActiveMetrics(w http.ResponseWriter, r *http.Request) {
+	activeMetrics, err := h.modelRepo.GetActiveMetrics(r.Context())
+	if err != nil {
+		h.respondError(w, "active model metrics not found", http.StatusNotFound)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(activeMetrics)
+}
+

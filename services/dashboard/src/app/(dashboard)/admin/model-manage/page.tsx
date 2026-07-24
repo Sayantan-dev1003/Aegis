@@ -11,7 +11,7 @@ import {
 
 // ─── Chart data ───────────────────────────────────────────────────────────────
 
-const precisionRecallData = Array.from({ length: 100 }, (_, i) => {
+const fallbackPrecisionRecallData = Array.from({ length: 100 }, (_, i) => {
   const threshold = i / 100;
   return {
     threshold,
@@ -21,7 +21,7 @@ const precisionRecallData = Array.from({ length: 100 }, (_, i) => {
   };
 });
 
-const featureImportanceData = [
+const fallbackFeatureImportanceData = [
   { feature: 'amount', value: 0.85 },
   { feature: 'distance_from_home', value: 0.72 },
   { feature: 'time_since_last_txn', value: 0.65 },
@@ -96,19 +96,40 @@ const ChartCard = ({ title, subtitle, children }: { title: string; subtitle?: st
 
 // ─── Version status badge ─────────────────────────────────────────────────────
 
-const VersionBadge = ({ active }: { active: boolean }) => (
-  <span style={{
-    display: 'inline-flex', alignItems: 'center', gap: '5px',
-    padding: '3px 10px', borderRadius: '20px', fontSize: '0.72rem', fontWeight: 700,
-    background: active ? 'rgba(52,211,153,0.1)' : 'rgba(148,163,184,0.08)',
-    border: `1px solid ${active ? 'rgba(52,211,153,0.3)' : 'rgba(148,163,184,0.15)'}`,
-    color: active ? '#34D399' : '#8D9AAB',
-    textTransform: 'uppercase', letterSpacing: '0.05em',
-  }}>
-    <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: active ? '#34D399' : '#8D9AAB', flexShrink: 0 }} />
-    {active ? 'Live' : 'Archived'}
-  </span>
-);
+const VersionBadge = ({ active, deployedAt }: { active: boolean; deployedAt?: string }) => {
+  const isNew = !active && !deployedAt;
+  
+  let text = 'Archived';
+  let color = '#8D9AAB';
+  let bg = 'rgba(148,163,184,0.08)';
+  let border = 'rgba(148,163,184,0.15)';
+  
+  if (active) {
+    text = 'Live';
+    color = '#34D399';
+    bg = 'rgba(52,211,153,0.1)';
+    border = 'rgba(52,211,153,0.3)';
+  } else if (isNew) {
+    text = 'Ready';
+    color = '#60A5FA';
+    bg = 'rgba(96,165,250,0.1)';
+    border = 'rgba(96,165,250,0.3)';
+  }
+
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '5px',
+      padding: '3px 10px', borderRadius: '20px', fontSize: '0.72rem', fontWeight: 700,
+      background: bg,
+      border: `1px solid ${border}`,
+      color: color,
+      textTransform: 'uppercase', letterSpacing: '0.05em',
+    }}>
+      <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: color, flexShrink: 0 }} />
+      {text}
+    </span>
+  );
+};
 
 const JobStatusBadge = ({ status }: { status: string }) => {
   const map: Record<string, { color: string; bg: string; border: string }> = {
@@ -140,8 +161,12 @@ export default function ModelManagementPage() {
   const [retrainJobs, setRetrainJobs] = useState<any[]>([]);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [isRetraining, setIsRetraining] = useState(false);
+  const [workerStatus, setWorkerStatus] = useState<string>('loading');
 
-  const currentStats = precisionRecallData.find(d => d.threshold >= threshold) || precisionRecallData[0];
+  const [prData, setPrData] = useState<any[]>(fallbackPrecisionRecallData);
+  const [shapData, setShapData] = useState<any[]>(fallbackFeatureImportanceData);
+
+  const currentStats = prData.find(d => d.threshold >= threshold) || prData[0];
 
   const loadModels = async () => {
     try {
@@ -166,7 +191,45 @@ export default function ModelManagementPage() {
     }
   };
 
-  useEffect(() => { loadModels(); loadJobs(); }, []);
+  const loadMetrics = async () => {
+    try {
+      const data = await fetchApi('http://localhost:8080/admin/models/active/metrics');
+      if (data && data.threshold_metrics && Array.isArray(data.threshold_metrics) && data.threshold_metrics.length > 0) {
+        setPrData(data.threshold_metrics);
+      } else {
+        setPrData(fallbackPrecisionRecallData);
+      }
+      if (data && data.shap_importance && Array.isArray(data.shap_importance) && data.shap_importance.length > 0) {
+        setShapData(data.shap_importance);
+      } else {
+        setShapData(fallbackFeatureImportanceData);
+      }
+    } catch (e) {
+      setPrData(fallbackPrecisionRecallData);
+      setShapData(fallbackFeatureImportanceData);
+    }
+  };
+
+  const loadWorkerStatus = async () => {
+    try {
+      const data = await fetchApi('http://localhost:8080/admin/ml-worker/status');
+      if (data && data.status) {
+        setWorkerStatus(data.status);
+      } else {
+        setWorkerStatus('offline');
+      }
+    } catch (e) {
+      setWorkerStatus('offline');
+    }
+  };
+
+  useEffect(() => { loadModels(); loadJobs(); loadMetrics(); }, []);
+
+  useEffect(() => {
+    loadWorkerStatus();
+    const interval = setInterval(loadWorkerStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let tid: NodeJS.Timeout;
@@ -204,6 +267,8 @@ export default function ModelManagementPage() {
   };
 
   const active = models.find(m => m.is_active) || models[0] || {};
+  const selectedModelInfo = models.find(m => m.id === selectedVersion) || {};
+  const isSelectedModelNew = !selectedModelInfo.is_active && !selectedModelInfo.deployed_at;
 
   const kpis = [
     { label: 'PR-AUC',    value: (active.pr_auc    || 0).toFixed(3), sub: 'precision-recall area', accent: '#5C6EF8' },
@@ -235,7 +300,7 @@ export default function ModelManagementPage() {
         >
           <div style={{ height: 240, marginBottom: '12px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={precisionRecallData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <LineChart data={prData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                 <XAxis dataKey="threshold" stroke="#4E5A6B" tick={{ fontSize: 11 }} type="number" domain={[0, 1]} />
                 <YAxis stroke="#4E5A6B" tick={{ fontSize: 11 }} domain={[0, 1]} />
@@ -253,7 +318,7 @@ export default function ModelManagementPage() {
         <ChartCard title="Feature Importance (SHAP)" subtitle="Top 10 features by mean absolute SHAP value">
           <div style={{ height: 320 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart layout="vertical" data={featureImportanceData} margin={{ top: 5, right: 50, left: 40, bottom: 0 }}>
+              <BarChart layout="vertical" data={shapData} margin={{ top: 5, right: 50, left: 40, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" horizontal={false} />
                 <XAxis type="number" stroke="#4E5A6B" tick={{ fontSize: 11 }} />
                 <YAxis dataKey="feature" type="category" width={140} interval={0} tick={(props: any) => {
@@ -331,18 +396,19 @@ export default function ModelManagementPage() {
                         {(m.precision || 0).toFixed(3)} / {(m.recall || 0).toFixed(3)}
                       </span>
                     </td>
-                    <td style={{ padding: '14px 18px' }}><VersionBadge active={m.is_active} /></td>
+                    <td style={{ padding: '14px 18px' }}><VersionBadge active={m.is_active} deployedAt={m.deployed_at} /></td>
                     <td style={{ padding: '14px 18px', textAlign: 'right' }}>
                       {!m.is_active && (
                         <button
                           onClick={() => { setSelectedVersion(m.id); setIsRollbackOpen(true); }}
                           style={{
                             padding: '5px 12px', borderRadius: '6px', cursor: 'pointer',
-                            background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
-                            color: '#FCD34D', fontSize: '0.75rem', fontWeight: 600,
+                            background: m.deployed_at ? 'rgba(245,158,11,0.08)' : 'rgba(96,165,250,0.08)',
+                            border: `1px solid ${m.deployed_at ? 'rgba(245,158,11,0.25)' : 'rgba(96,165,250,0.25)'}`,
+                            color: m.deployed_at ? '#FCD34D' : '#60A5FA', fontSize: '0.75rem', fontWeight: 600,
                           }}
                         >
-                          Rollback
+                          {m.deployed_at ? 'Rollback' : 'Deploy'}
                         </button>
                       )}
                     </td>
@@ -361,21 +427,30 @@ export default function ModelManagementPage() {
             <div style={{ fontWeight: 600, fontSize: '1rem', color: '#E8EDF4' }}>Retrain Jobs</div>
             <div style={{ fontSize: '0.8rem', color: '#8D9AAB', marginTop: '2px' }}>Training job history and current status</div>
           </div>
-          <button
-            onClick={() => setIsRetrainOpen(true)}
-            disabled={isRetraining}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '7px',
-              padding: '9px 18px', borderRadius: '8px', border: 'none', cursor: isRetraining ? 'not-allowed' : 'pointer',
-              background: isRetraining ? 'rgba(92,110,248,0.3)' : 'linear-gradient(135deg, #5C6EF8 0%, #7E8DF9 100%)',
-              color: '#fff', fontWeight: 600, fontSize: '0.875rem',
-              boxShadow: isRetraining ? 'none' : '0 4px 14px rgba(92,110,248,0.35)',
-              opacity: isRetraining ? 0.7 : 1,
-            }}
-          >
-            <RefreshIcon />
-            {isRetraining ? 'Training…' : 'Trigger Retrain'}
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {workerStatus === 'loading' && (
+              <span style={{ fontSize: '0.8rem', color: '#F59E0B', fontWeight: 500 }}>ML Worker is loading...</span>
+            )}
+            {workerStatus === 'offline' && (
+              <span style={{ fontSize: '0.8rem', color: '#F43F5E', fontWeight: 500 }}>ML Worker is offline</span>
+            )}
+            <button
+              onClick={() => setIsRetrainOpen(true)}
+              disabled={isRetraining || workerStatus !== 'live'}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '7px',
+                padding: '9px 18px', borderRadius: '8px', border: 'none', 
+                cursor: (isRetraining || workerStatus !== 'live') ? 'not-allowed' : 'pointer',
+                background: (isRetraining || workerStatus !== 'live') ? 'rgba(92,110,248,0.3)' : 'linear-gradient(135deg, #5C6EF8 0%, #7E8DF9 100%)',
+                color: '#fff', fontWeight: 600, fontSize: '0.875rem',
+                boxShadow: (isRetraining || workerStatus !== 'live') ? 'none' : '0 4px 14px rgba(92,110,248,0.35)',
+                opacity: (isRetraining || workerStatus !== 'live') ? 0.7 : 1,
+              }}
+            >
+              <RefreshIcon />
+              {isRetraining ? 'Training…' : 'Trigger Retrain'}
+            </button>
+          </div>
         </div>
 
         <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', overflow: 'hidden' }}>
@@ -410,17 +485,17 @@ export default function ModelManagementPage() {
       {/* Dialogs */}
       <ConfirmDialog
         isOpen={isRollbackOpen}
-        title="Confirm Rollback"
-        description="Are you sure you want to rollback to this model version? All live scoring traffic will immediately redirect to the older model."
-        confirmLabel="Rollback"
-        danger={true}
+        title={isSelectedModelNew ? "Deploy New Model" : "Confirm Rollback"}
+        description={isSelectedModelNew ? "Are you sure you want to deploy this new model? All live traffic will redirect to it." : "Are you sure you want to rollback to this model version? All live scoring traffic will immediately redirect to the older model."}
+        confirmLabel={isSelectedModelNew ? "Deploy" : "Rollback"}
+        danger={!isSelectedModelNew}
         onConfirm={handleRollback}
         onCancel={() => setIsRollbackOpen(false)}
       />
       <ConfirmDialog
         isOpen={isRetrainOpen}
         title="Trigger Model Retrain"
-        description="This will start a new training job using the latest data. Training typically takes 45–60 minutes. Do you want to proceed?"
+        description="This will start a new training job using the latest data. Training typically takes 15 to 20 minutes. Do you want to proceed?"
         confirmLabel="Start Retrain"
         onConfirm={handleTriggerRetrain}
         onCancel={() => setIsRetrainOpen(false)}

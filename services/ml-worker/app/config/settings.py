@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     OTEL_EXPORTER_OTLP_ENDPOINT: str
     OTEL_SERVICE_NAME_ML: str
 
-    PROMETHEUS_PORT: int
+    METRICS_PORT: int = 8000
 
     FRAUD_THRESHOLD: float
     AUTO_BLOCK_THRESHOLD: float

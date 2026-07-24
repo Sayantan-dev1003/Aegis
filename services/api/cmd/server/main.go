@@ -169,7 +169,7 @@ func main() {
 	queueHandler := handler.NewQueueHandler(queueRepo, auditRepo)
 	intHandler := handler.NewIntegrationHandler(intRepo, auditRepo)
 	modelHandler := handler.NewModelHandler(modelRepo, auditRepo)
-	retrainHandler := handler.NewRetrainHandler(retrainRepo, modelRepo)
+	retrainHandler := handler.NewRetrainHandler(retrainRepo, modelRepo, incidentRepo)
 
 	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, fraudService)
 	wg.Add(1)
@@ -288,11 +288,13 @@ func main() {
 			r.Get("/admin/webhooks/{id}/deliveries", intHandler.ListWebhookDeliveries)
 			
 			r.Get("/admin/models", modelHandler.List)
+			r.Get("/admin/models/active/metrics", modelHandler.ActiveMetrics)
 			r.Post("/admin/models/{id}/deploy", modelHandler.Deploy)
 			r.Post("/admin/models/{id}/rollback", modelHandler.Rollback)
 			
 			r.Get("/admin/retrain-jobs", retrainHandler.List)
 			r.Post("/admin/retrain-jobs", retrainHandler.Trigger)
+			r.Get("/admin/ml-worker/status", retrainHandler.Status)
 			
 			// Phase 3 Route
 			metricsAdminHandler := handler.NewMetricsHandler()

@@ -214,6 +214,7 @@ class MissingValueHandler:
         # Transform train
         start_time = time.time()
         self.train_df.fillna(value=fill_dict, inplace=True)
+        self.train_df = self._restore_schema(self.train_df)
         train_transform_time = time.time() - start_time
         logger.info(f"Training data transformed in {train_transform_time:.4f} seconds.")
         
@@ -221,6 +222,7 @@ class MissingValueHandler:
         logger.info("Transforming validation data...")
         start_time = time.time()
         self.val_df.fillna(value=fill_dict, inplace=True)
+        self.val_df = self._restore_schema(self.val_df)
         val_transform_time = time.time() - start_time
         logger.info(f"Validation data transformed in {val_transform_time:.4f} seconds.")
         

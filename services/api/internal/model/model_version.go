@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type ModelVersion struct {
 	ID           string     `json:"id" db:"id"`
@@ -15,4 +18,6 @@ type ModelVersion struct {
 	PrAuc        float64    `json:"pr_auc" db:"pr_auc"`
 	TrainedAt    time.Time  `json:"trained_at" db:"trained_at"`
 	DeployedAt   *time.Time `json:"deployed_at" db:"deployed_at"`
+	ThresholdMetrics json.RawMessage `json:"threshold_metrics,omitempty" db:"threshold_metrics"`
+	ShapImportance   json.RawMessage `json:"shap_importance,omitempty" db:"shap_importance"`
 }

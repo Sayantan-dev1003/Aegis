@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 from fastapi import FastAPI, Response
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
@@ -68,3 +70,44 @@ def version() -> dict:
             "loaded_at": a.loaded_at.isoformat() + "Z",
         }
     return {"model_version": "unknown", "pipeline_version": "unknown"}
+
+@api.post("/retrain")
+def retrain() -> Response:
+    """
+    Triggers the ML pipeline. Runs synchronously in a thread pool.
+    Returns 200 on success, 500 on failure with stdout/stderr.
+    """
+    try:
+        script_path = os.path.join(os.getcwd(), "run_pipeline.sh")
+        if not os.path.exists(script_path):
+            return Response(
+                content=f"Error: {script_path} not found. Is the volume mounted?",
+                status_code=500
+            )
+            
+        # Run the bash script. Use capture_output=True to get stdout/stderr
+        result = subprocess.run(
+            ["bash", "run_pipeline.sh"],
+            capture_output=True,
+            text=True,
+            cwd=os.getcwd()
+        )
+        
+        if result.returncode != 0:
+            return Response(
+                content=json.dumps({"error": "Pipeline failed", "stderr": result.stderr, "stdout": result.stdout}),
+                media_type="application/json",
+                status_code=500
+            )
+            
+        return Response(
+            content=json.dumps({"status": "success", "stdout": result.stdout}),
+            media_type="application/json",
+            status_code=200
+        )
+    except Exception as e:
+        return Response(
+            content=json.dumps({"error": str(e)}),
+            media_type="application/json",
+            status_code=500
+        )
