@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/Sayantan-dev1003/aegis/api/internal/logger"
+	"github.com/Sayantan-dev1003/aegis/api/internal/metrics"
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
 	"github.com/go-chi/chi/v5/middleware"
+	"strconv"
 )
 
 // RequestLogger is a middleware that logs details of incoming HTTP requests using Zerolog.
@@ -36,6 +38,8 @@ func RequestLogger() func(next http.Handler) http.Handler {
 
 			defer func() {
 				duration := time.Since(t1)
+				statusStr := strconv.Itoa(ww.Status())
+				metrics.HTTPRequestDuration.WithLabelValues(rWithCtx.Method, rWithCtx.URL.Path, statusStr).Observe(duration.Seconds())
 
 				// Extract request ID from context if present
 				reqID := GetRequestID(rWithCtx.Context())

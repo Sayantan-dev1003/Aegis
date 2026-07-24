@@ -10,6 +10,7 @@ import (
 	"github.com/Sayantan-dev1003/aegis/api/internal/service"
 	"github.com/Sayantan-dev1003/aegis/api/internal/tracing"
 	"github.com/Sayantan-dev1003/aegis/api/internal/logger"
+	"github.com/Sayantan-dev1003/aegis/api/internal/metrics"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -90,6 +91,8 @@ func (h *IngestHandler) IngestTransactions(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
+
+	metrics.TransactionsIngestedTotal.WithLabelValues("success").Inc()
 
 	resp := map[string]string{
 		"transaction_id": txID,

@@ -119,35 +119,120 @@ const tooltipStyle = {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const TIME_RANGES = [
+  { label: 'Last 8 Sec', value: '8s' },
+  { label: 'Last 30 Sec', value: '30s' },
+  { label: 'Last 1 Min', value: '1m' },
+  { label: 'Last 2 Min', value: '2m' },
+  { label: 'Last 10 Min', value: '10m' },
+  { label: 'Last 30 Min', value: '30m' },
+  { label: 'Last 1 Hour', value: '1h' },
+  { label: 'Last 2 Hours', value: '2h' },
+  { label: 'Last 6 Hours', value: '6h' },
+  { label: 'Last 12 Hours', value: '12h' },
+  { label: 'Last 1 Day', value: '24h' },
+  { label: 'Last 2 Days', value: '48h' },
+  { label: 'Last 4 Days', value: '96h' },
+  { label: 'Last 1 Week', value: '168h' },
+  { label: 'Last 2 Weeks', value: '336h' },
+  { label: 'Last 1 Month', value: '720h' },
+];
+
+const getDurationMs = (range: string) => {
+  const val = parseInt(range);
+  if (range.endsWith('s')) return val * 1000;
+  if (range.endsWith('m')) return val * 60 * 1000;
+  if (range.endsWith('h')) return val * 60 * 60 * 1000;
+  return 120 * 1000;
+};
+
+
 export default function SystemHealthPage() {
   const [chartData, setChartData] = useState<any[]>([]);
   const [kpiData, setKpiData] = useState<any>({});
   const [services, setServices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = useState('2m');
+  const [incidents, setIncidents] = useState<any[]>([]);
 
   useEffect(() => {
     let mounted = true;
+    const fetchIncidents = async () => {
+      try {
+        const data = await fetchApi('http://localhost:8080/api/v1/incidents');
+        if (mounted && Array.isArray(data)) {
+          setIncidents(data);
+        }
+      } catch (err) {
+        console.error('Failed to load incidents', err);
+      }
+    };
+    fetchIncidents();
+    const interval = setInterval(fetchIncidents, 30000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, []);
 
-    const loadMetrics = async () => {
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return '';
+    // Round to nearest second purely for cleaner display
+    const d = new Date(Math.round(time / 1000) * 1000);
+    
+    if (timeRange === '720h') {
+      return `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`;
+    }
+    if (['336h', '168h', '96h', '48h', '24h'].includes(timeRange)) {
+      return `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+    }
+    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
+  };
+
+  // Load history when timeRange changes or on initial mount
+  useEffect(() => {
+    let mounted = true;
+    const fetchHistory = async () => {
+      setLoading(true);
+      try {
+        const historyData = await fetchApi(`http://localhost:8080/admin/metrics?history=true&duration=${timeRange}`);
+        if (!mounted) return;
+        if (historyData && Array.isArray(historyData)) {
+          setChartData(historyData);
+        }
+      } catch (err) {
+        console.error('Failed to load history metrics', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    fetchHistory();
+    return () => { mounted = false; };
+  }, [timeRange]);
+
+  // Poll for live metrics
+  useEffect(() => {
+    let mounted = true;
+
+    const loadLiveMetrics = async () => {
       try {
         const data = await fetchApi("http://localhost:8080/admin/metrics");
         if (!mounted || !data) return;
 
-        const now = new Date();
-        const timeStr = `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+        const durationMs = getDurationMs(timeRange);
+        const intervalMs = durationMs / 8;
+        const now = Date.now();
+        const roundedTime = Math.floor(now / intervalMs) * intervalMs;
 
         setChartData(prev => {
           const next = [...prev];
-          if (next.length > 20) next.shift();
-          next.push({
-            time: timeStr,
+          const filtered = next.filter(d => d.time >= roundedTime - durationMs && d.time !== roundedTime);
+          filtered.push({
+            time: roundedTime,
             topicA: data.consumer_lag?.['transactions.raw'] || 0,
             topicB: data.consumer_lag?.['transactions.scored'] || 0,
             p50: parseInt(data.api_latency?.p50 || '0'),
             p95: parseInt(data.api_latency?.p95 || '0'),
             p99: parseInt(data.api_latency?.p99 || '0'),
           });
-          return next;
+          return filtered.sort((a,b) => a.time - b.time);
         });
 
         setKpiData({
@@ -160,16 +245,16 @@ export default function SystemHealthPage() {
 
         setServices(data.services || []);
       } catch (err) {
-        console.error('Failed to load metrics', err);
-      } finally {
-        setLoading(false);
+        console.error('Failed to load live metrics', err);
       }
     };
 
-    loadMetrics();
-    const interval = setInterval(loadMetrics, 5000);
+    const durationMs = getDurationMs(timeRange);
+    const intervalMs = durationMs / 8; // 8 divisions = interval
+
+    const interval = setInterval(loadLiveMetrics, intervalMs);
     return () => { mounted = false; clearInterval(interval); };
-  }, []);
+  }, [timeRange]);
 
   if (loading) {
     return (
@@ -181,8 +266,6 @@ export default function SystemHealthPage() {
     );
   }
 
-  const incidents: any[] = [];
-
   const kpiCards = [
     { icon: <ActivityIcon />, label: 'Error Rate', value: kpiData.errorRate, sub: 'last 5 minutes', accent: '#34D399', glow: 'rgba(52,211,153,0.12)' },
     { icon: <ClockIcon />, label: 'Uptime', value: kpiData.uptime, sub: 'current session', accent: '#5C6EF8', glow: 'rgba(92,110,248,0.12)' },
@@ -191,8 +274,41 @@ export default function SystemHealthPage() {
     { icon: <DatabaseIcon />, label: 'Redis Hit Rate', value: kpiData.redisHit, sub: 'cache efficiency', accent: '#8B5CF6', glow: 'rgba(139,92,246,0.12)' },
   ];
 
+  const durationMs = getDurationMs(timeRange);
+  const intervalMs = durationMs / 8;
+  const now = Date.now();
+  const roundedEnd = Math.floor(now / intervalMs) * intervalMs;
+  const ticks = [];
+  for (let i = 8; i >= 0; i--) {
+    ticks.push(roundedEnd - i * intervalMs);
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', paddingBottom: '40px' }}>
+      
+      {/* Header controls */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '-10px' }}>
+        <select 
+          value={timeRange} 
+          onChange={(e) => setTimeRange(e.target.value)}
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: '#E8EDF4',
+            padding: '6px 12px',
+            borderRadius: '8px',
+            fontSize: '0.85rem',
+            outline: 'none',
+            cursor: 'pointer'
+          }}
+        >
+          {TIME_RANGES.map(tr => (
+            <option key={tr.value} value={tr.value} style={{ background: '#0D1117', color: '#E8EDF4' }}>
+              {tr.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {/* KPI Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px' }}>
@@ -203,9 +319,21 @@ export default function SystemHealthPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
         <ChartSection title="Kafka Consumer Lag" subtitle="Messages behind per topic, rolling 20 data points" live>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={chartData} margin={{ top: 5, right: 8, left: -20, bottom: 5 }}>
+            <LineChart data={chartData} margin={{ top: 5, right: 35, left: -20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="time" stroke="#4E5A6B" fontSize={11} tickLine={false} axisLine={false} tickMargin={8} />
+              <XAxis 
+                dataKey="time" 
+                type="number" 
+                domain={[ticks[0], ticks[8]]} 
+                ticks={ticks}
+                interval={0}
+                tickFormatter={formatTime} 
+                stroke="#4E5A6B" 
+                fontSize={9.5} 
+                tickLine={false} 
+                axisLine={false} 
+                tickMargin={8} 
+              />
               <YAxis stroke="#4E5A6B" fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip {...tooltipStyle} />
               <Line type="monotone" dataKey="topicA" name="txns-raw" stroke="#5C6EF8" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -225,9 +353,21 @@ export default function SystemHealthPage() {
 
         <ChartSection title="API Latency" subtitle="Response times in milliseconds (p50 / p95 / p99)" live>
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={chartData} margin={{ top: 5, right: 8, left: -20, bottom: 5 }}>
+            <LineChart data={chartData} margin={{ top: 5, right: 35, left: -20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="time" stroke="#4E5A6B" fontSize={11} tickLine={false} axisLine={false} tickMargin={8} />
+              <XAxis 
+                dataKey="time" 
+                type="number" 
+                domain={[ticks[0], ticks[8]]} 
+                ticks={ticks}
+                interval={0}
+                tickFormatter={formatTime} 
+                stroke="#4E5A6B" 
+                fontSize={9.5} 
+                tickLine={false} 
+                axisLine={false} 
+                tickMargin={8} 
+              />
               <YAxis stroke="#4E5A6B" fontSize={11} tickLine={false} axisLine={false} />
               <Tooltip {...tooltipStyle} />
               <Line type="monotone" dataKey="p50" name="p50" stroke="#34D399" strokeWidth={2} dot={false} isAnimationActive={false} />
@@ -271,15 +411,36 @@ export default function SystemHealthPage() {
         </div>
 
         <div style={{ padding: '40px 20px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', textAlign: 'center' }}>
-          <div style={{
-            width: '48px', height: '48px', borderRadius: '50%',
-            background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.25)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#34D399',
-          }}>
-            <CheckCircleIcon />
-          </div>
-          <div style={{ fontWeight: 600, color: '#E8EDF4' }}>All systems operational</div>
-          <div style={{ fontSize: '0.82rem', color: '#8D9AAB' }}>No active incidents or degradations reported.</div>
+          {incidents.length === 0 ? (
+            <>
+              <div style={{
+                width: '48px', height: '48px', borderRadius: '50%',
+                background: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.25)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#34D399',
+              }}>
+                <CheckCircleIcon />
+              </div>
+              <div style={{ fontWeight: 600, color: '#E8EDF4' }}>All systems operational</div>
+              <div style={{ fontSize: '0.82rem', color: '#8D9AAB' }}>No active incidents or degradations reported.</div>
+            </>
+          ) : (
+            <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {incidents.map(inc => (
+                <div key={inc.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', background: 'rgba(255,255,255,0.03)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', textAlign: 'left' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', marginBottom: '6px' }}>
+                    <span style={{ fontWeight: 600, color: '#E8EDF4', fontSize: '0.9rem' }}>{inc.title}</span>
+                    <span style={{ fontSize: '0.75rem', color: '#8D9AAB' }}>{new Date(inc.created_at).toLocaleString()}</span>
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#8D9AAB', marginBottom: '10px' }}>{inc.description}</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: '12px', background: inc.severity === 'critical' || inc.severity === 'high' ? 'rgba(244,63,94,0.1)' : 'rgba(245,158,11,0.1)', color: inc.severity === 'critical' || inc.severity === 'high' ? '#F43F5E' : '#F59E0B', border: `1px solid ${inc.severity === 'critical' || inc.severity === 'high' ? 'rgba(244,63,94,0.2)' : 'rgba(245,158,11,0.2)'}`, textTransform: 'uppercase' }}>
+                      {inc.severity}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

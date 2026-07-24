@@ -153,11 +153,14 @@ func main() {
 	configService := service.NewConfigService(configRepo, redisClient, &log.Logger)
 	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub)
 	reviewService := service.NewReviewService(pgPool, txRepo, reviewRepo, auditRepo, wsHub)
+	incidentRepo := repository.NewIncidentRepository(pgPool)
+	incidentService := service.NewIncidentService(incidentRepo)
 
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService)
 	txHandler := handler.NewTransactionHandler(txRepo, fraudResultRepo, reviewRepo)
 	reviewHandler := handler.NewReviewHandler(reviewService)
 	statsHandler := handler.NewStatsHandler(statsRepo, redisClient)
+	incidentHandler := handler.NewIncidentHandler(incidentService)
 	adminHandler := handler.NewAdminHandler(configRepo, txRepo, auditRepo, configService, kafkaProducer)
 	analystHandler := handler.NewAnalystHandler(analystRepo, auditRepo, authService)
 	
@@ -206,8 +209,16 @@ func main() {
 	r.Use(aegismw.RequestID)
 	r.Use(aegismw.RequestLogger())
 
-	// Expose Prometheus metrics
-	r.Handle("/metrics", promhttp.Handler())
+	// Expose Prometheus metrics on a separate port
+	go func() {
+		metricsMux := http.NewServeMux()
+		metricsMux.Handle("/metrics", promhttp.Handler())
+		metricsAddr := fmt.Sprintf(":%s", cfg.MetricsPort)
+		log.Info().Str("addr", metricsAddr).Msg("Listening for metrics requests")
+		if err := http.ListenAndServe(metricsAddr, metricsMux); err != nil {
+			log.Error().Err(err).Msg("Metrics server failed")
+		}
+	}()
 
 	// Health check endpoint
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -294,6 +305,7 @@ func main() {
 		r.Post("/api/v1/transactions/{id}/review", reviewHandler.SubmitReview)
 		r.Get("/api/v1/stats/summary", statsHandler.Summary)
 		r.Get("/api/v1/stats/trends", statsHandler.Trends)
+		r.Get("/api/v1/incidents", incidentHandler.GetActiveIncidents)
 	})
 
 	// Start server on configured API port
