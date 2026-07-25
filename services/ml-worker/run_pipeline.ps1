@@ -44,13 +44,13 @@ Write-Host "10/14: Probability Calibration..."
 & $python -m training.probability_calibration
 if ($LASTEXITCODE -ne 0) { throw "Pipeline failed at Probability Calibration" }
 
-Write-Host "11/14: Model Evaluation..."
-& $python -m training.evaluate
-if ($LASTEXITCODE -ne 0) { throw "Pipeline failed at Model Evaluation" }
-
-Write-Host "12/14: Threshold Optimization..."
+Write-Host "11/14: Threshold Optimization..."
 & $python -m training.threshold_optimizer
 if ($LASTEXITCODE -ne 0) { throw "Pipeline failed at Threshold Optimization" }
+
+Write-Host "12/14: Model Evaluation..."
+& $python -m training.evaluate
+if ($LASTEXITCODE -ne 0) { throw "Pipeline failed at Model Evaluation" }
 
 Write-Host "13/14: SHAP Explainability..."
 & $python -m training.shap_explainability 

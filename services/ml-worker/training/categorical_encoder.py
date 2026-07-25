@@ -9,7 +9,7 @@ from typing import Tuple, List, Dict, Any
 
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import OrdinalEncoder
+from sklearn.preprocessing import OneHotEncoder
 import joblib
 import sklearn
 
@@ -58,7 +58,15 @@ class CategoricalEncoder:
         self.target_col = "isFraud"
         self.exclude_cols = [self.id_col, self.target_col]
         
-        self.encoder = OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1, encoded_missing_value=-1)
+        # Configure OneHotEncoder for production (handling scikit-learn version differences)
+        self.sklearn_version = sklearn.__version__
+        self.sparse_kwargs = {}
+        if int(self.sklearn_version.split('.')[0]) >= 1 and int(self.sklearn_version.split('.')[1]) >= 2:
+            self.sparse_kwargs['sparse_output'] = False
+        else:
+            self.sparse_kwargs['sparse'] = False
+
+        self.encoder = OneHotEncoder(handle_unknown='ignore', dtype=np.int8, **self.sparse_kwargs)
         self.cat_cols: List[str] = []
         self.num_cols: List[str] = []
         self.encoded_feature_names: List[str] = []
@@ -237,8 +245,8 @@ class CategoricalEncoder:
         
         self.report.update({
             "timestamp_utc": datetime.utcnow().isoformat() + "Z",
-            "encoder_type": "OrdinalEncoder",
-            "scikit_learn_version": sklearn.__version__,
+            "encoder_type": "OneHotEncoder",
+            "scikit_learn_version": self.sklearn_version,
             "pandas_version": pd.__version__,
             "original_categorical_columns": self.cat_cols,
             "encoded_feature_count": encoded_feature_count,
@@ -281,9 +289,9 @@ class CategoricalEncoder:
                 "excluded_columns": self.exclude_cols,
                 "encoded_columns": self.encoded_feature_names,
                 "feature_order": self.final_feature_order,
-                "encoder_type": "OrdinalEncoder",
-                "handle_unknown": "use_encoded_value",
-                "scikit_learn_version": sklearn.__version__,
+                "encoder_type": "OneHotEncoder",
+                "handle_unknown": "ignore",
+                "scikit_learn_version": self.sklearn_version,
                 "pandas_version": pd.__version__,
                 "python_version": platform.python_version(),
                 "created_at_utc": datetime.utcnow().isoformat() + "Z"

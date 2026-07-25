@@ -102,10 +102,12 @@ func main() {
 	txRepo := repository.NewTransactionRepository(pgPool)
 	outboxRepo := repository.NewOutboxRepository(pgPool)
 	ruleRepo := repository.NewRuleRepository(pgPool)
-	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo)
+
+	velocityConfigRepo := repository.NewVelocityConfigRepository(pgPool)
+	velocityStore := repository.NewVelocityStore(redisClient, velocityConfigRepo, &log.Logger)
+
+	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo, velocityStore)
 	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo, rulesEngine)
-	
-	velocityStore := repository.NewVelocityStore(redisClient, &log.Logger)
 	ingestHandler := handler.NewIngestHandler(ingestService, velocityStore)
 
 	// Background context for graceful shutdown
@@ -170,6 +172,7 @@ func main() {
 	intHandler := handler.NewIntegrationHandler(intRepo, auditRepo)
 	modelHandler := handler.NewModelHandler(modelRepo, auditRepo)
 	retrainHandler := handler.NewRetrainHandler(retrainRepo, modelRepo, incidentRepo)
+	velocityConfigHandler := handler.NewVelocityConfigHandler(velocityConfigRepo, redisClient)
 
 	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, fraudService)
 	wg.Add(1)
@@ -271,6 +274,9 @@ func main() {
 			r.Patch("/admin/rules/{id}/toggle", ruleHandler.ToggleActive)
 			r.Delete("/admin/rules/{id}", ruleHandler.Delete)
 			r.Post("/admin/rules/{id}/backtest", ruleHandler.Backtest)
+			
+			r.Get("/admin/velocity-config", velocityConfigHandler.List)
+			r.Put("/admin/velocity-config/{entity}", velocityConfigHandler.Update)
 			
 			r.Get("/admin/queues", queueHandler.List)
 			r.Post("/admin/queues", queueHandler.Create)

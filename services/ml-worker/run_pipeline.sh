@@ -44,11 +44,11 @@ python -m training.train
 echo "10/14: Probability Calibration..."
 python -m training.probability_calibration
 
-echo "11/14: Model Evaluation..."
-python -m training.evaluate
-
-echo "12/14: Threshold Optimization..."
+echo "11/14: Threshold Optimization..."
 python -m training.threshold_optimizer
+
+echo "12/14: Model Evaluation..."
+python -m training.evaluate
 
 echo "13/14: SHAP Explainability..."
 python -m training.shap_explainability

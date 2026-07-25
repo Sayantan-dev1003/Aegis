@@ -80,13 +80,9 @@ func (h *IngestHandler) IngestTransactions(w http.ResponseWriter, r *http.Reques
 	span.SetStatus(codes.Ok, "")
 
 	// Record velocity signal (fire-and-forget style logging error if it fails)
-	deviceID := ""
-	if tx.DeviceID != nil {
-		deviceID = *tx.DeviceID
-	}
 	// We don't fail the request if velocity recording fails
 	_, velSpan := tracer.Start(ctx, "redis.record_velocity")
-	_ = h.velocityStore.RecordTransactionAndDevice(ctx, tx.AccountID, txID, tx.Timestamp, deviceID)
+	_ = h.velocityStore.RecordTransactionAndDevice(ctx, &tx)
 	velSpan.End()
 
 	w.Header().Set("Content-Type", "application/json")

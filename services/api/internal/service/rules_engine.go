@@ -12,16 +12,18 @@ import (
 )
 
 type RulesEngine struct {
-	ruleRepo *repository.RuleRepository
-	txRepo   *repository.TransactionRepository
-	tracer   trace.Tracer
+	ruleRepo      *repository.RuleRepository
+	txRepo        *repository.TransactionRepository
+	velocityStore *repository.VelocityStore
+	tracer        trace.Tracer
 }
 
-func NewRulesEngine(ruleRepo *repository.RuleRepository, txRepo *repository.TransactionRepository) *RulesEngine {
+func NewRulesEngine(ruleRepo *repository.RuleRepository, txRepo *repository.TransactionRepository, velocityStore *repository.VelocityStore) *RulesEngine {
 	return &RulesEngine{
-		ruleRepo: ruleRepo,
-		txRepo:   txRepo,
-		tracer:   otel.Tracer("aegis/api/service"),
+		ruleRepo:      ruleRepo,
+		txRepo:        txRepo,
+		velocityStore: velocityStore,
+		tracer:        otel.Tracer("aegis/api/service"),
 	}
 }
 
@@ -77,20 +79,23 @@ func (e *RulesEngine) evaluateRule(ctx context.Context, rule model.Rule, t *mode
 		if err != nil {
 			return false, err
 		}
-		
-		// Query database for count of transactions by this entity in the time window
-		since := time.Now().UTC().Add(-duration)
-		
 		var count int
-		if rule.Entity == "user" {
-			c, err := e.txRepo.CountByAccount(ctx, t.AccountID, since)
-			if err != nil {
-				return false, err
+		switch rule.Entity {
+		case "user":
+			count, err = e.velocityStore.Count(ctx, "user", t.AccountID, duration)
+		case "device":
+			if t.DeviceID != nil && *t.DeviceID != "" {
+				count, err = e.velocityStore.Count(ctx, "device", *t.DeviceID, duration)
 			}
-			count = c
-		} else if rule.Entity == "card" {
-			// Placeholder for non-user entities
-			count = 1 
+		case "ip":
+			if t.IPAddress != nil && *t.IPAddress != "" {
+				count, err = e.velocityStore.Count(ctx, "ip", *t.IPAddress, duration)
+			}
+		}
+		// If rule.Entity is "card", it will gracefully ignore (count remains 0) as discussed
+
+		if err != nil {
+			return false, err
 		}
 		metricValue = float64(count)
 	default:

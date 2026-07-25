@@ -43,12 +43,7 @@ const ShieldIcon = () => (
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_VELOCITY_CONFIGS = [
-  { entity: 'Card',   windows: ['1h', '24h', '7d'] },
-  { entity: 'User',   windows: ['24h', '7d', '30d'] },
-  { entity: 'IP',     windows: ['1h', '24h'] },
-  { entity: 'Device', windows: ['1h', '24h', '7d'] },
-];
+// Removed DEFAULT_VELOCITY_CONFIGS, fetching from API instead.
 
 // ─── Shared styles ────────────────────────────────────────────────────────────
 
@@ -90,7 +85,10 @@ const IntModal = ({ isOpen, onClose, title, width = '460px', children }: {
         boxShadow: '0 24px 80px rgba(0,0,0,0.8), 0 0 0 1px rgba(92,110,248,0.1)',
         overflow: 'hidden', animation: 'modalIn 0.18s ease',
       }}>
-        <style>{`@keyframes modalIn { from { opacity:0; transform:scale(0.95) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
+        <style>{`
+          @keyframes modalIn { from { opacity:0; transform:scale(0.95) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }
+          option { background: #0D1117; color: #E8EDF4; }
+        `}</style>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
           <span style={{ fontWeight: 700, fontSize: '1rem', color: '#E8EDF4' }}>{title}</span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8D9AAB', padding: '4px', borderRadius: '6px', display: 'flex', alignItems: 'center' }}><CloseIcon /></button>
@@ -173,7 +171,7 @@ export default function RulesPage() {
   const [windowEntity, setWindowEntity]   = useState<string | null>(null);
   const [newWindow, setNewWindow]         = useState('');
   const [search, setSearch]               = useState('');
-  const [velocityConfigs, setVelocityConfigs] = useState(DEFAULT_VELOCITY_CONFIGS);
+  const [velocityConfigs, setVelocityConfigs] = useState<any[]>([]);
 
   const [newRule, setNewRule] = useState({
     name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag',
@@ -183,9 +181,20 @@ export default function RulesPage() {
   const [backtestResult, setBacktestResult] = useState<any>(null);
   const [isBacktesting, setIsBacktesting]   = useState(false);
 
-  useEffect(() => {
-    const stored = localStorage.getItem('velocityConfigs');
-    if (stored) { try { setVelocityConfigs(JSON.parse(stored)); } catch (e) {} }
+  const loadVelocityConfigs = async () => {
+    try {
+      const data = await fetchApi('http://localhost:8080/admin/velocity-config');
+      if (data && data.length > 0) {
+        setVelocityConfigs(data);
+      }
+    } catch (e) {
+      console.error('Failed to load velocity configs', e);
+    }
+  };
+
+  useEffect(() => { 
+    loadRules(); 
+    loadVelocityConfigs(); 
   }, []);
 
   const loadRules = async () => {
@@ -199,7 +208,7 @@ export default function RulesPage() {
     }
   };
 
-  useEffect(() => { loadRules(); }, []);
+// loadRules was already called in the combined useEffect
 
   const handleToggle = async (id: string, active: boolean) => {
     try {
@@ -239,24 +248,33 @@ export default function RulesPage() {
     finally { setIsBacktesting(false); }
   };
 
-  const saveVelocityToLocal = (updated: typeof velocityConfigs) => {
-    setVelocityConfigs(updated);
-    localStorage.setItem('velocityConfigs', JSON.stringify(updated));
+  const saveVelocityConfig = async (entity: string, windows: string[]) => {
+    try {
+      const updated = await fetchApi(`http://localhost:8080/admin/velocity-config/${entity}`, {
+        method: 'PUT',
+        body: JSON.stringify({ windows })
+      });
+      setVelocityConfigs(velocityConfigs.map(c => c.entity === entity ? updated : c));
+    } catch (e) {
+      alert('Failed to update velocity config');
+    }
   };
 
   const confirmAddWindow = () => {
     if (!windowEntity || !newWindow.trim()) return;
-    const updated = velocityConfigs.map(c =>
-      c.entity === windowEntity && !c.windows.includes(newWindow.trim())
-        ? { ...c, windows: [...c.windows, newWindow.trim()] }
-        : c
-    );
-    saveVelocityToLocal(updated);
+    const config = velocityConfigs.find(c => c.entity === windowEntity);
+    if (!config) return;
+    if (!config.windows.includes(newWindow.trim())) {
+      saveVelocityConfig(windowEntity, [...config.windows, newWindow.trim()]);
+    }
     setWindowEntity(null);
   };
 
   const removeWindow = (entity: string, w: string) => {
-    saveVelocityToLocal(velocityConfigs.map(c => c.entity === entity ? { ...c, windows: c.windows.filter(x => x !== w) } : c));
+    const config = velocityConfigs.find(c => c.entity === entity);
+    if (config) {
+      saveVelocityConfig(entity, config.windows.filter((x: string) => x !== w));
+    }
   };
 
   const filtered = rules.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
@@ -361,7 +379,7 @@ export default function RulesPage() {
                 {cfg.entity} Velocity
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {cfg.windows.map(w => (
+                {cfg.windows.map((w: string) => (
                   <span key={w} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '3px 8px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(92,110,248,0.1)', border: '1px solid rgba(92,110,248,0.25)', color: '#A5B4FC' }}>
                     {w}
                     <button onClick={() => removeWindow(cfg.entity, w)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(165,180,252,0.6)', padding: 0, fontSize: '1rem', lineHeight: 1, display: 'flex' }}>×</button>
@@ -463,9 +481,12 @@ export default function RulesPage() {
             </FormField>
             <FormField label="Window">
               <select style={selectStyle} value={newRule.window} onChange={e => setNewRule({ ...newRule, window: e.target.value })}>
-                <option value="1h">1 Hour</option>
-                <option value="24h">24 Hours</option>
-                <option value="7d">7 Days</option>
+                {velocityConfigs.find(c => c.entity.toLowerCase() === newRule.entity.toLowerCase())?.windows.map((w: string) => (
+                  <option key={w} value={w}>{w}</option>
+                ))}
+                {(!velocityConfigs.find(c => c.entity.toLowerCase() === newRule.entity.toLowerCase())?.windows.length) && (
+                  <option value="" disabled>No windows configured</option>
+                )}
               </select>
             </FormField>
           </div>

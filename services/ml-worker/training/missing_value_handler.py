@@ -147,7 +147,7 @@ class MissingValueHandler:
         logger.info("Fitting the imputer on training data...")
         start_time = time.time()
         
-        numeric_transformer = SimpleImputer(strategy="mean")
+        numeric_transformer = SimpleImputer(strategy="median")
         categorical_transformer = SimpleImputer(strategy="most_frequent")
         
         self.imputer = ColumnTransformer(
