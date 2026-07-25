@@ -169,7 +169,8 @@ export default function RulesPage() {
   const [isCreateOpen, setIsCreateOpen]   = useState(false);
   const [ruleToDelete, setRuleToDelete]   = useState<string | null>(null);
   const [windowEntity, setWindowEntity]   = useState<string | null>(null);
-  const [newWindow, setNewWindow]         = useState('');
+  const [windowValue, setWindowValue]     = useState('1');
+  const [windowUnit, setWindowUnit]       = useState('h');
   const [search, setSearch]               = useState('');
   const [velocityConfigs, setVelocityConfigs] = useState<any[]>([]);
 
@@ -261,11 +262,12 @@ export default function RulesPage() {
   };
 
   const confirmAddWindow = () => {
-    if (!windowEntity || !newWindow.trim()) return;
+    if (!windowEntity || !windowValue || parseInt(windowValue) <= 0) return;
+    const combinedWindow = `${windowValue}${windowUnit}`;
     const config = velocityConfigs.find(c => c.entity === windowEntity);
     if (!config) return;
-    if (!config.windows.includes(newWindow.trim())) {
-      saveVelocityConfig(windowEntity, [...config.windows, newWindow.trim()]);
+    if (!config.windows.includes(combinedWindow)) {
+      saveVelocityConfig(windowEntity, [...config.windows, combinedWindow]);
     }
     setWindowEntity(null);
   };
@@ -385,7 +387,7 @@ export default function RulesPage() {
                     <button onClick={() => removeWindow(cfg.entity, w)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(165,180,252,0.6)', padding: 0, fontSize: '1rem', lineHeight: 1, display: 'flex' }}>×</button>
                   </span>
                 ))}
-                <button onClick={() => { setWindowEntity(cfg.entity); setNewWindow(''); }} style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.12)', color: '#8D9AAB', cursor: 'pointer' }}>
+                <button onClick={() => { setWindowEntity(cfg.entity); setWindowValue('1'); setWindowUnit('h'); }} style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.12)', color: '#8D9AAB', cursor: 'pointer' }}>
                   + Add
                 </button>
               </div>
@@ -518,18 +520,26 @@ export default function RulesPage() {
       </IntModal>
 
       {/* Add Window */}
-      <IntModal isOpen={!!windowEntity} onClose={() => setWindowEntity(null)} title={`Add ${windowEntity} Window`} width="360px">
+      <IntModal isOpen={!!windowEntity} onClose={() => setWindowEntity(null)} title={`Add ${windowEntity} Window`} width="420px">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          <FormField label="Window Duration">
-            <input style={inputStyle} type="text" placeholder="e.g. 12h, 48h, 90d" value={newWindow}
-              onChange={e => setNewWindow(e.target.value)}
-              autoFocus
-              onKeyDown={e => { if (e.key === 'Enter') confirmAddWindow(); }}
-            />
-          </FormField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <FormField label="Value">
+              <input style={inputStyle} type="number" min="1" max="365" placeholder="e.g. 12" value={windowValue}
+                onChange={e => setWindowValue(e.target.value)}
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') confirmAddWindow(); }}
+              />
+            </FormField>
+            <FormField label="Unit">
+              <select style={selectStyle} value={windowUnit} onChange={e => setWindowUnit(e.target.value)}>
+                <option value="h">Hours (h)</option>
+                <option value="d">Days (d)</option>
+              </select>
+            </FormField>
+          </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
             <CancelBtn onClick={() => setWindowEntity(null)}>Cancel</CancelBtn>
-            <PrimaryBtn onClick={confirmAddWindow} disabled={!newWindow.trim()}>Add Window</PrimaryBtn>
+            <PrimaryBtn onClick={confirmAddWindow} disabled={!windowValue || parseInt(windowValue) <= 0}>Add Window</PrimaryBtn>
           </div>
         </div>
       </IntModal>

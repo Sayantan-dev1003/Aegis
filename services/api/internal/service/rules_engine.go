@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
@@ -117,20 +119,13 @@ func (e *RulesEngine) evaluateRule(ctx context.Context, rule model.Rule, t *mode
 }
 
 func parseWindow(window string) (time.Duration, error) {
-	switch window {
-	case "1m":
-		return time.Minute, nil
-	case "5m":
-		return 5 * time.Minute, nil
-	case "1h":
-		return time.Hour, nil
-	case "24h":
-		return 24 * time.Hour, nil
-	case "7d":
-		return 7 * 24 * time.Hour, nil
-	case "30d":
-		return 30 * 24 * time.Hour, nil
-	default:
-		return time.ParseDuration(window)
+	if strings.HasSuffix(window, "d") {
+		daysStr := strings.TrimSuffix(window, "d")
+		days, err := strconv.Atoi(daysStr)
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
 	}
+	return time.ParseDuration(window)
 }
