@@ -14,12 +14,13 @@ import (
 )
 
 type RuleHandler struct {
-	ruleRepo  *repository.RuleRepository
-	auditRepo *repository.AuditRepository
+	ruleRepo      *repository.RuleRepository
+	auditRepo     *repository.AuditRepository
+	analyticsRepo *repository.RuleAnalyticsRepository
 }
 
-func NewRuleHandler(ruleRepo *repository.RuleRepository, auditRepo *repository.AuditRepository) *RuleHandler {
-	return &RuleHandler{ruleRepo: ruleRepo, auditRepo: auditRepo}
+func NewRuleHandler(ruleRepo *repository.RuleRepository, auditRepo *repository.AuditRepository, analyticsRepo *repository.RuleAnalyticsRepository) *RuleHandler {
+	return &RuleHandler{ruleRepo: ruleRepo, auditRepo: auditRepo, analyticsRepo: analyticsRepo}
 }
 
 func (h *RuleHandler) respondError(w http.ResponseWriter, msg string, code int) {
@@ -36,6 +37,20 @@ func (h *RuleHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if rules == nil {
 		rules = []model.Rule{}
+	} else if h.analyticsRepo != nil {
+		var ids []string
+		for _, rule := range rules {
+			ids = append(ids, rule.ID)
+		}
+		stats, err := h.analyticsRepo.GetTriggersBatch(r.Context(), ids)
+		if err == nil {
+			for i, rule := range rules {
+				if count, ok := stats[rule.ID]; ok {
+					c := count
+					rules[i].Triggers24h = &c
+				}
+			}
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rules)

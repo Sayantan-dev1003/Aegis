@@ -168,6 +168,8 @@ export default function RulesPage() {
   const [windowValue, setWindowValue]     = useState('1');
   const [windowUnit, setWindowUnit]       = useState('h');
   const [search, setSearch]               = useState('');
+  const [filterEntity, setFilterEntity]   = useState('All');
+  const [filterAction, setFilterAction]   = useState('All');
   const [velocityConfigs, setVelocityConfigs] = useState<any[]>([]);
 
   const [newRule, setNewRule] = useState({
@@ -265,7 +267,12 @@ export default function RulesPage() {
     }
   };
 
-  const filtered = rules.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = rules.filter(r => {
+    const matchSearch = r.name.toLowerCase().includes(search.toLowerCase());
+    const matchEntity = filterEntity === 'All' || r.entity.toLowerCase() === filterEntity.toLowerCase();
+    const matchAction = filterAction === 'All' || r.action.toLowerCase() === filterAction.toLowerCase();
+    return matchSearch && matchEntity && matchAction;
+  });
 
   if (loading) return <div style={{ padding: '40px', color: '#8D9AAB' }}>Loading rules…</div>;
 
@@ -289,69 +296,6 @@ export default function RulesPage() {
             <div style={{ position: 'absolute', top: '-20px', right: '-20px', width: '70px', height: '70px', borderRadius: '50%', background: `radial-gradient(circle, ${s.glow} 0%, transparent 70%)`, pointerEvents: 'none' }} />
           </div>
         ))}
-      </div>
-
-      {/* ── Rules Table ─────────────────────────────────────────────────────── */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          {/* Search */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px 12px', width: '260px' }}>
-            <SearchIcon /><span style={{ color: '#4E5A6B' }}>|</span>
-            <input
-              type="text" placeholder="Search rules…" value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ background: 'none', border: 'none', outline: 'none', color: '#E8EDF4', fontSize: '0.875rem', flex: 1 }}
-            />
-          </div>
-          <PrimaryBtn onClick={() => setIsCreateOpen(true)}>
-            <PlusIcon /> Create Rule
-          </PrimaryBtn>
-        </div>
-
-        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', overflow: 'hidden' }}>
-          {filtered.length === 0 ? (
-            <div style={{ padding: '56px 24px', textAlign: 'center' }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'rgba(92,110,248,0.08)', border: '1px solid rgba(92,110,248,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(92,110,248,0.6)', margin: '0 auto 12px' }}>
-                <ShieldIcon />
-              </div>
-              <div style={{ color: '#E8EDF4', fontWeight: 600, fontSize: '0.95rem' }}>No custom rules yet</div>
-              <div style={{ color: '#8D9AAB', fontSize: '0.82rem', marginTop: '4px' }}>Fraud is currently caught only by the ML model. Add a rule for deterministic checks.</div>
-            </div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
-                  {['Name', 'Condition', 'Entity', 'Window', 'Action', 'Triggers (24h)', 'Precision', 'Active', ''].map(h => (
-                    <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#4E5A6B', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r, i) => (
-                  <tr key={r.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                    <td style={{ padding: '13px 16px', fontWeight: 600, color: '#E8EDF4' }}>{r.name}</td>
-                    <td style={{ padding: '13px 16px' }}>
-                      <code style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '5px', fontSize: '0.8rem', color: '#A5B4FC', fontFamily: 'monospace' }}>
-                        {r.metric} {r.operator} {r.value}
-                      </code>
-                    </td>
-                    <td style={{ padding: '13px 16px', color: '#8D9AAB', textTransform: 'capitalize' }}>{r.entity}</td>
-                    <td style={{ padding: '13px 16px', color: '#8D9AAB', fontFamily: 'monospace', fontSize: '0.82rem' }}>{r.window}</td>
-                    <td style={{ padding: '13px 16px' }}><ActionBadge action={r.action} /></td>
-                    <td style={{ padding: '13px 16px', color: '#E8EDF4', fontFamily: 'monospace' }}>{r.triggers_24h ?? '—'}</td>
-                    <td style={{ padding: '13px 16px', color: r.precision ? '#34D399' : '#4E5A6B', fontFamily: 'monospace' }}>{r.precision ? `${Math.round(r.precision * 100)}%` : '—'}</td>
-                    <td style={{ padding: '13px 16px' }}><Toggle checked={r.is_active} onChange={v => handleToggle(r.id, v)} /></td>
-                    <td style={{ padding: '13px 16px', textAlign: 'right' }}>
-                      <button onClick={() => setRuleToDelete(r.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', color: '#FCA5A5', fontSize: '0.75rem', fontWeight: 600 }}>
-                        <TrashIcon /> Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
       </div>
 
       {/* ── Velocity Config ──────────────────────────────────────────────────── */}
@@ -382,6 +326,82 @@ export default function RulesPage() {
         </div>
       </div>
 
+      {/* ── Rules Table ─────────────────────────────────────────────────────── */}
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          {/* Filters */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '8px 12px', width: '240px' }}>
+              <SearchIcon /><span style={{ color: '#4E5A6B' }}>|</span>
+              <input
+                type="text" placeholder="Search by name…" value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ background: 'none', border: 'none', outline: 'none', color: '#E8EDF4', fontSize: '0.875rem', flex: 1 }}
+              />
+            </div>
+            <select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem', outline: 'none', cursor: 'pointer' }}>
+              <option value="All">All Entities</option>
+              <option value="user">User</option>
+              <option value="device">Device</option>
+              <option value="ip">IP</option>
+              <option value="card">Card</option>
+            </select>
+            <select value={filterAction} onChange={e => setFilterAction(e.target.value)} style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem', outline: 'none', cursor: 'pointer' }}>
+              <option value="All">All Actions</option>
+              <option value="flag">Flag</option>
+              <option value="step_up">Step Up</option>
+              <option value="block">Block</option>
+            </select>
+          </div>
+          <PrimaryBtn onClick={() => setIsCreateOpen(true)}>
+            <PlusIcon /> Create Rule
+          </PrimaryBtn>
+        </div>
+
+        <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', overflow: 'hidden' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '56px 24px', textAlign: 'center' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: 'rgba(92,110,248,0.08)', border: '1px solid rgba(92,110,248,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(92,110,248,0.6)', margin: '0 auto 12px' }}>
+                <ShieldIcon />
+              </div>
+              <div style={{ color: '#E8EDF4', fontWeight: 600, fontSize: '0.95rem' }}>No custom rules yet</div>
+              <div style={{ color: '#8D9AAB', fontSize: '0.82rem', marginTop: '4px' }}>Fraud is currently caught only by the ML model. Add a rule for deterministic checks.</div>
+            </div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
+                  {['Name', 'Condition', 'Entity', 'Window', 'Action', 'Triggers (24h)', 'Active', ''].map(h => (
+                    <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#4E5A6B', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r, i) => (
+                  <tr key={r.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                    <td style={{ padding: '13px 16px', fontWeight: 600, color: '#E8EDF4' }}>{r.name}</td>
+                    <td style={{ padding: '13px 16px' }}>
+                      <code style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '5px', fontSize: '0.8rem', color: '#A5B4FC', fontFamily: 'monospace' }}>
+                        {r.metric} {r.operator} {r.value}
+                      </code>
+                    </td>
+                    <td style={{ padding: '13px 16px', color: '#8D9AAB', textTransform: 'capitalize' }}>{r.entity}</td>
+                    <td style={{ padding: '13px 16px', color: '#8D9AAB', fontFamily: 'monospace', fontSize: '0.82rem' }}>{r.window}</td>
+                    <td style={{ padding: '13px 16px' }}><ActionBadge action={r.action} /></td>
+                    <td style={{ padding: '13px 16px', color: '#E8EDF4', fontFamily: 'monospace' }}>{r.triggers_24h ?? '—'}</td>
+                    <td style={{ padding: '13px 16px' }}><Toggle checked={r.is_active} onChange={v => handleToggle(r.id, v)} /></td>
+                    <td style={{ padding: '13px 16px', textAlign: 'right' }}>
+                      <button onClick={() => setRuleToDelete(r.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', color: '#FCA5A5', fontSize: '0.75rem', fontWeight: 600 }}>
+                        <TrashIcon /> Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
 
 
       {/* ── Modals ───────────────────────────────────────────────────────────── */}

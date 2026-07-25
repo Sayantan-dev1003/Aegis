@@ -105,8 +105,9 @@ func main() {
 
 	velocityConfigRepo := repository.NewVelocityConfigRepository(pgPool)
 	velocityStore := repository.NewVelocityStore(redisClient, velocityConfigRepo, &log.Logger)
+	ruleAnalyticsRepo := repository.NewRuleAnalyticsRepository(redisClient)
 
-	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo, velocityStore)
+	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo, velocityStore, ruleAnalyticsRepo)
 	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo, rulesEngine)
 	ingestHandler := handler.NewIngestHandler(ingestService, velocityStore)
 
@@ -167,7 +168,7 @@ func main() {
 	analystHandler := handler.NewAnalystHandler(analystRepo, auditRepo, authService)
 	
 	// Phase 2 Handlers
-	ruleHandler := handler.NewRuleHandler(ruleRepo, auditRepo)
+	ruleHandler := handler.NewRuleHandler(ruleRepo, auditRepo, ruleAnalyticsRepo)
 	queueHandler := handler.NewQueueHandler(queueRepo, auditRepo)
 	intHandler := handler.NewIntegrationHandler(intRepo, auditRepo)
 	modelHandler := handler.NewModelHandler(modelRepo, auditRepo)

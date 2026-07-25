@@ -17,14 +17,16 @@ type RulesEngine struct {
 	ruleRepo      *repository.RuleRepository
 	txRepo        *repository.TransactionRepository
 	velocityStore *repository.VelocityStore
+	analyticsRepo *repository.RuleAnalyticsRepository
 	tracer        trace.Tracer
 }
 
-func NewRulesEngine(ruleRepo *repository.RuleRepository, txRepo *repository.TransactionRepository, velocityStore *repository.VelocityStore) *RulesEngine {
+func NewRulesEngine(ruleRepo *repository.RuleRepository, txRepo *repository.TransactionRepository, velocityStore *repository.VelocityStore, analyticsRepo *repository.RuleAnalyticsRepository) *RulesEngine {
 	return &RulesEngine{
 		ruleRepo:      ruleRepo,
 		txRepo:        txRepo,
 		velocityStore: velocityStore,
+		analyticsRepo: analyticsRepo,
 		tracer:        otel.Tracer("aegis/api/service"),
 	}
 }
@@ -58,6 +60,13 @@ func (e *RulesEngine) Evaluate(ctx context.Context, t *model.Transaction) (strin
 			continue // Skip failing rules, or log error
 		}
 		if matched {
+			if e.analyticsRepo != nil {
+				go func(rID, txID string) {
+					bgCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					defer cancel()
+					_ = e.analyticsRepo.RecordTrigger(bgCtx, rID, txID)
+				}(rule.ID, t.ID)
+			}
 			// Rule triggered! Return the action and rule name.
 			// In a real system, you might aggregate flags, but block takes precedence.
 			return rule.Action, rule.Name, nil

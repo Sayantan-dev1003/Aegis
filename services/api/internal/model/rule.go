@@ -16,8 +16,7 @@ type Rule struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 	
 	// Computed fields for UI
-	Triggers24h *int     `json:"triggers_24h,omitempty"`
-	Precision   *float64 `json:"precision,omitempty"`
+	Triggers24h *int `json:"triggers_24h,omitempty"`
 }
 
 type VelocityConfig struct {
