@@ -138,15 +138,3 @@ func (h *RuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "Rule deleted"}`))
 }
-
-func (h *RuleHandler) Backtest(w http.ResponseWriter, r *http.Request) {
-	// Stub implementation as requested in the plan
-	id := chi.URLParam(r, "id")
-	
-	// Simulate delay
-	time.Sleep(1 * time.Second)
-	
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(fmt.Sprintf(`{"rule_id": "%s", "match_count": 42, "precision": 0.85, "message": "Backtest completed (stub)"}`, id)))
-}

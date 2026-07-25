@@ -23,11 +23,7 @@ const TrashIcon = () => (
   </svg>
 );
 
-const FlaskIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 3h6l1 6-4 12-4-12 1-6z"/><path d="M5 9h14"/>
-  </svg>
-);
+
 
 const CloseIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -178,9 +174,7 @@ export default function RulesPage() {
     name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag',
   });
 
-  const [selectedRuleId, setSelectedRuleId] = useState('');
-  const [backtestResult, setBacktestResult] = useState<any>(null);
-  const [isBacktesting, setIsBacktesting]   = useState(false);
+
 
   const loadVelocityConfigs = async () => {
     try {
@@ -239,15 +233,7 @@ export default function RulesPage() {
     } catch (e: any) { alert(`Failed to create rule: ${e.message || 'Unknown error'}`); }
   };
 
-  const handleBacktest = async () => {
-    if (!selectedRuleId) return;
-    setIsBacktesting(true); setBacktestResult(null);
-    try {
-      const data = await fetchApi(`http://localhost:8080/admin/rules/${selectedRuleId}/backtest`, { method: 'POST' });
-      setBacktestResult({ triggerCount: data.match_count || 0, overlap: 85, precision: Math.round((data.precision || 0) * 100) });
-    } catch (e) { alert('Backtest failed'); }
-    finally { setIsBacktesting(false); }
-  };
+
 
   const saveVelocityConfig = async (entity: string, windows: string[]) => {
     try {
@@ -396,54 +382,7 @@ export default function RulesPage() {
         </div>
       </div>
 
-      {/* ── Backtest Sandbox ─────────────────────────────────────────────────── */}
-      <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '20px 24px' }}>
-        <div style={{ marginBottom: '14px' }}>
-          <div style={{ fontWeight: 600, fontSize: '1rem', color: '#E8EDF4' }}>Backtest Sandbox</div>
-          <div style={{ fontSize: '0.8rem', color: '#8D9AAB', marginTop: '2px' }}>Simulate a rule against historical data before enforcing it.</div>
-        </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <select value={selectedRuleId} onChange={e => setSelectedRuleId(e.target.value)} style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem', minWidth: '200px' }}>
-            <option value="">Select a rule to backtest…</option>
-            {rules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          <select style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem' }}>
-            <option>Last 7 days</option>
-            <option>Last 30 days</option>
-          </select>
-          <button
-            onClick={handleBacktest}
-            disabled={!selectedRuleId || isBacktesting}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px', padding: '9px 18px',
-              borderRadius: '8px', border: 'none', cursor: (!selectedRuleId || isBacktesting) ? 'not-allowed' : 'pointer',
-              background: 'linear-gradient(135deg, #5C6EF8 0%, #7E8DF9 100%)',
-              color: '#fff', fontWeight: 600, fontSize: '0.875rem',
-              opacity: (!selectedRuleId || isBacktesting) ? 0.5 : 1,
-              boxShadow: '0 4px 14px rgba(92,110,248,0.3)',
-            }}
-          >
-            <FlaskIcon />
-            {isBacktesting ? 'Running…' : 'Run Backtest'}
-          </button>
-        </div>
 
-        {backtestResult && (
-          <div style={{ marginTop: '16px', display: 'flex', gap: '24px', flexWrap: 'wrap', padding: '14px 18px', borderRadius: '10px', background: 'rgba(92,110,248,0.06)', border: '1px solid rgba(92,110,248,0.15)' }}>
-            {[
-              { label: 'Would trigger', value: backtestResult.triggerCount.toLocaleString(), sub: 'times', color: '#A5B4FC' },
-              { label: 'Overlap with ML', value: `${backtestResult.overlap}%`, sub: '', color: '#22D3EE' },
-              { label: 'Est. Precision', value: `${backtestResult.precision}%`, sub: '', color: '#34D399' },
-            ].map(r => (
-              <div key={r.label} style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                <span style={{ color: '#8D9AAB', fontSize: '0.82rem' }}>{r.label}:</span>
-                <span style={{ color: r.color, fontWeight: 700, fontSize: '1.1rem', fontFamily: 'monospace' }}>{r.value}</span>
-                {r.sub && <span style={{ color: '#8D9AAB', fontSize: '0.82rem' }}>{r.sub}</span>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       {/* ── Modals ───────────────────────────────────────────────────────────── */}
 

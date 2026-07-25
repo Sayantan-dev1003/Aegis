@@ -273,7 +273,6 @@ func main() {
 			r.Post("/admin/rules", ruleHandler.Create)
 			r.Patch("/admin/rules/{id}/toggle", ruleHandler.ToggleActive)
 			r.Delete("/admin/rules/{id}", ruleHandler.Delete)
-			r.Post("/admin/rules/{id}/backtest", ruleHandler.Backtest)
 			
 			r.Get("/admin/velocity-config", velocityConfigHandler.List)
 			r.Put("/admin/velocity-config/{entity}", velocityConfigHandler.Update)
