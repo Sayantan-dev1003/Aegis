@@ -340,18 +340,26 @@ export default function RulesPage() {
               />
             </div>
             <select value={filterEntity} onChange={e => setFilterEntity(e.target.value)} style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem', outline: 'none', cursor: 'pointer' }}>
-              <option value="All">All Entities</option>
-              <option value="user">User</option>
-              <option value="device">Device</option>
-              <option value="ip">IP</option>
-              <option value="card">Card</option>
+              <option value="All" style={{ background: '#1A202C' }}>All Entities</option>
+              <option value="user" style={{ background: '#1A202C' }}>User</option>
+              <option value="device" style={{ background: '#1A202C' }}>Device</option>
+              <option value="ip" style={{ background: '#1A202C' }}>IP</option>
+              <option value="card" style={{ background: '#1A202C' }}>Card</option>
             </select>
             <select value={filterAction} onChange={e => setFilterAction(e.target.value)} style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem', outline: 'none', cursor: 'pointer' }}>
-              <option value="All">All Actions</option>
-              <option value="flag">Flag</option>
-              <option value="step_up">Step Up</option>
-              <option value="block">Block</option>
+              <option value="All" style={{ background: '#1A202C' }}>All Actions</option>
+              <option value="flag" style={{ background: '#1A202C' }}>Flag</option>
+              <option value="step_up" style={{ background: '#1A202C' }}>Step Up</option>
+              <option value="block" style={{ background: '#1A202C' }}>Block</option>
             </select>
+            {(search || filterEntity !== 'All' || filterAction !== 'All') && (
+              <button
+                onClick={() => { setSearch(''); setFilterEntity('All'); setFilterAction('All'); }}
+                style={{ padding: '8px 12px', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', color: '#FCA5A5', borderRadius: '8px', fontSize: '0.875rem', cursor: 'pointer', fontWeight: 600, outline: 'none', display: 'flex', alignItems: 'center' }}
+              >
+                Clear
+              </button>
+            )}
           </div>
           <PrimaryBtn onClick={() => setIsCreateOpen(true)}>
             <PlusIcon /> Create Rule
