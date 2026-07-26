@@ -69,15 +69,17 @@ type IngestService struct {
 	txRepo     *repository.TransactionRepository
 	outboxRepo *repository.OutboxRepository
 	rules      *RulesEngine
+	queueRepo  *repository.QueueRepository
 }
 
 // NewIngestService creates a new IngestService.
-func NewIngestService(db *pgxpool.Pool, txRepo *repository.TransactionRepository, outboxRepo *repository.OutboxRepository, rules *RulesEngine) *IngestService {
+func NewIngestService(db *pgxpool.Pool, txRepo *repository.TransactionRepository, outboxRepo *repository.OutboxRepository, rules *RulesEngine, queueRepo *repository.QueueRepository) *IngestService {
 	return &IngestService{
 		db:         db,
 		txRepo:     txRepo,
 		outboxRepo: outboxRepo,
 		rules:      rules,
+		queueRepo:  queueRepo,
 	}
 }
 
@@ -95,7 +97,7 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 	}
 
 	// 2. Evaluate Rules synchronously
-	action, _, err := s.rules.Evaluate(ctx, t)
+	action, rule, err := s.rules.Evaluate(ctx, t)
 	if err != nil {
 		// Log error but proceed gracefully if rules fail? For now let's just proceed.
 		// A proper implementation would log it.
@@ -109,6 +111,14 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 	} else if action == "flag" {
 		t.Status = "escalated"
 		skipML = true
+		if rule != nil && rule.QueueID != nil && *rule.QueueID != "" {
+			t.QueueID = rule.QueueID
+		} else if s.queueRepo != nil {
+			fallbackQ, err := s.queueRepo.GetFallbackQueue(ctx)
+			if err == nil && fallbackQ != nil {
+				t.QueueID = &fallbackQ.ID
+			}
+		}
 	} else {
 		t.Status = "pending"
 	}

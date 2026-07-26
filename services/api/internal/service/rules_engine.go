@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -31,15 +32,30 @@ func NewRulesEngine(ruleRepo *repository.RuleRepository, txRepo *repository.Tran
 	}
 }
 
-// Evaluate runs active rules against a transaction. Returns (action, triggeredRuleName, error).
+func getRulePriority(rule model.Rule) int {
+	name := strings.ToLower(rule.Name)
+	if strings.Contains(name, "vip") || strings.Contains(name, "high-value") || strings.Contains(name, "high value") || rule.Metric == "amount" {
+		return 1
+	}
+	if strings.Contains(name, "ato") || strings.Contains(name, "takeover") || strings.Contains(name, "drain") {
+		return 2
+	}
+	if strings.Contains(name, "aml") || strings.Contains(name, "smurf") || strings.Contains(name, "structur") ||
+		strings.Contains(name, "kyc") || strings.Contains(name, "unverified") || strings.Contains(name, "dispute") || strings.Contains(name, "chargeback") {
+		return 3
+	}
+	return 4
+}
+
+// Evaluate runs active rules against a transaction. Returns (action, triggeredRule, error).
 // Action can be "", "block", "flag", "step_up". "" means it passed cleanly.
-func (e *RulesEngine) Evaluate(ctx context.Context, t *model.Transaction) (string, string, error) {
+func (e *RulesEngine) Evaluate(ctx context.Context, t *model.Transaction) (string, *model.Rule, error) {
 	ctx, span := e.tracer.Start(ctx, "rules_engine.evaluate")
 	defer span.End()
 
 	rules, err := e.ruleRepo.List(ctx)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to fetch rules: %w", err)
+		return "", nil, fmt.Errorf("failed to fetch rules: %w", err)
 	}
 
 	// Filter active rules
@@ -51,8 +67,13 @@ func (e *RulesEngine) Evaluate(ctx context.Context, t *model.Transaction) (strin
 	}
 
 	if len(activeRules) == 0 {
-		return "", "", nil // No rules present or active, passes cleanly
+		return "", nil, nil // No rules present or active, passes cleanly
 	}
+
+	// Sort active rules by business priority hierarchy
+	sort.SliceStable(activeRules, func(i, j int) bool {
+		return getRulePriority(activeRules[i]) < getRulePriority(activeRules[j])
+	})
 
 	for _, rule := range activeRules {
 		matched, err := e.evaluateRule(ctx, rule, t)
@@ -67,13 +88,13 @@ func (e *RulesEngine) Evaluate(ctx context.Context, t *model.Transaction) (strin
 					_ = e.analyticsRepo.RecordTrigger(bgCtx, rID, txID)
 				}(rule.ID, t.ID)
 			}
-			// Rule triggered! Return the action and rule name.
-			// In a real system, you might aggregate flags, but block takes precedence.
-			return rule.Action, rule.Name, nil
+			// Rule triggered! Return the action and rule pointer.
+			r := rule
+			return rule.Action, &r, nil
 		}
 	}
 
-	return "", "", nil
+	return "", nil, nil
 }
 
 func (e *RulesEngine) evaluateRule(ctx context.Context, rule model.Rule, t *model.Transaction) (bool, error) {

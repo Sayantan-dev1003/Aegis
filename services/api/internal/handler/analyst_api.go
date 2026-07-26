@@ -56,10 +56,11 @@ func (h *AnalystHandler) ListAnalysts(w http.ResponseWriter, r *http.Request) {
 
 // CreateAnalystRequest is the payload for creating a new analyst.
 type CreateAnalystRequest struct {
-	FullName string `json:"full_name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
+	FullName string  `json:"full_name"`
+	Email    string  `json:"email"`
+	Password string  `json:"password"`
+	Role     string  `json:"role"`
+	QueueID  *string `json:"queue_id,omitempty"`
 }
 
 func (h *AnalystHandler) CreateAnalyst(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +91,25 @@ func (h *AnalystHandler) CreateAnalyst(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if role == "reviewer" {
+		if req.QueueID == nil || strings.TrimSpace(*req.QueueID) == "" {
+			h.respondError(w, "A queue must be assigned when creating a reviewer.", http.StatusBadRequest)
+			return
+		}
+		// 1 queue assigned to 1 reviewer only - check if any reviewer already has this queue
+		existingQueueUser, err := h.analystRepo.FindByQueueID(r.Context(), *req.QueueID)
+		if err != nil {
+			h.respondError(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		if existingQueueUser != nil {
+			h.respondError(w, "This queue is already assigned to another reviewer. Each queue can only be assigned to one reviewer.", http.StatusConflict)
+			return
+		}
+	} else {
+		req.QueueID = nil
+	}
+
 	// Check for duplicate email
 	existing, err := h.analystRepo.FindByEmail(r.Context(), req.Email)
 	if err != nil {
@@ -109,7 +129,7 @@ func (h *AnalystHandler) CreateAnalyst(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Persist the new analyst
-	analyst, err := h.analystRepo.Create(r.Context(), req.Email, passwordHash, req.FullName, role)
+	analyst, err := h.analystRepo.Create(r.Context(), req.Email, passwordHash, req.FullName, role, req.QueueID)
 	if err != nil {
 		h.respondError(w, "internal server error", http.StatusInternalServerError)
 		return
@@ -139,6 +159,7 @@ func (h *AnalystHandler) CreateAnalyst(w http.ResponseWriter, r *http.Request) {
 
 type UpdateAnalystRequest struct {
 	Role     *string `json:"role"`
+	QueueID  *string `json:"queue_id"`
 	IsActive *bool   `json:"is_active"`
 }
 
@@ -152,7 +173,7 @@ func (h *AnalystHandler) UpdateAnalyst(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	if req.Role == nil && req.IsActive == nil {
+	if req.Role == nil && req.IsActive == nil && req.QueueID == nil {
 		h.respondError(w, "nothing to update", http.StatusBadRequest)
 		return
 	}
@@ -187,6 +208,24 @@ func (h *AnalystHandler) UpdateAnalyst(w http.ResponseWriter, r *http.Request) {
 				CreatedAt:    time.Now().UTC(),
 			})
 		}()
+	}
+
+	if req.QueueID != nil {
+		if strings.TrimSpace(*req.QueueID) != "" {
+			existingQueueUser, err := h.analystRepo.FindByQueueID(r.Context(), *req.QueueID)
+			if err != nil {
+				h.respondError(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			if existingQueueUser != nil && existingQueueUser.ID != id {
+				h.respondError(w, "This queue is already assigned to another reviewer. Each queue can only be assigned to one reviewer.", http.StatusConflict)
+				return
+			}
+		}
+		if err := h.analystRepo.UpdateQueueID(r.Context(), id, req.QueueID); err != nil {
+			h.respondError(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if req.IsActive != nil {

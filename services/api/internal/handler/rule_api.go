@@ -90,6 +90,43 @@ func (h *RuleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(rule)
 }
 
+func (h *RuleHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var rule model.Rule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		fmt.Printf("Error decoding request payload: %v\n", err)
+		h.respondError(w, "invalid request payload", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	rule.ID = id
+	if err := h.ruleRepo.Update(r.Context(), &rule); err != nil {
+		fmt.Printf("Error updating rule in DB: %v\n", err)
+		h.respondError(w, "failed to update rule", http.StatusInternalServerError)
+		return
+	}
+
+	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	ctxWithInfo := auditContext(r)
+	go func() {
+		bgCtx, cancel := context.WithTimeout(ctxWithInfo, 5*time.Second)
+		defer cancel()
+		h.auditRepo.Create(bgCtx, &model.AuditLog{
+			ActorID:      info.ID,
+			Action:       "rule.updated",
+			ResourceType: "rule",
+			ResourceID:   &id,
+			CreatedAt:    time.Now().UTC(),
+		})
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(rule)
+}
+
 func (h *RuleHandler) ToggleActive(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	

@@ -1,0 +1,2 @@
+ALTER TABLE analysts
+DROP COLUMN IF EXISTS queue_id;

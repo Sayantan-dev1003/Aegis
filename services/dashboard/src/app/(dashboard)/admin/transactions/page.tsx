@@ -210,28 +210,6 @@ export default function TransactionsPage() {
     }
   };
 
-  const handleQuickReview = async (e: React.MouseEvent, id: string, decision: 'fraud' | 'legit') => {
-    e.stopPropagation();
-    if (submittingTxId) return;
-    setSubmittingTxId(id);
-    try {
-      const apiDecision = decision === 'fraud' ? 'confirmed_fraud' : 'legitimate';
-      await fetchApi(`http://localhost:8080/api/v1/transactions/${id}/review`, {
-        method: 'POST',
-        body: JSON.stringify({ decision: apiDecision, notes: 'Quick reviewed from ledger' })
-      });
-      // Update local state to reflect the new status
-      setTransactions(prev => prev.map(t => 
-        t.id === id ? { ...t, status: 'reviewed', review_decision: apiDecision } : t
-      ));
-    } catch (err) {
-      console.error("Failed to submit review", err);
-      alert("Failed to submit review");
-    } finally {
-      setSubmittingTxId(null);
-    }
-  };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
 
@@ -384,12 +362,6 @@ export default function TransactionsPage() {
                   <td style={{ padding: '14px 16px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
                       <StatusBadge status={t.status} decision={t.review_decision} />
-                      {t.status === 'escalated' && (
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <button disabled={submittingTxId === t.id} onClick={(e) => handleQuickReview(e, t.id, 'legit')} style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(16, 185, 129, 0.4)', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', cursor: submittingTxId === t.id ? 'wait' : 'pointer', opacity: submittingTxId === t.id ? 0.5 : 1 }}>Legit</button>
-                          <button disabled={submittingTxId === t.id} onClick={(e) => handleQuickReview(e, t.id, 'fraud')} style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.4)', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', cursor: submittingTxId === t.id ? 'wait' : 'pointer', opacity: submittingTxId === t.id ? 0.5 : 1 }}>Fraud</button>
-                        </div>
-                      )}
                     </div>
                   </td>
                   <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: '0.85rem' }}>

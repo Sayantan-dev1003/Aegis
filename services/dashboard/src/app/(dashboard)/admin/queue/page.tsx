@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { fetchApi } from "../../../lib/api";
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { LineChart, Line, ResponsiveContainer } from 'recharts';
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -24,11 +23,6 @@ const LayersIcon = () => (
     <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>
   </svg>
 );
-
-// ─── sparkline data ───────────────────────────────────────────────────────────
-
-const genSparkline = (base: number) =>
-  Array.from({ length: 14 }, () => ({ v: Math.max(0, base + Math.random() * 5 - 2.5) }));
 
 // ─── Modal ────────────────────────────────────────────────────────────────────
 
@@ -116,7 +110,7 @@ export default function QueuePage() {
   const loadQueues = async () => {
     try {
       const data = await fetchApi('http://localhost:8080/admin/queues', { cache: 'no-store' });
-      setQueues((data || []).map((q: any) => ({ ...q, sparkline: genSparkline(q.breach_rate || 2) })));
+      setQueues(data || []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -128,7 +122,6 @@ export default function QueuePage() {
     setFormData({
       name: q.name,
       description: q.description || '',
-      assignment_rule: q.assignment_rule || 'round_robin',
       sla_target_minutes: q.sla_target_minutes || 60,
       coverage_start: q.coverage_start || '09:00',
       coverage_end: q.coverage_end || '17:00',
@@ -144,7 +137,6 @@ export default function QueuePage() {
           method: 'POST',
           body: JSON.stringify({
             name: formData.name, description: formData.description,
-            assignment_rule: formData.assignment_rule,
             sla_target_minutes: parseInt(formData.sla_target_minutes),
             coverage_start: formData.coverage_start || '09:00',
             coverage_end: formData.coverage_end || '17:00',
@@ -197,7 +189,7 @@ export default function QueuePage() {
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <PrimaryBtn onClick={() => {
           setConfiguringQueue({ isNew: true });
-          setFormData({ name: '', description: '', sla_target_minutes: 60, assignment_rule: 'round_robin', active: true, coverage_start: '09:00', coverage_end: '17:00', timezone: 'UTC' });
+          setFormData({ name: '', description: '', sla_target_minutes: 60, active: true, coverage_start: '09:00', coverage_end: '17:00', timezone: 'UTC' });
         }}>
           <PlusIcon /> Create Queue
         </PrimaryBtn>
@@ -232,43 +224,44 @@ export default function QueuePage() {
                 {/* Active side bar */}
                 <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', background: isActive ? 'linear-gradient(180deg, #34D399, #059669)' : '#374151', borderRadius: '3px 0 0 3px' }} />
 
-                {/* Title */}
+                {/* Title, Description & Reviewer */}
                 <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: isActive ? '#34D399' : '#64748B', boxShadow: isActive ? '0 0 6px #34D399' : 'none', flexShrink: 0 }} />
-                    <h3 style={{ margin: 0, color: '#F1F5F9', fontSize: '1rem', fontWeight: 600, lineHeight: 1.3 }}>{q.name}</h3>
-                  </div>
-                  {q.description && <p style={{ margin: '0 0 8px 14px', color: '#64748B', fontSize: '0.78rem', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{q.description}</p>}
-                  <div style={{ marginLeft: '14px' }}>
-                    <span style={{ fontSize: '0.68rem', padding: '2px 8px', borderRadius: '4px', background: 'rgba(92,110,248,0.08)', border: '1px solid rgba(92,110,248,0.2)', color: '#818CF8', fontWeight: 500, textTransform: 'capitalize' }}>
-                      {q.assignment_rule?.replace('_', ' ') || 'round robin'}
+                  <h3 style={{ margin: '0 0 6px 0', color: '#F8FAFC', fontSize: '1rem', fontWeight: 600, lineHeight: 1.3 }}>{q.name}</h3>
+                  {q.description && <p style={{ margin: '0 0 10px 0', color: '#64748B', fontSize: '0.78rem', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{q.description}</p>}
+                  <div>
+                    <span style={{ fontSize: '0.7rem', padding: '3px 10px', borderRadius: '20px', background: 'rgba(92,110,248,0.12)', border: '1px solid rgba(129,140,248,0.35)', color: '#E0E7FF', fontWeight: 600, display: 'inline-block' }}>
+                      {q.assigned_reviewer || 'Unassigned'}
                     </span>
                   </div>
                 </div>
 
-                {/* Metrics */}
-                <div style={{ display: 'flex', gap: '0', padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.05)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <div style={{ flex: 1, paddingRight: '12px', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ color: '#475569', fontSize: '0.62rem', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Open Cases</div>
-                    <div style={{ color: '#38BDF8', fontSize: '1.4rem', fontWeight: 700, fontFamily: 'monospace', lineHeight: 1 }}>{q.open_cases || 0}</div>
-                  </div>
-                  <div style={{ flex: 1, paddingLeft: '12px', paddingRight: '12px', borderRight: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div style={{ color: '#475569', fontSize: '0.62rem', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>SLA Target</div>
-                    <div style={{ color: '#E2E8F0', fontSize: '1.4rem', fontWeight: 700, fontFamily: 'monospace', lineHeight: 1 }}>{q.sla_target_minutes}m</div>
-                  </div>
-                  <div style={{ flex: 2, paddingLeft: '12px' }}>
-                    <div style={{ color: '#475569', fontSize: '0.62rem', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.6px', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Breach Rate</span>
-                      <span style={{ color: breachBad ? '#F43F5E' : '#34D399', fontWeight: 700 }}>{(q.breach_rate || 0).toFixed(1)}%</span>
+                {/* Spacious, borderless 5-metric bar */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '12px 14px',
+                  background: 'rgba(15, 23, 42, 0.45)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(255, 255, 255, 0.04)',
+                  margin: '12px 0 16px 0',
+                }}>
+                  {[
+                    { label: 'Open',        val: q.open_cases || 0,                     color: '#38BDF8' },
+                    { label: 'Total',       val: q.total_cases || 0,                    color: '#A5B4FC' },
+                    { label: 'SLA Target',  val: `${q.sla_target_minutes}m`,            color: '#E2E8F0' },
+                    { label: 'Breached',    val: q.cases_breached || 0,                 color: (q.cases_breached || 0) > 0 ? '#F43F5E' : '#94A3B8' },
+                    { label: 'Breach Rate', val: `${(q.breach_rate || 0).toFixed(1)}%`, color: breachBad ? '#F43F5E' : '#34D399' },
+                  ].map((item) => (
+                    <div key={item.label} style={{ textAlign: 'center' }}>
+                      <div style={{ color: '#64748B', fontSize: '0.67rem', fontWeight: 600, marginBottom: '4px', letterSpacing: '0.2px', whiteSpace: 'nowrap' }}>
+                        {item.label}
+                      </div>
+                      <div style={{ color: item.color, fontSize: '1.2rem', fontWeight: 700, fontFamily: 'monospace', lineHeight: 1 }}>
+                        {item.val}
+                      </div>
                     </div>
-                    <div style={{ height: '26px', filter: `drop-shadow(0 0 3px rgba(${breachBad ? '244,63,94' : '52,211,153'},0.3))` }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={q.sparkline}>
-                          <Line type="monotone" dataKey="v" stroke={breachBad ? '#F43F5E' : '#34D399'} strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
+                  ))}
                 </div>
 
                 {/* Footer */}
@@ -322,14 +315,6 @@ export default function QueuePage() {
 
             <FormField label="Description">
               <textarea style={textareaStyle} rows={3} value={formData.description} disabled={!configuringQueue.isNew} onChange={e => setFormData({ ...formData, description: e.target.value })} />
-            </FormField>
-
-            <FormField label="Assignment Rule">
-              <select style={selectStyle} value={formData.assignment_rule} disabled={!configuringQueue.isNew} onChange={e => setFormData({ ...formData, assignment_rule: e.target.value })}>
-                <option value="round_robin">Round Robin (Auto-assign)</option>
-                <option value="skill_based">Skill Based (Tags)</option>
-                <option value="manual">Manual Pull (Queue)</option>
-              </select>
             </FormField>
 
             <FormField label="SLA Timer (Minutes)">

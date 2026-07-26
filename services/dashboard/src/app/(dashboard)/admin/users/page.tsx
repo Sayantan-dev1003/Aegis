@@ -132,6 +132,7 @@ const CancelBtn = ({ onClick, children }: { onClick: () => void; children: React
 
 export default function UsersPage() {
   const [users, setUsers]       = useState<any[]>([]);
+  const [queues, setQueues]     = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [roleFilter, setRoleFilter]     = useState('All');
@@ -141,7 +142,7 @@ export default function UsersPage() {
   const [editingUser, setEditingUser]             = useState<any>(null);
   const [deactivatingId, setDeactivatingId]       = useState<string | null>(null);
 
-  const [inviteForm, setInviteForm] = useState({ full_name: '', email: '', password: '', role: 'viewer' });
+  const [inviteForm, setInviteForm] = useState({ full_name: '', email: '', password: '', role: 'viewer', queue_id: '' });
   const [inviteError, setInviteError]   = useState('');
   const [inviteLoading, setInviteLoading] = useState(false);
 
@@ -153,17 +154,35 @@ export default function UsersPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadUsers(); }, []);
+  const loadQueues = async () => {
+    try {
+      const data = await fetchApi('http://localhost:8080/admin/queues');
+      setQueues(data || []);
+    } catch (e) { console.error(e); }
+  };
+
+  useEffect(() => {
+    loadUsers();
+    loadQueues();
+  }, []);
 
   const handleUpdate = async () => {
     if (!editingUser) return;
+    if (editingUser.role === 'reviewer' && !editingUser.queue_id) {
+      alert('A queue must be assigned to a reviewer.');
+      return;
+    }
     try {
       await fetchApi(`http://localhost:8080/admin/analysts/${editingUser.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ role: editingUser.role, is_active: editingUser.is_active }),
+        body: JSON.stringify({
+          role: editingUser.role,
+          is_active: editingUser.is_active,
+          queue_id: editingUser.role === 'reviewer' ? editingUser.queue_id : null,
+        }),
       });
       setEditingUser(null); loadUsers();
-    } catch (e) { alert('Failed to update user'); }
+    } catch (e: any) { alert(e?.message || 'Failed to update user'); }
   };
 
   const handleInvite = async () => {
@@ -171,14 +190,22 @@ export default function UsersPage() {
     if (!inviteForm.full_name.trim()) { setInviteError('Full name is required.'); return; }
     if (!inviteForm.email.trim())     { setInviteError('Email is required.'); return; }
     if (!inviteForm.password.trim())  { setInviteError('Password is required.'); return; }
+    if (inviteForm.role === 'reviewer' && !inviteForm.queue_id) {
+      setInviteError('Please assign a queue for this reviewer (1 queue per reviewer required).');
+      return;
+    }
     setInviteLoading(true);
     try {
-      await fetchApi('http://localhost:8080/admin/analysts', { method: 'POST', body: JSON.stringify(inviteForm) });
+      const payload = {
+        ...inviteForm,
+        queue_id: inviteForm.role === 'reviewer' ? inviteForm.queue_id : undefined,
+      };
+      await fetchApi('http://localhost:8080/admin/analysts', { method: 'POST', body: JSON.stringify(payload) });
       setIsInviteOpen(false);
-      setInviteForm({ full_name: '', email: '', password: '', role: 'viewer' });
+      setInviteForm({ full_name: '', email: '', password: '', role: 'viewer', queue_id: '' });
       loadUsers();
     } catch (e: any) {
-      setInviteError(e?.message || 'Failed to create user. Email may already be in use.');
+      setInviteError(e?.message || 'Failed to create user. Email or queue may already be in use.');
     } finally { setInviteLoading(false); }
   };
 
@@ -291,10 +318,10 @@ export default function UsersPage() {
                   <td style={{ padding: '14px 18px' }}><RoleBadge role={u.role} /></td>
                   <td style={{ padding: '14px 18px' }}>
                     <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                      {!u.queues || u.queues.length === 0
+                      {(!u.queues || u.queues.length === 0) && !u.queue_name
                         ? <span style={{ color: '#4E5A6B', fontSize: '0.8rem', fontStyle: 'italic' }}>None</span>
-                        : u.queues.map((q: string) => (
-                          <span key={q} style={{ padding: '2px 7px', background: 'rgba(92,110,248,0.1)', border: '1px solid rgba(92,110,248,0.2)', borderRadius: '5px', fontSize: '0.72rem', color: '#A5B4FC' }}>{q}</span>
+                        : (u.queues && u.queues.length > 0 ? u.queues : [u.queue_name]).map((q: string) => (
+                          <span key={q} style={{ padding: '3px 8px', background: 'rgba(92,110,248,0.15)', border: '1px solid rgba(129,140,248,0.3)', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 600, color: '#A5B4FC' }}>{q}</span>
                         ))}
                     </div>
                   </td>
@@ -365,7 +392,7 @@ export default function UsersPage() {
       {/* ── Modals ── */}
 
       {/* Add User */}
-      <IntModal isOpen={isInviteOpen} onClose={() => { setIsInviteOpen(false); setInviteError(''); setInviteForm({ full_name: '', email: '', password: '', role: 'viewer' }); }} title="Add New User">
+      <IntModal isOpen={isInviteOpen} onClose={() => { setIsInviteOpen(false); setInviteError(''); setInviteForm({ full_name: '', email: '', password: '', role: 'viewer', queue_id: '' }); }} title="Add New User">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {inviteError && (
             <div style={{ padding: '10px 14px', background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.3)', borderRadius: '8px', color: '#FCA5A5', fontSize: '0.85rem' }}>
@@ -382,12 +409,41 @@ export default function UsersPage() {
             <input style={inputStyle} type="password" placeholder="Enter password" value={inviteForm.password} onChange={e => setInviteForm({ ...inviteForm, password: e.target.value })} />
           </FormField>
           <FormField label="Role">
-            <select style={selectStyle} value={inviteForm.role} onChange={e => setInviteForm({ ...inviteForm, role: e.target.value })}>
+            <select style={selectStyle} value={inviteForm.role} onChange={e => setInviteForm({ ...inviteForm, role: e.target.value, queue_id: e.target.value === 'reviewer' ? inviteForm.queue_id : '' })}>
               <option value="viewer">Viewer — read-only access</option>
               <option value="reviewer">Reviewer — can work cases</option>
               <option value="admin">Admin — full system access</option>
             </select>
           </FormField>
+          {inviteForm.role === 'reviewer' && (
+            <FormField label="Assign Queue (1 Queue per Reviewer Required)">
+              <select
+                style={{
+                  ...selectStyle,
+                  background: '#0f1117',
+                  color: '#E8EDF4',
+                  border: !inviteForm.queue_id ? '1px solid rgba(244,63,94,0.5)' : '1px solid rgba(255,255,255,0.14)',
+                }}
+                value={inviteForm.queue_id}
+                onChange={e => setInviteForm({ ...inviteForm, queue_id: e.target.value })}
+              >
+                <option value="" style={{ background: '#0f1117', color: '#4E5A6B' }}>-- Select Queue to Assign --</option>
+                {queues.map(q => {
+                  const assignedUser = users.find(u => u.queue_id === q.id || (u.queues && u.queues.includes(q.name)));
+                  return (
+                    <option
+                      key={q.id}
+                      value={q.id}
+                      disabled={!!assignedUser}
+                      style={{ background: '#0f1117', color: assignedUser ? '#4E5A6B' : '#E8EDF4' }}
+                    >
+                      {q.name} {assignedUser ? `(Assigned to ${assignedUser.full_name})` : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </FormField>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
             <CancelBtn onClick={() => { setIsInviteOpen(false); setInviteError(''); }}>Cancel</CancelBtn>
             <PrimaryBtn onClick={handleInvite} loading={inviteLoading}>{inviteLoading ? 'Adding…' : 'Add User'}</PrimaryBtn>
@@ -415,6 +471,35 @@ export default function UsersPage() {
                 <option value="viewer">Viewer</option>
               </select>
             </FormField>
+            {editingUser.role === 'reviewer' && (
+              <FormField label="Assign Queue (1 Queue per Reviewer Required)">
+                <select
+                  style={{
+                    ...selectStyle,
+                    background: '#0f1117',
+                    color: '#E8EDF4',
+                    border: !editingUser.queue_id ? '1px solid rgba(244,63,94,0.5)' : '1px solid rgba(255,255,255,0.14)',
+                  }}
+                  value={editingUser.queue_id || ''}
+                  onChange={e => setEditingUser({ ...editingUser, queue_id: e.target.value })}
+                >
+                  <option value="" style={{ background: '#0f1117', color: '#4E5A6B' }}>-- Select Queue to Assign --</option>
+                  {queues.map(q => {
+                    const assignedUser = users.find(u => u.id !== editingUser.id && (u.queue_id === q.id || (u.queues && u.queues.includes(q.name))));
+                    return (
+                      <option
+                        key={q.id}
+                        value={q.id}
+                        disabled={!!assignedUser}
+                        style={{ background: '#0f1117', color: assignedUser ? '#4E5A6B' : '#E8EDF4' }}
+                      >
+                        {q.name} {assignedUser ? `(Assigned to ${assignedUser.full_name})` : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </FormField>
+            )}
             <FormField label="Active Status">
               <select style={selectStyle} value={editingUser.is_active ? 'active' : 'inactive'} onChange={e => setEditingUser({ ...editingUser, is_active: e.target.value === 'active' })}>
                 <option value="active">Active</option>

@@ -17,7 +17,7 @@ func NewRuleRepository(db *pgxpool.Pool) *RuleRepository {
 
 func (r *RuleRepository) List(ctx context.Context) ([]model.Rule, error) {
 	query := `
-		SELECT id, name, entity, metric, operator, value, "window", action, is_active, created_at, updated_at
+		SELECT id, name, entity, metric, operator, value, "window", action, queue_id, is_active, created_at, updated_at
 		FROM rules
 		ORDER BY created_at DESC
 	`
@@ -32,37 +32,50 @@ func (r *RuleRepository) List(ctx context.Context) ([]model.Rule, error) {
 		var rule model.Rule
 		err := rows.Scan(
 			&rule.ID, &rule.Name, &rule.Entity, &rule.Metric, &rule.Operator,
-			&rule.Value, &rule.Window, &rule.Action, &rule.IsActive, &rule.CreatedAt, &rule.UpdatedAt,
+			&rule.Value, &rule.Window, &rule.Action, &rule.QueueID, &rule.IsActive, &rule.CreatedAt, &rule.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
 		rules = append(rules, rule)
 	}
+
 	return rules, nil
 }
 
 func (r *RuleRepository) Create(ctx context.Context, rule *model.Rule) error {
 	query := `
-		INSERT INTO rules (name, entity, metric, operator, value, "window", action)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO rules (name, entity, metric, operator, value, "window", action, queue_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING id, is_active, created_at, updated_at
 	`
 	return r.db.QueryRow(ctx, query,
-		rule.Name, rule.Entity, rule.Metric, rule.Operator, rule.Value, rule.Window, rule.Action,
+		rule.Name, rule.Entity, rule.Metric, rule.Operator, rule.Value, rule.Window, rule.Action, rule.QueueID,
 	).Scan(&rule.ID, &rule.IsActive, &rule.CreatedAt, &rule.UpdatedAt)
+}
+
+func (r *RuleRepository) Update(ctx context.Context, rule *model.Rule) error {
+	query := `
+		UPDATE rules
+		SET name = $2, metric = $3, operator = $4, value = $5, "window" = $6, action = $7, queue_id = $8
+		WHERE id = $1
+		RETURNING entity, is_active, created_at, updated_at
+	`
+	return r.db.QueryRow(ctx, query,
+		rule.ID, rule.Name, rule.Metric, rule.Operator, rule.Value, rule.Window, rule.Action, rule.QueueID,
+	).Scan(&rule.Entity, &rule.IsActive, &rule.CreatedAt, &rule.UpdatedAt)
 }
 
 func (r *RuleRepository) GetByID(ctx context.Context, id string) (*model.Rule, error) {
 	query := `
-		SELECT id, name, entity, metric, operator, value, "window", action, is_active, created_at, updated_at
+		SELECT id, name, entity, metric, operator, value, "window", action, queue_id, is_active, created_at, updated_at
 		FROM rules
 		WHERE id = $1
 	`
 	var rule model.Rule
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&rule.ID, &rule.Name, &rule.Entity, &rule.Metric, &rule.Operator,
-		&rule.Value, &rule.Window, &rule.Action, &rule.IsActive, &rule.CreatedAt, &rule.UpdatedAt,
+		&rule.Value, &rule.Window, &rule.Action, &rule.QueueID, &rule.IsActive, &rule.CreatedAt, &rule.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err

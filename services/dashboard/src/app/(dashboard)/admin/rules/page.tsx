@@ -23,7 +23,11 @@ const TrashIcon = () => (
   </svg>
 );
 
-
+const EditIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+  </svg>
+);
 
 const CloseIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -172,8 +176,13 @@ export default function RulesPage() {
   const [filterAction, setFilterAction]   = useState('All');
   const [velocityConfigs, setVelocityConfigs] = useState<any[]>([]);
 
+  const [queues, setQueues]               = useState<any[]>([]);
   const [newRule, setNewRule] = useState({
-    name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag',
+    name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag', queue_id: '',
+  });
+  const [editingRule, setEditingRule]     = useState<any | null>(null);
+  const [editForm, setEditForm]           = useState({
+    id: '', name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag', queue_id: '',
   });
 
 
@@ -189,9 +198,19 @@ export default function RulesPage() {
     }
   };
 
+  const loadQueues = async () => {
+    try {
+      const data = await fetchApi('http://localhost:8080/admin/queues');
+      setQueues(data || []);
+    } catch (e) {
+      console.error('Failed to load queues', e);
+    }
+  };
+
   useEffect(() => { 
     loadRules(); 
     loadVelocityConfigs(); 
+    loadQueues();
   }, []);
 
   const loadRules = async () => {
@@ -227,12 +246,39 @@ export default function RulesPage() {
     try {
       await fetchApi('http://localhost:8080/admin/rules', {
         method: 'POST',
-        body: JSON.stringify({ ...newRule, value: parseFloat(newRule.value) }),
+        body: JSON.stringify({ ...newRule, value: parseFloat(newRule.value), queue_id: newRule.queue_id || undefined }),
       });
       setIsCreateOpen(false);
-      setNewRule({ name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag' });
+      setNewRule({ name: '', entity: 'card', metric: 'velocity', operator: '>=', value: '', window: '24h', action: 'flag', queue_id: '' });
       loadRules();
     } catch (e: any) { alert(`Failed to create rule: ${e.message || 'Unknown error'}`); }
+  };
+
+  const openEditModal = (r: any) => {
+    setEditingRule(r);
+    setEditForm({
+      id: r.id,
+      name: r.name || '',
+      entity: r.entity || 'card',
+      metric: r.metric || 'velocity',
+      operator: r.operator || '>=',
+      value: String(r.value || ''),
+      window: r.window || '24h',
+      action: r.action || 'flag',
+      queue_id: r.queue_id || '',
+    });
+  };
+
+  const handleUpdate = async () => {
+    if (!editingRule) return;
+    try {
+      await fetchApi(`http://localhost:8080/admin/rules/${editingRule.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ ...editForm, value: parseFloat(editForm.value), queue_id: editForm.queue_id || undefined }),
+      });
+      setEditingRule(null);
+      loadRules();
+    } catch (e: any) { alert(`Failed to update rule: ${e.message || 'Unknown error'}`); }
   };
 
 
@@ -379,7 +425,7 @@ export default function RulesPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
-                  {['Name', 'Condition', 'Entity', 'Window', 'Action', 'Triggers (24h)', 'Active', ''].map(h => (
+                  {['Name', 'Condition', 'Entity', 'Window', 'Action', 'Target Queue', 'Triggers (24h)', 'Active', ''].map(h => (
                     <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#4E5A6B', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
                   ))}
                 </tr>
@@ -388,20 +434,36 @@ export default function RulesPage() {
                 {filtered.map((r, i) => (
                   <tr key={r.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
                     <td style={{ padding: '13px 16px', fontWeight: 600, color: '#E8EDF4' }}>{r.name}</td>
-                    <td style={{ padding: '13px 16px' }}>
-                      <code style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '5px', fontSize: '0.8rem', color: '#A5B4FC', fontFamily: 'monospace' }}>
+                    <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
+                      <code style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', padding: '2px 8px', borderRadius: '5px', fontSize: '0.8rem', color: '#A5B4FC', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
                         {r.metric} {r.operator} {r.value}
                       </code>
                     </td>
                     <td style={{ padding: '13px 16px', color: '#8D9AAB', textTransform: 'capitalize' }}>{r.entity}</td>
                     <td style={{ padding: '13px 16px', color: '#8D9AAB', fontFamily: 'monospace', fontSize: '0.82rem' }}>{r.window}</td>
                     <td style={{ padding: '13px 16px' }}><ActionBadge action={r.action} /></td>
+                    <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
+                      {r.queue_id ? (
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600, background: 'rgba(92,110,248,0.12)', color: '#A5B4FC', border: '1px solid rgba(92,110,248,0.25)', whiteSpace: 'nowrap' }}>
+                          {queues.find(q => q.id === r.queue_id)?.name || 'Assigned Queue'}
+                        </span>
+                      ) : (
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 500, background: 'rgba(255,255,255,0.05)', color: '#8D9AAB', whiteSpace: 'nowrap' }}>
+                          Default Fallback
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '13px 16px', color: '#E8EDF4', fontFamily: 'monospace' }}>{r.triggers_24h ?? '—'}</td>
                     <td style={{ padding: '13px 16px' }}><Toggle checked={r.is_active} onChange={v => handleToggle(r.id, v)} /></td>
-                    <td style={{ padding: '13px 16px', textAlign: 'right' }}>
-                      <button onClick={() => setRuleToDelete(r.id)} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', color: '#FCA5A5', fontSize: '0.75rem', fontWeight: 600 }}>
-                        <TrashIcon /> Delete
-                      </button>
+                    <td style={{ padding: '13px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <button onClick={() => openEditModal(r)} title="Edit Rule" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '6px', cursor: 'pointer', background: 'rgba(92,110,248,0.08)', border: '1px solid rgba(92,110,248,0.2)', color: '#A5B4FC' }}>
+                          <EditIcon />
+                        </button>
+                        <button onClick={() => setRuleToDelete(r.id)} title="Delete Rule" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '6px', cursor: 'pointer', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', color: '#FCA5A5' }}>
+                          <TrashIcon />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -466,9 +528,93 @@ export default function RulesPage() {
               <option value="block">Block Transaction (High Friction)</option>
             </select>
           </FormField>
+          <FormField label="Target Queue (Optional - Default Fallback Queue if empty)">
+            <select style={selectStyle} value={newRule.queue_id} onChange={e => setNewRule({ ...newRule, queue_id: e.target.value })}>
+              <option value="">-- None (Use Default Fallback Queue) --</option>
+              {queues.map(q => (
+                <option key={q.id} value={q.id}>{q.name}</option>
+              ))}
+            </select>
+          </FormField>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
             <CancelBtn onClick={() => setIsCreateOpen(false)}>Cancel</CancelBtn>
             <PrimaryBtn onClick={handleCreate} disabled={!newRule.name.trim() || !newRule.value}>Save Rule</PrimaryBtn>
+          </div>
+        </div>
+      </IntModal>
+
+      {/* Edit Rule */}
+      <IntModal isOpen={!!editingRule} onClose={() => setEditingRule(null)} title="Edit Custom Rule" width="560px">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <FormField label="Rule Name">
+            <input style={inputStyle} type="text" placeholder="e.g. High Card Velocity" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+          </FormField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <FormField label="Entity (Immutable)">
+              <div style={{
+                width: '100%', padding: '9px 12px',
+                background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: '8px', color: '#8D9AAB', fontSize: '0.875rem',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                cursor: 'not-allowed', userSelect: 'none',
+              }}>
+                <span style={{ textTransform: 'capitalize', fontWeight: 600, color: '#A5B4FC' }}>{editForm.entity}</span>
+                <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 600, background: 'rgba(255,255,255,0.05)', padding: '2px 7px', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                  Locked
+                </span>
+              </div>
+            </FormField>
+            <FormField label="Metric">
+              <select style={selectStyle} value={editForm.metric} onChange={e => setEditForm({ ...editForm, metric: e.target.value })}>
+                <option value="velocity">Velocity</option>
+                <option value="amount">Amount</option>
+              </select>
+            </FormField>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            <FormField label="Operator">
+              <select style={selectStyle} value={editForm.operator} onChange={e => setEditForm({ ...editForm, operator: e.target.value })}>
+                <option value=">=">&gt;=</option>
+                <option value=">">&gt;</option>
+                <option value="<">&lt;</option>
+                <option value="==">==</option>
+              </select>
+            </FormField>
+            <FormField label="Value">
+              <input style={inputStyle} type="number" placeholder="e.g. 5" value={editForm.value} onChange={e => setEditForm({ ...editForm, value: e.target.value })} />
+            </FormField>
+            <FormField label="Window">
+              <select style={selectStyle} value={editForm.window} onChange={e => setEditForm({ ...editForm, window: e.target.value })}>
+                {velocityConfigs.find(c => c.entity.toLowerCase() === editForm.entity.toLowerCase())?.windows.map((w: string) => (
+                  <option key={w} value={w}>{w}</option>
+                ))}
+                {(!velocityConfigs.find(c => c.entity.toLowerCase() === editForm.entity.toLowerCase())?.windows.includes(editForm.window)) && editForm.window && (
+                  <option key={editForm.window} value={editForm.window}>{editForm.window}</option>
+                )}
+                {(!velocityConfigs.find(c => c.entity.toLowerCase() === editForm.entity.toLowerCase())?.windows.length) && !editForm.window && (
+                  <option value="" disabled>No windows configured</option>
+                )}
+              </select>
+            </FormField>
+          </div>
+          <FormField label="Action (Consequence)">
+            <select style={selectStyle} value={editForm.action} onChange={e => setEditForm({ ...editForm, action: e.target.value })}>
+              <option value="flag">Flag for Review (Low Friction)</option>
+              <option value="step_up">Step-up Auth (Medium Friction)</option>
+              <option value="block">Block Transaction (High Friction)</option>
+            </select>
+          </FormField>
+          <FormField label="Target Queue (Optional - Default Fallback Queue if empty)">
+            <select style={selectStyle} value={editForm.queue_id} onChange={e => setEditForm({ ...editForm, queue_id: e.target.value })}>
+              <option value="">-- None (Use Default Fallback Queue) --</option>
+              {queues.map(q => (
+                <option key={q.id} value={q.id}>{q.name}</option>
+              ))}
+            </select>
+          </FormField>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+            <CancelBtn onClick={() => setEditingRule(null)}>Cancel</CancelBtn>
+            <PrimaryBtn onClick={handleUpdate} disabled={!editForm.name.trim() || !editForm.value}>Update Rule</PrimaryBtn>
           </div>
         </div>
       </IntModal>

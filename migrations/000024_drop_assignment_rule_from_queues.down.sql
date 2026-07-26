@@ -1,0 +1,1 @@
+ALTER TABLE queues ADD COLUMN IF NOT EXISTS assignment_rule TEXT;

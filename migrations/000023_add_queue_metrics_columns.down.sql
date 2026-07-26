@@ -1,0 +1,5 @@
+ALTER TABLE queues
+DROP COLUMN IF EXISTS open_cases,
+DROP COLUMN IF EXISTS total_cases,
+DROP COLUMN IF EXISTS cases_breached,
+DROP COLUMN IF EXISTS breach_rate;

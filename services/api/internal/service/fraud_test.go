@@ -233,3 +233,25 @@ func TestFraudResult_FieldDefaults(t *testing.T) {
 		t.Errorf("ThresholdUsed: got %v, want %v", *result.ThresholdUsed, 0.75)
 	}
 }
+
+func TestFraudService_HandleScoredResult_EscalatedGreyZone(t *testing.T) {
+	hub := &mockWebSocketHub{}
+
+	hub.Broadcast("tx-greyzone", model.TransactionScoredEvent{
+		EventType:     "transaction.scored",
+		TransactionID: "tx-greyzone",
+		FraudScore:    0.55,
+		IsFraud:       false,
+		Status:        "escalated",
+		ModelVersion:  "v1.0",
+		Timestamp:     time.Now().UTC(),
+	})
+
+	if len(hub.broadcasts) != 1 {
+		t.Fatalf("expected 1 broadcast, got %d", len(hub.broadcasts))
+	}
+	evt := hub.broadcasts[0].payload.(model.TransactionScoredEvent)
+	if evt.Status != "escalated" {
+		t.Errorf("Status should be escalated for grey-zone result, got %s", evt.Status)
+	}
+}

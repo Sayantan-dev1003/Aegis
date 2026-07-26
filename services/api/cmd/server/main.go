@@ -103,12 +103,13 @@ func main() {
 	outboxRepo := repository.NewOutboxRepository(pgPool)
 	ruleRepo := repository.NewRuleRepository(pgPool)
 
+	queueRepo := repository.NewQueueRepository(pgPool)
 	velocityConfigRepo := repository.NewVelocityConfigRepository(pgPool)
 	velocityStore := repository.NewVelocityStore(redisClient, velocityConfigRepo, &log.Logger)
 	ruleAnalyticsRepo := repository.NewRuleAnalyticsRepository(redisClient)
 
 	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo, velocityStore, ruleAnalyticsRepo)
-	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo, rulesEngine)
+	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo, rulesEngine, queueRepo)
 	ingestHandler := handler.NewIngestHandler(ingestService, velocityStore)
 
 	// Background context for graceful shutdown
@@ -143,7 +144,6 @@ func main() {
 	statsRepo := repository.NewStatsRepository(pgPool)
 	
 	// Phase 2 Repositories
-	queueRepo := repository.NewQueueRepository(pgPool)
 	intRepo := repository.NewIntegrationRepository(pgPool)
 	modelRepo := repository.NewModelRepository(pgPool)
 	retrainRepo := repository.NewRetrainRepository(pgPool)
@@ -154,7 +154,7 @@ func main() {
 	}
 
 	configService := service.NewConfigService(configRepo, redisClient, &log.Logger)
-	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub)
+	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub, queueRepo)
 	reviewService := service.NewReviewService(pgPool, txRepo, reviewRepo, auditRepo, wsHub)
 	incidentRepo := repository.NewIncidentRepository(pgPool)
 	incidentService := service.NewIncidentService(incidentRepo)
@@ -272,6 +272,7 @@ func main() {
 			// Phase 2 Routes
 			r.Get("/admin/rules", ruleHandler.List)
 			r.Post("/admin/rules", ruleHandler.Create)
+			r.Put("/admin/rules/{id}", ruleHandler.Update)
 			r.Patch("/admin/rules/{id}/toggle", ruleHandler.ToggleActive)
 			r.Delete("/admin/rules/{id}", ruleHandler.Delete)
 			

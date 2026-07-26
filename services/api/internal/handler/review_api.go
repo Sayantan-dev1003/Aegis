@@ -33,10 +33,10 @@ func (h *ReviewHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 	txID := chi.URLParam(r, "id")
 	
 	info, ok := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
-	if !ok || (info.Role != "reviewer" && info.Role != "admin") {
+	if !ok || info.Role != "reviewer" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprintf(w, `{"error": "insufficient permissions"}`)
+		fmt.Fprintf(w, `{"error": "insufficient permissions: only reviewers can review escalated transactions"}`)
 		return
 	}
 

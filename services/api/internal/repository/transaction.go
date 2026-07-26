@@ -28,9 +28,9 @@ func (r *TransactionRepository) Create(ctx context.Context, tx pgx.Tx, t *model.
 		INSERT INTO transactions (
 			external_id, account_id, merchant_id, merchant_name, merchant_category,
 			amount, currency, country_code, transaction_type, channel, device_id,
-			ip_address, timestamp, status
+			ip_address, timestamp, status, queue_id
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
 		) RETURNING id, ingested_at
 	`
 
@@ -49,6 +49,7 @@ func (r *TransactionRepository) Create(ctx context.Context, tx pgx.Tx, t *model.
 		t.IPAddress,
 		t.Timestamp,
 		t.Status,
+		t.QueueID,
 	).Scan(&t.ID, &t.IngestedAt)
 
 	return err
@@ -62,6 +63,17 @@ func (r *TransactionRepository) UpdateStatus(ctx context.Context, id string, sta
 		WHERE id = $2
 	`
 	_, err := r.db.Exec(ctx, query, status, id)
+	return err
+}
+
+// UpdateStatusAndQueue updates the status and target queue of an existing transaction.
+func (r *TransactionRepository) UpdateStatusAndQueue(ctx context.Context, id string, status string, queueID *string) error {
+	query := `
+		UPDATE transactions
+		SET status = $1, queue_id = $2
+		WHERE id = $3
+	`
+	_, err := r.db.Exec(ctx, query, status, queueID, id)
 	return err
 }
 

@@ -28,6 +28,7 @@ type FraudService struct {
 	txRepo        *repository.TransactionRepository
 	configService *ConfigService
 	hub           WebSocketHub
+	queueRepo     *repository.QueueRepository
 	tracer        trace.Tracer
 }
 
@@ -37,12 +38,14 @@ func NewFraudService(
 	txRepo *repository.TransactionRepository,
 	configService *ConfigService,
 	hub WebSocketHub,
+	queueRepo *repository.QueueRepository,
 ) *FraudService {
 	return &FraudService{
 		fraudRepo:     fraudRepo,
 		txRepo:        txRepo,
 		configService: configService,
 		hub:           hub,
+		queueRepo:     queueRepo,
 		tracer:        otel.Tracer("aegis/api/service"),
 	}
 }
@@ -79,11 +82,32 @@ func (s *FraudService) HandleScoredResult(ctx context.Context, result *model.Fra
 
 	// Step 2: Update transaction status
 	status := "scored"
+	var queueID *string
 	if autoBlocked {
 		status = "auto_blocked"
+	} else if result.FraudScore >= 0.45 {
+		status = "escalated"
+		if s.queueRepo != nil {
+			mlQ, err := s.queueRepo.FindByName(ctx, "ML Borderline Review")
+			if err == nil && mlQ != nil {
+				queueID = &mlQ.ID
+			} else {
+				fallbackQ, err2 := s.queueRepo.GetFallbackQueue(ctx)
+				if err2 == nil && fallbackQ != nil {
+					queueID = &fallbackQ.ID
+				}
+			}
+		}
 	}
-	if err := s.txRepo.UpdateStatus(ctx, result.TransactionID, status); err != nil {
-		return fmt.Errorf("failed to update transaction status: %w", err)
+
+	if status == "escalated" && queueID != nil {
+		if err := s.txRepo.UpdateStatusAndQueue(ctx, result.TransactionID, status, queueID); err != nil {
+			return fmt.Errorf("failed to update transaction status and queue: %w", err)
+		}
+	} else {
+		if err := s.txRepo.UpdateStatus(ctx, result.TransactionID, status); err != nil {
+			return fmt.Errorf("failed to update transaction status: %w", err)
+		}
 	}
 
 	// Step 3: WebSocket broadcast

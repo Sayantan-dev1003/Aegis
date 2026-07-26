@@ -11,6 +11,7 @@ type Rule struct {
 	Value     float64   `json:"value" db:"value"`
 	Window    *string   `json:"window" db:"window"`
 	Action    string    `json:"action" db:"action"`
+	QueueID   *string   `json:"queue_id,omitempty" db:"queue_id"`
 	IsActive  bool      `json:"is_active" db:"is_active"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`

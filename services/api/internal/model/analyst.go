@@ -9,6 +9,9 @@ type Analyst struct {
 	PasswordHash string     `json:"-"`
 	FullName     string     `json:"full_name"`
 	Role         string     `json:"role"`
+	QueueID      *string    `json:"queue_id,omitempty"`
+	QueueName    string     `json:"queue_name,omitempty"`
+	Queues       []string   `json:"queues"`
 	IsActive     bool       `json:"is_active"`
 	CreatedAt    time.Time  `json:"created_at"`
 	LastLogin    *time.Time `json:"last_login"`
