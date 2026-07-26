@@ -9,38 +9,6 @@ import {
   ReferenceLine, BarChart, Bar, CartesianGrid, Legend, LabelList
 } from 'recharts';
 
-// ─── Chart data ───────────────────────────────────────────────────────────────
-
-const fallbackPrecisionRecallData = Array.from({ length: 100 }, (_, i) => {
-  const threshold = i / 100;
-  return {
-    threshold,
-    precision: Math.min(1, 0.4 + threshold * 0.6 + Math.random() * 0.05),
-    recall: Math.max(0, 1 - Math.pow(threshold, 2) + Math.random() * 0.05),
-    flaggedPct: Math.max(0, (1 - threshold) * 15),
-  };
-});
-
-const fallbackFeatureImportanceData = [
-  { feature: 'amount', value: 0.85 },
-  { feature: 'distance_from_home', value: 0.72 },
-  { feature: 'time_since_last_txn', value: 0.65 },
-  { feature: 'merchant_category', value: 0.58 },
-  { feature: 'velocity_24h', value: 0.51 },
-  { feature: 'device_velocity', value: 0.44 },
-  { feature: 'ip_risk_score', value: 0.38 },
-  { feature: 'is_foreign', value: 0.31 },
-  { feature: 'card_age_days', value: 0.25 },
-  { feature: 'email_domain_risk', value: 0.19 },
-];
-
-const driftData = Array.from({ length: 30 }, (_, i) => ({
-  date: `07-${(i + 1).toString().padStart(2, '0')}`,
-  amount: 0.02 + Math.random() * 0.03,
-  velocity_24h: 0.01 + Math.random() * 0.02,
-  ip_risk_score: 0.05 + Math.random() * 0.08 + (i > 20 ? 0.1 : 0),
-}));
-
 // ─── Tooltip style ────────────────────────────────────────────────────────────
 
 const ttStyle = {
@@ -64,13 +32,31 @@ const RefreshIcon = () => (
 
 // ─── Reusable primitives ──────────────────────────────────────────────────────
 
-const KpiCard = ({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent: string }) => (
+const KpiCard = ({ label, value, sub, accent, change }: {
+  label: string;
+  value: string;
+  sub?: string;
+  accent: string;
+  change?: { pct: number } | null;
+}) => (
   <div style={{
     background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)',
     borderRadius: '12px', padding: '16px 20px',
     position: 'relative', overflow: 'hidden',
   }}>
-    <div style={{ fontSize: '0.72rem', color: '#8D9AAB', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '4px' }}>{label}</div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+      <div style={{ fontSize: '0.72rem', color: '#8D9AAB', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</div>
+      {change !== undefined && change !== null && (
+        <div style={{
+          fontSize: '0.68rem', fontWeight: 700, padding: '2px 7px', borderRadius: '12px', fontFamily: 'monospace',
+          background: change.pct >= 0 ? 'rgba(52,211,153,0.12)' : 'rgba(244,63,94,0.12)',
+          color: change.pct >= 0 ? '#34D399' : '#F43F5E',
+          border: `1px solid ${change.pct >= 0 ? 'rgba(52,211,153,0.3)' : 'rgba(244,63,94,0.3)'}`,
+        }}>
+          {change.pct >= 0 ? `▲ +${change.pct.toFixed(1)}%` : `▼ ${change.pct.toFixed(1)}%`}
+        </div>
+      )}
+    </div>
     <div style={{ fontSize: '1.6rem', fontWeight: 700, color: accent, lineHeight: 1, fontFamily: 'monospace' }}>{value}</div>
     {sub && <div style={{ fontSize: '0.7rem', color: '#4E5A6B', marginTop: '4px' }}>{sub}</div>}
     <div style={{
@@ -151,7 +137,7 @@ const JobStatusBadge = ({ status }: { status: string }) => {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function ModelManagementPage() {
-  const [threshold, setThreshold] = useState(0.62);
+  const [threshold, setThreshold] = useState(0.5);
   const [isRollbackOpen, setIsRollbackOpen] = useState(false);
   const [isRetrainOpen, setIsRetrainOpen] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
@@ -163,10 +149,27 @@ export default function ModelManagementPage() {
   const [isRetraining, setIsRetraining] = useState(false);
   const [workerStatus, setWorkerStatus] = useState<string>('loading');
 
-  const [prData, setPrData] = useState<any[]>(fallbackPrecisionRecallData);
-  const [shapData, setShapData] = useState<any[]>(fallbackFeatureImportanceData);
+  const [prData, setPrData] = useState<any[]>([]);
+  const [shapData, setShapData] = useState<any[]>([]);
 
-  const currentStats = prData.find(d => d.threshold >= threshold) || prData[0];
+  const zeroStat = { threshold: threshold, precision: 0, recall: 0, flaggedPct: 0, tp: 0, fp: 0, tn: 0, fn: 0, businessScore: 0 };
+  const foundStat = prData.length > 0
+    ? prData.reduce((prev, curr) => {
+        const currDiff = Math.abs(Number(curr.threshold ?? curr.Threshold ?? 0) - threshold);
+        const prevDiff = Math.abs(Number(prev.threshold ?? prev.Threshold ?? 0) - threshold);
+        return currDiff < prevDiff ? curr : prev;
+      })
+    : zeroStat;
+  const currentStats = {
+    threshold: Number(foundStat.threshold ?? foundStat.Threshold ?? threshold),
+    precision: Number(foundStat.precision ?? foundStat.Precision ?? 0),
+    recall: Number(foundStat.recall ?? foundStat.Recall ?? 0),
+    flaggedPct: Number(
+      foundStat.flaggedPct ??
+      (foundStat['False Positive Rate'] !== undefined ? Number(foundStat['False Positive Rate']) * 100 :
+      (foundStat.fp_rate !== undefined ? Number(foundStat.fp_rate) * 100 : 0))
+    ),
+  };
 
   const loadModels = async () => {
     try {
@@ -195,18 +198,64 @@ export default function ModelManagementPage() {
     try {
       const data = await fetchApi('http://localhost:8080/admin/models/active/metrics');
       if (data && data.threshold_metrics && Array.isArray(data.threshold_metrics) && data.threshold_metrics.length > 0) {
-        setPrData(data.threshold_metrics);
+        const normalizedPr = data.threshold_metrics.map((d: any) => {
+          const t = Number(d.threshold ?? d.Threshold ?? 0);
+          const p = Number(d.precision ?? d.Precision ?? 0);
+          const r = Number(d.recall ?? d.Recall ?? 0);
+          let f = Number(d.flaggedPct ?? 0);
+          if (d['False Positive Rate'] !== undefined) {
+            f = Number(d['False Positive Rate']) * 100;
+          } else if (d.fp_rate !== undefined) {
+            f = Number(d.fp_rate) * 100;
+          }
+          const totalSamples = 118108; // Total validation dataset size
+          const tpVal = d.TP !== undefined ? Number(d.TP) : (d.tp !== undefined ? Number(d.tp) : Math.round(4133 * r));
+          const fpVal = d.FP !== undefined ? Number(d.FP) : (d.fp !== undefined ? Number(d.fp) : Math.round(113975 * (f / 100)));
+          const fnVal = d.FN !== undefined ? Number(d.FN) : (d.fn !== undefined ? Number(d.fn) : Math.max(0, 4133 - tpVal));
+          const tnVal = d.TN !== undefined ? Number(d.TN) : (d.tn !== undefined ? Number(d.tn) : Math.max(0, totalSamples - (tpVal + fpVal + fnVal)));
+          const bsVal = d['Business Score'] !== undefined ? Number(d['Business Score']) : (d.business_score !== undefined ? Number(d.business_score) : (tpVal * 500 - fpVal * 25));
+          return {
+            threshold: t,
+            precision: p,
+            recall: r,
+            flaggedPct: f,
+            tp: tpVal,
+            fp: fpVal,
+            tn: tnVal,
+            fn: fnVal,
+            businessScore: bsVal,
+          };
+        });
+        setPrData(normalizedPr);
+
+        // Dynamically set initial slider threshold to the optimal F1 threshold from the model
+        let bestThreshold = 0.5;
+        let bestF1 = -1;
+        normalizedPr.forEach((item: any) => {
+          const p = item.precision;
+          const r = item.recall;
+          const f1 = (p + r) > 0 ? (2 * p * r) / (p + r) : 0;
+          if (f1 > bestF1) {
+            bestF1 = f1;
+            bestThreshold = item.threshold;
+          }
+        });
+        setThreshold(bestThreshold);
       } else {
-        setPrData(fallbackPrecisionRecallData);
+        setPrData([]);
       }
       if (data && data.shap_importance && Array.isArray(data.shap_importance) && data.shap_importance.length > 0) {
-        setShapData(data.shap_importance);
+        const normalizedShap = data.shap_importance.slice(0, 10).map((s: any) => ({
+          feature: String(s.feature || s.Feature || s.name || 'Unknown'),
+          value: Number(s.value ?? s.mean_abs_shap ?? s['Mean Abs SHAP'] ?? 0),
+        }));
+        setShapData(normalizedShap);
       } else {
-        setShapData(fallbackFeatureImportanceData);
+        setShapData([]);
       }
     } catch (e) {
-      setPrData(fallbackPrecisionRecallData);
-      setShapData(fallbackFeatureImportanceData);
+      setPrData([]);
+      setShapData([]);
     }
   };
 
@@ -270,12 +319,49 @@ export default function ModelManagementPage() {
   const selectedModelInfo = models.find(m => m.id === selectedVersion) || {};
   const isSelectedModelNew = !selectedModelInfo.is_active && !selectedModelInfo.deployed_at;
 
+  const prevModel = models.find(m => m.id !== active.id) || null;
+
+  const getPctChange = (currVal: number, prevVal?: number): { pct: number } | null => {
+    if (!prevModel || prevVal === undefined || prevVal === null || prevVal === 0) return null;
+    return { pct: ((currVal - prevVal) / prevVal) * 100 };
+  };
+
   const kpis = [
-    { label: 'PR-AUC',    value: (active.pr_auc    || 0).toFixed(3), sub: 'precision-recall area', accent: '#5C6EF8' },
-    { label: 'ROC-AUC',   value: (active.roc_auc   || 0).toFixed(3), sub: 'discriminative power',  accent: '#22D3EE' },
-    { label: 'Recall',    value: (active.recall     || 0).toFixed(3), sub: 'true-positive rate',   accent: '#34D399' },
-    { label: 'Precision', value: (active.precision  || 0).toFixed(3), sub: 'positive pred. value',  accent: '#F59E0B' },
-    { label: 'F1 Score',  value: (active.f1_score   || 0).toFixed(3), sub: 'harmonic mean',         accent: '#8B5CF6' },
+    {
+      label: 'PR-AUC',
+      value: (active.pr_auc || 0).toFixed(3),
+      sub: 'precision-recall area',
+      accent: '#5C6EF8',
+      change: getPctChange(Number(active.pr_auc || 0), Number(prevModel?.pr_auc || 0)),
+    },
+    {
+      label: 'ROC-AUC',
+      value: (active.roc_auc || 0).toFixed(3),
+      sub: 'discriminative power',
+      accent: '#22D3EE',
+      change: getPctChange(Number(active.roc_auc || 0), Number(prevModel?.roc_auc || 0)),
+    },
+    {
+      label: 'Recall',
+      value: (active.recall || 0).toFixed(3),
+      sub: 'true-positive rate',
+      accent: '#34D399',
+      change: getPctChange(Number(active.recall || 0), Number(prevModel?.recall || 0)),
+    },
+    {
+      label: 'Precision',
+      value: (active.precision || 0).toFixed(3),
+      sub: 'positive pred. value',
+      accent: '#F59E0B',
+      change: getPctChange(Number(active.precision || 0), Number(prevModel?.precision || 0)),
+    },
+    {
+      label: 'F1 Score',
+      value: (active.f1_score || 0).toFixed(3),
+      sub: 'harmonic mean',
+      accent: '#8B5CF6',
+      change: getPctChange(Number(active.f1_score || 0), Number(prevModel?.f1_score || 0)),
+    },
   ];
 
   const selectStyle: React.CSSProperties = {
@@ -292,7 +378,7 @@ export default function ModelManagementPage() {
         {kpis.map(k => <KpiCard key={k.label} {...k} />)}
       </div>
 
-      {/* PR Curve + SHAP */}
+      {/* Row 2: PR Curve + Confusion Matrix */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
         <ChartCard
           title="Precision / Recall vs. Threshold"
@@ -315,6 +401,37 @@ export default function ModelManagementPage() {
           <Slider value={threshold} onChange={setThreshold} min={0} max={1} step={0.01} />
         </ChartCard>
 
+        <ChartCard
+          title="Confusion Matrix (At Selected Threshold)"
+          subtitle={`Validation sample distribution at threshold ${threshold.toFixed(2)}`}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', padding: '8px 0', height: '100%', alignContent: 'center' }}>
+            <div style={{ background: 'rgba(52,211,153,0.05)', border: '1px solid rgba(52,211,153,0.25)', borderRadius: '10px', padding: '16px 18px' }}>
+              <div style={{ fontSize: '0.72rem', color: '#34D399', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>True Positives (Fraud Caught)</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#E8EDF4', marginTop: '6px', fontFamily: 'monospace' }}>{(foundStat.tp || 0).toLocaleString()}</div>
+              <div style={{ fontSize: '0.72rem', color: '#8D9AAB', marginTop: '4px' }}>Correctly blocked fraud transactions</div>
+            </div>
+            <div style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '10px', padding: '16px 18px' }}>
+              <div style={{ fontSize: '0.72rem', color: '#F59E0B', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>False Positives (False Alarms)</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#E8EDF4', marginTop: '6px', fontFamily: 'monospace' }}>{(foundStat.fp || 0).toLocaleString()}</div>
+              <div style={{ fontSize: '0.72rem', color: '#8D9AAB', marginTop: '4px' }}>Legitimate txns flagged for review</div>
+            </div>
+            <div style={{ background: 'rgba(34,211,238,0.05)', border: '1px solid rgba(34,211,238,0.25)', borderRadius: '10px', padding: '16px 18px' }}>
+              <div style={{ fontSize: '0.72rem', color: '#22D3EE', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>True Negatives (Correct Approval)</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#E8EDF4', marginTop: '6px', fontFamily: 'monospace' }}>{(foundStat.tn || 0).toLocaleString()}</div>
+              <div style={{ fontSize: '0.72rem', color: '#8D9AAB', marginTop: '4px' }}>Legitimate txns passed smoothly</div>
+            </div>
+            <div style={{ background: 'rgba(244,63,94,0.05)', border: '1px solid rgba(244,63,94,0.25)', borderRadius: '10px', padding: '16px 18px' }}>
+              <div style={{ fontSize: '0.72rem', color: '#F43F5E', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>False Negatives (Missed Fraud)</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#E8EDF4', marginTop: '6px', fontFamily: 'monospace' }}>{(foundStat.fn || 0).toLocaleString()}</div>
+              <div style={{ fontSize: '0.72rem', color: '#8D9AAB', marginTop: '4px' }}>Fraud txns slipped through</div>
+            </div>
+          </div>
+        </ChartCard>
+      </div>
+
+      {/* Row 3: Feature Importance + Version History Scroller */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
         <ChartCard title="Feature Importance (SHAP)" subtitle="Top 10 features by mean absolute SHAP value">
           <div style={{ height: 320 }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -336,88 +453,56 @@ export default function ModelManagementPage() {
             </ResponsiveContainer>
           </div>
         </ChartCard>
-      </div>
 
-      {/* Feature Drift */}
-      <ChartCard title="Feature Drift (Population Stability Index)" subtitle="Distribution shifts across key features over 30 days">
-        <div style={{ height: 220 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={driftData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="date" stroke="#4E5A6B" tick={{ fontSize: 11 }} />
-              <YAxis stroke="#4E5A6B" tick={{ fontSize: 11 }} />
-              <Tooltip {...ttStyle} formatter={(v: any) => typeof v === 'number' ? v.toFixed(3) : v} />
-              <Legend wrapperStyle={{ fontSize: '0.78rem', color: '#8D9AAB' }} />
-              <Line type="monotone" dataKey="amount"        stroke="#22D3EE" strokeWidth={2} dot={false} name="amount" />
-              <Line type="monotone" dataKey="velocity_24h"  stroke="#34D399" strokeWidth={2} dot={false} name="velocity_24h" />
-              <Line type="monotone" dataKey="ip_risk_score" stroke="#F59E0B" strokeWidth={2} dot={false} name="ip_risk_score" />
-              <ReferenceLine y={0.1} stroke="#F43F5E" strokeDasharray="4 4" label={{ position: 'insideTopLeft', value: 'Warning threshold', fill: '#F43F5E', fontSize: 11 }} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </ChartCard>
-
-      {/* Version History */}
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <div>
-            <div style={{ fontWeight: 600, fontSize: '1rem', color: '#E8EDF4' }}>Version History</div>
-            <div style={{ fontSize: '0.8rem', color: '#8D9AAB', marginTop: '2px' }}>Deployed model versions and rollback controls</div>
-          </div>
-        </div>
-        <div style={{
-          background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)',
-          borderRadius: '14px', overflow: 'hidden',
-        }}>
-          {loading ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: '#4E5A6B', fontSize: '0.875rem' }}>Loading version history…</div>
-          ) : models.length === 0 ? (
-            <div style={{ padding: '32px', textAlign: 'center', color: '#4E5A6B', fontSize: '0.875rem' }}>No model versions found.</div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
-                  {['Version', 'Deployed At', 'Precision / Recall', 'Status', ''].map(h => (
-                    <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#4E5A6B', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {models.map((m, i) => (
-                  <tr key={m.id} style={{ borderBottom: i < models.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span style={{ fontFamily: 'monospace', color: '#A5B4FC', fontWeight: 600 }}>{m.version}</span>
-                    </td>
-                    <td style={{ padding: '14px 18px', color: '#8D9AAB', fontSize: '0.82rem' }}>
-                      {m.deployed_at ? new Date(m.deployed_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span style={{ fontFamily: 'monospace', color: '#E8EDF4' }}>
-                        {(m.precision || 0).toFixed(3)} / {(m.recall || 0).toFixed(3)}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 18px' }}><VersionBadge active={m.is_active} deployedAt={m.deployed_at} /></td>
-                    <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                      {!m.is_active && (
-                        <button
-                          onClick={() => { setSelectedVersion(m.id); setIsRollbackOpen(true); }}
-                          style={{
-                            padding: '5px 12px', borderRadius: '6px', cursor: 'pointer',
-                            background: m.deployed_at ? 'rgba(245,158,11,0.08)' : 'rgba(96,165,250,0.08)',
-                            border: `1px solid ${m.deployed_at ? 'rgba(245,158,11,0.25)' : 'rgba(96,165,250,0.25)'}`,
-                            color: m.deployed_at ? '#FCD34D' : '#60A5FA', fontSize: '0.75rem', fontWeight: 600,
-                          }}
-                        >
-                          {m.deployed_at ? 'Rollback' : 'Deploy'}
-                        </button>
-                      )}
-                    </td>
+        <ChartCard title="Version History" subtitle="Deployed model versions and rollback controls">
+          <div style={{ height: 320, overflowY: 'auto', paddingRight: '4px' }}>
+            {loading ? (
+              <div style={{ padding: '32px', textAlign: 'center', color: '#4E5A6B', fontSize: '0.875rem' }}>Loading version history…</div>
+            ) : models.length === 0 ? (
+              <div style={{ padding: '32px', textAlign: 'center', color: '#4E5A6B', fontSize: '0.875rem' }}>No model versions found.</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                <thead style={{ position: 'sticky', top: 0, background: '#0D1117', zIndex: 5 }}>
+                  <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+                    {['Version', 'Deployed At', 'Status'].map(h => (
+                      <th key={h} style={{ padding: '12px 18px', textAlign: 'left', fontSize: '0.72rem', fontWeight: 600, color: '#4E5A6B', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                </thead>
+                <tbody>
+                  {models.map((m, i) => (
+                    <tr key={m.id} style={{ borderBottom: i < models.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
+                      <td style={{ padding: '14px 18px' }}>
+                        <span style={{ fontFamily: 'monospace', color: '#A5B4FC', fontWeight: 600 }}>{m.version}</span>
+                      </td>
+                      <td style={{ padding: '14px 18px', color: '#8D9AAB', fontSize: '0.82rem' }}>
+                        {m.deployed_at ? new Date(m.deployed_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+                          <VersionBadge active={m.is_active} deployedAt={m.deployed_at} />
+                          {!m.is_active && (
+                            <button
+                              onClick={() => { setSelectedVersion(m.id); setIsRollbackOpen(true); }}
+                              style={{
+                                padding: '5px 12px', borderRadius: '6px', cursor: 'pointer',
+                                background: m.deployed_at ? 'rgba(245,158,11,0.08)' : 'rgba(96,165,250,0.08)',
+                                border: `1px solid ${m.deployed_at ? 'rgba(245,158,11,0.25)' : 'rgba(96,165,250,0.25)'}`,
+                                color: m.deployed_at ? '#FCD34D' : '#60A5FA', fontSize: '0.75rem', fontWeight: 600,
+                              }}
+                            >
+                              {m.deployed_at ? 'Rollback' : 'Deploy'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </ChartCard>
       </div>
 
       {/* Retrain Jobs */}

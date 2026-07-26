@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/Sayantan-dev1003/aegis/api/internal/config"
 	"github.com/Sayantan-dev1003/aegis/api/internal/database"
@@ -72,19 +71,37 @@ func main() {
 		shapBytes = []byte("[]")
 	}
 
-	// Create new version string
-	newVersion := fmt.Sprintf("v%s-manual", time.Now().Format("20060102.1504"))
-	deploymentPath := filepath.Join(mlWorkerDir, "deployment")
+	// 4. Read deployment_config.json to get deployment_version
+	depConfigPath := filepath.Join(mlWorkerDir, "deployment", "deployment_config.json")
+	depConfigBytes, err := os.ReadFile(depConfigPath)
+	var newVersion string
+	if err == nil {
+		var depConfig map[string]interface{}
+		if err := json.Unmarshal(depConfigBytes, &depConfig); err == nil {
+			if ver, ok := depConfig["deployment_version"].(string); ok && ver != "" {
+				newVersion = ver
+			}
+		}
+	}
+	if newVersion == "" {
+		newVersion = "Aegis-1.0.0"
+	}
+
+	// 5. Determine artifact path (default to container path "/app/deployment", overridable via ARTIFACT_PATH env var)
+	artifactPath := "/app/deployment"
+	if os.Getenv("ARTIFACT_PATH") != "" {
+		artifactPath = os.Getenv("ARTIFACT_PATH")
+	}
 
 	id := uuid.New().String()
 
-	fmt.Printf("Registering model %s to database...\n", newVersion)
+	fmt.Printf("Registering model %s (artifact path: %s) to database...\n", newVersion, artifactPath)
 
 	err = modelRepo.CreateVersion(
 		ctx,
 		id,
 		newVersion,
-		deploymentPath,
+		artifactPath,
 		f1Score,
 		precision,
 		recall,
@@ -94,10 +111,14 @@ func main() {
 		thresholdBytes,
 		shapBytes,
 	)
-
 	if err != nil {
 		log.Fatalf("Failed to insert new model version: %v", err)
 	}
 
-	fmt.Printf("Success! Model %s (ID: %s) successfully registered in the database.\n", newVersion, id)
+	fmt.Printf("Activating model %s (ID: %s)...\n", newVersion, id)
+	if err := modelRepo.Deploy(ctx, id); err != nil {
+		log.Fatalf("Failed to activate model version %s: %v", id, err)
+	}
+
+	fmt.Printf("Success! Model %s (ID: %s) successfully registered and activated in the database.\n", newVersion, id)
 }
