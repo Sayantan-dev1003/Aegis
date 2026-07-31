@@ -1,136 +1,179 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
 import { fetchApi } from "../../../lib/api";
-import { Modal } from "@/components/Modal";
+import { Modal } from '@/components/Modal';
 
-// Icons
-const SearchIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8" />
-    <path d="m21 21-4.3-4.3" />
-  </svg>
-);
+const PAGE_SIZE = 20;
 
-const DownloadIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    <polyline points="7 10 12 15 17 10" />
-    <line x1="12" y1="15" x2="12" y2="3" />
-  </svg>
-);
+const selectStyle: React.CSSProperties = {
+  padding: '7px 10px',
+  backgroundColor: '#0f1117',
+  border: '1px solid var(--border-color, #1F2937)',
+  color: 'var(--text-primary, #E8EDF4)',
+  borderRadius: 'var(--radius-md, 10px)',
+  colorScheme: 'dark',
+  fontSize: '0.875rem',
+  cursor: 'pointer',
+};
 
-const EyeIcon = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-    <circle cx="12" cy="12" r="3" />
-  </svg>
-);
-
-const ShieldIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-  </svg>
-);
-
-// Role Badge Component
 const RoleBadge = ({ role }: { role: string }) => {
-  let color = "#8D9AAB";
-  let bg = "rgba(255, 255, 255, 0.06)";
-  let border = "rgba(255, 255, 255, 0.15)";
+  if (!role) return null;
+  let color = '';
+  let bg = '';
+  let borderColor = '';
 
-  if (role === "admin") {
-    color = "#A5B4FC";
-    bg = "rgba(79, 70, 229, 0.25)";
-    border = "rgba(129, 140, 248, 0.5)";
-  } else if (role === "reviewer") {
-    color = "#7DD3FC";
-    bg = "rgba(2, 132, 199, 0.25)";
-    border = "rgba(56, 189, 248, 0.5)";
-  } else if (role === "viewer") {
-    color = "#C4B5FD";
-    bg = "rgba(139, 92, 246, 0.25)";
-    border = "rgba(139, 92, 246, 0.5)";
+  if (role === 'admin') {
+    color = '#A5B4FC';
+    bg = 'rgba(79, 70, 229, 0.25)';
+    borderColor = 'rgba(129, 140, 248, 0.5)';
+  } else if (role === 'reviewer') {
+    color = '#7DD3FC';
+    bg = 'rgba(2, 132, 199, 0.25)';
+    borderColor = 'rgba(56, 189, 248, 0.5)';
+  } else if (role === 'viewer') {
+    color = '#C4B5FD';
+    bg = 'rgba(139, 92, 246, 0.25)';
+    borderColor = 'rgba(139, 92, 246, 0.5)';
+  } else {
+    color = '#CBD5E1';
+    bg = 'rgba(71, 85, 105, 0.25)';
+    borderColor = 'rgba(148, 163, 184, 0.5)';
   }
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "2px 8px",
-        borderRadius: "10px",
-        background: bg,
-        color: color,
-        border: `1px solid ${border}`,
-        fontSize: "0.68rem",
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
-      }}
-    >
-      {role || "system"}
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      padding: '1px 7px',
+      borderRadius: '10px',
+      background: bg,
+      color: color,
+      border: `1px solid ${borderColor}`,
+      fontSize: '0.6rem',
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      whiteSpace: 'nowrap',
+    }}>
+      {role}
     </span>
   );
 };
+
+const ActionBadge = ({ action }: { action: string }) => {
+  const verb = action.split('.')[1] || action;
+  let color = '';
+  let bg = '';
+
+  switch (verb) {
+    case 'created': color = 'var(--risk-low, #10B981)'; bg = 'rgba(18, 183, 106, 0.15)'; break;
+    case 'updated': color = 'var(--info, #4CC2FF)'; bg = 'rgba(76, 194, 255, 0.15)'; break;
+    case 'deleted': color = 'var(--risk-critical, #F43F5E)'; bg = 'rgba(229, 72, 77, 0.15)'; break;
+    case 'rolled_back': color = 'var(--risk-medium, #F5A524)'; bg = 'rgba(245, 165, 36, 0.15)'; break;
+    case 'deployed': color = '#a78bfa'; bg = 'rgba(167, 139, 250, 0.15)'; break;
+    case 'revoked': color = '#fb923c'; bg = 'rgba(251, 146, 60, 0.15)'; break;
+    case 'requeued': color = '#facc15'; bg = 'rgba(250, 204, 21, 0.15)'; break;
+    default: color = 'var(--text-secondary, #8D9AAB)'; bg = 'var(--bg-surface-hover, #161B22)';
+  }
+
+  return (
+    <span style={{ display: 'inline-block', padding: '3px 8px', borderRadius: '6px', backgroundColor: bg, color: color, fontSize: '0.75rem', fontWeight: 600, textTransform: 'capitalize' }}>
+      {action.replace('.', ' › ')}
+    </span>
+  );
+};
+
+const FilterLabel = ({ label }: { label: string }) => (
+  <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #8D9AAB)', fontWeight: 500, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '2px' }}>{label}</span>
+);
+
+const FilterGroup = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+    <FilterLabel label={label} />
+    {children}
+  </div>
+);
 
 export default function ViewerAuditPage() {
   const [auditEvents, setAuditEvents] = useState<any[]>([]);
   const [analystsMap, setAnalystsMap] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState("");
-  const [actionFilter, setActionFilter] = useState("");
-  const [selectedEvent, setSelectedEvent] = useState<any>(null);
 
-  const loadAuditData = async () => {
-    setLoading(true);
+  // Filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [actionFilter, setActionFilter] = useState('');
+  const [resourceTypeFilter, setResourceTypeFilter] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const [viewingDiff, setViewingDiff] = useState<any>(null);
+
+  const loadData = async () => {
     try {
-      const [auditRes, analystsRes] = await Promise.all([
-        fetchApi("http://localhost:8080/admin/audit?limit=200"),
-        fetchApi("http://localhost:8080/admin/analysts"),
+      const [auditData, analystsData] = await Promise.all([
+        fetchApi("http://localhost:8080/admin/audit?limit=500"),
+        fetchApi("http://localhost:8080/admin/analysts")
       ]);
 
-      if (auditRes && auditRes.data) {
-        setAuditEvents(auditRes.data);
-      } else if (Array.isArray(auditRes)) {
-        setAuditEvents(auditRes);
-      }
+      setAuditEvents(auditData.data || []);
 
       const map: Record<string, any> = {};
-      if (Array.isArray(analystsRes)) {
-        analystsRes.forEach((a: any) => {
-          map[a.id] = a;
-        });
+      if (analystsData) {
+        analystsData.forEach((a: any) => { map[a.id] = a; });
       }
       setAnalystsMap(map);
     } catch (err) {
-      console.error("Failed to fetch audit data for viewer:", err);
+      console.error("Failed to load audit data", err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadAuditData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  const filteredEvents = auditEvents.filter((e) => {
+  // Reset to page 1 whenever filters change
+  useEffect(() => { setCurrentPage(1); }, [searchQuery, actionFilter, resourceTypeFilter, roleFilter, dateFilter]);
+
+  const filteredEvents = auditEvents.filter(e => {
     const analyst = analystsMap[e.actor_id];
     const actorName = analyst?.full_name || e.actor_id || "System";
     const actorRole = analyst?.role || "";
 
-    const searchMatch =
-      !searchQuery ||
-      actorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (e.action && e.action.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (e.resource_id && e.resource_id.toLowerCase().includes(searchQuery.toLowerCase()));
+    // Search: actor name only
+    const matchesSearch = searchQuery === '' || actorName.toLowerCase().includes(searchQuery.toLowerCase());
 
-    const roleMatch = !roleFilter || actorRole === roleFilter;
-    const actionMatch = !actionFilter || (e.action && e.action.startsWith(actionFilter));
+    // Action filter — e.action is like "rule.created"
+    const matchesAction = actionFilter === '' || e.action === actionFilter;
 
-    return searchMatch && roleMatch && actionMatch;
+    // Resource type filter — e.resource_type
+    const matchesResource = resourceTypeFilter === '' || e.resource_type === resourceTypeFilter;
+
+    // Role filter — actor's role
+    const matchesRole = roleFilter === '' || actorRole === roleFilter;
+
+    // Date filter — compare date part only (local date)
+    let matchesDate = true;
+    if (dateFilter) {
+      const eventDate = new Date(e.created_at).toLocaleDateString('en-CA'); // YYYY-MM-DD
+      matchesDate = eventDate === dateFilter;
+    }
+
+    return matchesSearch && matchesAction && matchesResource && matchesRole && matchesDate;
   });
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredEvents.length / PAGE_SIZE));
+  const paginatedEvents = filteredEvents.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  const getInitials = (name: string) => {
+    if (!name) return "U";
+    if (name === 'System') return 'SY';
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
 
   const handleExportAuditDigest = () => {
     const csvRows = [
@@ -152,331 +195,312 @@ export default function ViewerAuditPage() {
     document.body.removeChild(link);
   };
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      {/* Compliance & Audit Banner */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "16px 20px",
-          background: "linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(13, 17, 23, 0.7) 100%)",
-          border: "1px solid rgba(139, 92, 246, 0.3)",
-          borderRadius: "14px",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div
-            style={{
-              width: "38px",
-              height: "38px",
-              borderRadius: "10px",
-              background: "rgba(139, 92, 246, 0.2)",
-              color: "#8B5CF6",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <ShieldIcon />
-          </div>
-          <div>
-            <div style={{ fontSize: "0.95rem", fontWeight: 700, color: "#E8EDF4" }}>
-              Immutable System Audit Log & Governance Trail
-            </div>
-            <div style={{ fontSize: "0.76rem", color: "#8D9AAB" }}>
-              SOC 2 / Regulatory compliance surface • Track &quot;who did what and when&quot; across rules, models, and case decisions.
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={handleExportAuditDigest}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            padding: "8px 14px",
-            borderRadius: "8px",
-            border: "1px solid rgba(139, 92, 246, 0.4)",
-            background: "rgba(139, 92, 246, 0.18)",
-            color: "#E8EDF4",
-            fontSize: "0.78rem",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <DownloadIcon />
-          Export Compliance Digest (CSV)
-        </button>
+  const renderDiffContent = (before: string, after: string) => {
+    const beforeLines = before.split('\n');
+    const afterLines = after.split('\n');
+    return (
+      <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', whiteSpace: 'pre-wrap', lineHeight: 1.5, backgroundColor: '#000', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color, #1F2937)' }}>
+        {beforeLines.map((line, i) => {
+          if (!afterLines.includes(line)) return <div key={`del-${i}`} style={{ backgroundColor: 'rgba(229, 72, 77, 0.2)', color: '#ff8a8a', padding: '0 8px', margin: '0 -16px' }}>- {line}</div>;
+          return <div key={`unchanged-${i}`} style={{ color: '#888', padding: '0 8px' }}>  {line}</div>;
+        })}
+        {afterLines.map((line, i) => {
+          if (!beforeLines.includes(line)) return <div key={`add-${i}`} style={{ backgroundColor: 'rgba(18, 183, 106, 0.2)', color: '#8affb8', padding: '0 8px', margin: '0 -16px' }}>+ {line}</div>;
+          return null;
+        })}
       </div>
+    );
+  };
 
-      {/* Filter Toolbar */}
-      <div
-        style={{
-          background: "rgba(255,255,255,0.02)",
-          border: "1px solid rgba(255,255,255,0.07)",
-          borderRadius: "14px",
-          padding: "14px 18px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "12px",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            background: "#0D1117",
-            border: "1px solid #232C3A",
-            borderRadius: "8px",
-            padding: "8px 14px",
-            width: "300px",
-          }}
-        >
-          <span style={{ color: "#8D9AAB" }}>
-            <SearchIcon />
-          </span>
-          <input
-            type="text"
-            placeholder="Search actor, action, resource ID..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              background: "transparent",
-              border: "none",
-              outline: "none",
-              color: "#E8EDF4",
-              fontSize: "0.82rem",
-              width: "100%",
-            }}
-          />
-        </div>
+  if (loading) return <div style={{ padding: "2rem", color: 'var(--text-secondary, #8D9AAB)' }}>Loading audit logs...</div>;
 
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontSize: "0.78rem", color: "#8D9AAB" }}>Role:</span>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              style={{
-                background: "#0D1117",
-                border: "1px solid #232C3A",
-                color: "#E8EDF4",
-                padding: "6px 12px",
-                borderRadius: "8px",
-                fontSize: "0.8rem",
-              }}
-            >
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl, 24px)', paddingBottom: 'var(--space-xl, 24px)' }}>
+
+      {/* Filter Row */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end' }}>
+
+          <FilterGroup label="Search Actor">
+            <input
+              type="text"
+              placeholder="Search by actor name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ ...selectStyle, width: '200px', padding: '7px 10px' }}
+            />
+          </FilterGroup>
+
+          <FilterGroup label="Action">
+            <select value={actionFilter} onChange={e => setActionFilter(e.target.value)} style={selectStyle}>
+              <option value="">All Actions</option>
+              <optgroup label="Analyst">
+                <option value="analyst.created">analyst.created</option>
+                <option value="analyst.updated">analyst.updated</option>
+              </optgroup>
+              <optgroup label="Rule">
+                <option value="rule.created">rule.created</option>
+                <option value="rule.updated">rule.updated</option>
+                <option value="rule.deleted">rule.deleted</option>
+              </optgroup>
+              <optgroup label="Queue">
+                <option value="queue.created">queue.created</option>
+                <option value="queue.updated">queue.updated</option>
+                <option value="queue.deleted">queue.deleted</option>
+              </optgroup>
+              <optgroup label="Model">
+                <option value="model.deployed">model.deployed</option>
+                <option value="model.rolled_back">model.rolled_back</option>
+              </optgroup>
+              <optgroup label="Integration">
+                <option value="apikey.created">apikey.created</option>
+                <option value="apikey.revoked">apikey.revoked</option>
+                <option value="webhook.created">webhook.created</option>
+                <option value="webhook.updated">webhook.updated</option>
+                <option value="webhook.deleted">webhook.deleted</option>
+              </optgroup>
+              <optgroup label="Config / DLQ">
+                <option value="config.updated">config.updated</option>
+                <option value="dlq.requeued">dlq.requeued</option>
+              </optgroup>
+            </select>
+          </FilterGroup>
+
+          <FilterGroup label="Resource Type">
+            <select value={resourceTypeFilter} onChange={e => setResourceTypeFilter(e.target.value)} style={selectStyle}>
+              <option value="">All Resources</option>
+              <option value="analyst">Analyst</option>
+              <option value="rule">Rule</option>
+              <option value="queue">Queue</option>
+              <option value="model_version">Model Version</option>
+              <option value="apikey">API Key</option>
+              <option value="webhook">Webhook</option>
+              <option value="system_config">System Config</option>
+              <option value="transaction">Transaction</option>
+            </select>
+          </FilterGroup>
+
+          <FilterGroup label="Actor Role">
+            <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} style={selectStyle}>
               <option value="">All Roles</option>
               <option value="admin">Admin</option>
               <option value="reviewer">Reviewer</option>
               <option value="viewer">Viewer</option>
             </select>
-          </div>
+          </FilterGroup>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span style={{ fontSize: "0.78rem", color: "#8D9AAB" }}>Action:</span>
-            <select
-              value={actionFilter}
-              onChange={(e) => setActionFilter(e.target.value)}
-              style={{
-                background: "#0D1117",
-                border: "1px solid #232C3A",
-                color: "#E8EDF4",
-                padding: "6px 12px",
-                borderRadius: "8px",
-                fontSize: "0.8rem",
-              }}
-            >
-              <option value="">All Actions</option>
-              <option value="rule">Rule Changes</option>
-              <option value="case">Case Decisions</option>
-              <option value="model">Model Operations</option>
-              <option value="user">User Access</option>
-            </select>
-          </div>
+          <FilterGroup label="Date">
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              style={{ ...selectStyle, colorScheme: 'dark' }}
+            />
+          </FilterGroup>
+
+          {(searchQuery || actionFilter || resourceTypeFilter || roleFilter || dateFilter) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <FilterLabel label="&nbsp;" />
+              <button
+                onClick={() => { setSearchQuery(''); setActionFilter(''); setResourceTypeFilter(''); setRoleFilter(''); setDateFilter(''); }}
+                style={{ ...selectStyle, color: '#f87171', borderColor: 'rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.05)', cursor: 'pointer' }}
+              >
+                Clear Filters
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary, #8D9AAB)' }}>
+            {filteredEvents.length} result{filteredEvents.length !== 1 ? 's' : ''}
+          </span>
+          <button onClick={handleExportAuditDigest} style={{ backgroundColor: 'transparent', border: '1px solid var(--border-color, #1F2937)', color: 'var(--text-primary, #E8EDF4)', padding: '7px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 500, fontSize: '0.875rem' }}>
+            Export ↓
+          </button>
         </div>
       </div>
 
       {/* Audit Log Table */}
-      <div
-        style={{
-          background: "rgba(255,255,255,0.02)",
-          border: "1px solid rgba(255,255,255,0.07)",
-          borderRadius: "14px",
-          overflow: "hidden",
-        }}
-      >
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem" }}>
+      <div style={{ backgroundColor: 'var(--bg-surface, #0D1117)', border: '1px solid var(--border-color, #1F2937)', borderRadius: 'var(--radius-lg, 16px)', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
           <thead>
-            <tr style={{ background: "rgba(255,255,255,0.03)", borderBottom: "1px solid rgba(255,255,255,0.08)", color: "#8D9AAB", textAlign: "left" }}>
-              <th style={{ padding: "12px 18px" }}>Timestamp (UTC)</th>
-              <th style={{ padding: "12px 14px" }}>Actor / Role</th>
-              <th style={{ padding: "12px 14px" }}>Action</th>
-              <th style={{ padding: "12px 14px" }}>Resource Type</th>
-              <th style={{ padding: "12px 14px" }}>Target Entity ID</th>
-              <th style={{ padding: "12px 14px" }}>IP / Source</th>
-              <th style={{ padding: "12px 18px", textAlign: "right" }}>Inspect Diff</th>
+            <tr style={{ borderBottom: '1px solid var(--border-color, #1F2937)', backgroundColor: 'var(--bg-surface-hover, #161B22)' }}>
+              <th style={{ padding: '12px 16px', color: 'var(--text-secondary, #8D9AAB)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Timestamp</th>
+              <th style={{ padding: '12px 16px', color: 'var(--text-secondary, #8D9AAB)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>IP Address</th>
+              <th style={{ padding: '12px 16px', color: 'var(--text-secondary, #8D9AAB)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Actor</th>
+              <th style={{ padding: '12px 16px', color: 'var(--text-secondary, #8D9AAB)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Action</th>
+              <th style={{ padding: '12px 16px', color: 'var(--text-secondary, #8D9AAB)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Resource ID</th>
+              <th style={{ padding: '12px 16px', color: 'var(--text-secondary, #8D9AAB)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Resource Type</th>
+              <th style={{ padding: '12px 16px', width: '40px' }}></th>
             </tr>
           </thead>
           <tbody>
-            {loading ? (
+            {paginatedEvents.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ padding: "40px", textAlign: "center", color: "#8D9AAB" }}>
-                  Loading immutable audit events...
+                <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary, #8D9AAB)', fontSize: '0.9rem' }}>
+                  No audit logs match the current filters.
                 </td>
               </tr>
-            ) : filteredEvents.length === 0 ? (
-              <tr>
-                <td colSpan={7} style={{ padding: "40px", textAlign: "center", color: "#8D9AAB" }}>
-                  No audit events found matching filters.
-                </td>
-              </tr>
-            ) : (
-              filteredEvents.map((ev, idx) => {
-                const analyst = analystsMap[ev.actor_id];
-                const actorName = analyst?.full_name || ev.actor_id || "System Worker";
-                const actorRole = analyst?.role || "system";
+            ) : paginatedEvents.map((e: any, idx: number) => {
+              const analyst = analystsMap[e.actor_id];
+              const displayName = analyst?.full_name || e.actor_id || "System";
+              const role = analyst?.role || "";
+              const isLast = idx === paginatedEvents.length - 1;
 
-                return (
-                  <tr
-                    key={ev.id || idx}
-                    style={{
-                      borderBottom: idx < filteredEvents.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
-                      color: "#E8EDF4",
-                    }}
-                  >
-                    <td style={{ padding: "14px 18px", fontFamily: "monospace", color: "#8D9AAB", fontSize: "0.78rem" }}>
-                      {ev.created_at ? new Date(ev.created_at).toISOString().replace("T", " ").substring(0, 19) : "N/A"}
-                    </td>
-                    <td style={{ padding: "14px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ fontWeight: 600, color: "#E8EDF4" }}>{actorName}</span>
-                        <RoleBadge role={actorRole} />
+              return (
+                <tr key={e.id || idx} style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-color, #1F2937)', transition: 'background 0.15s' }}
+                  onMouseEnter={ev => (ev.currentTarget.style.backgroundColor = 'var(--bg-surface-hover, #161B22)')}
+                  onMouseLeave={ev => (ev.currentTarget.style.backgroundColor = 'transparent')}
+                >
+                  {/* Timestamp */}
+                  <td style={{ padding: '14px 16px', color: 'var(--text-secondary, #8D9AAB)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                    {new Date(e.created_at).toLocaleString()}
+                  </td>
+
+                  {/* IP Address */}
+                  <td style={{ padding: '14px 16px' }}>
+                    {e.ip_address ? (
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-secondary, #8D9AAB)', backgroundColor: 'var(--bg-surface-hover, #161B22)', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-color, #1F2937)', whiteSpace: 'nowrap' }}>
+                        {e.ip_address}
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-disabled, #4E5A6B)', fontSize: '0.8rem' }}>—</span>
+                    )}
+                  </td>
+
+                  {/* Actor */}
+                  <td style={{ padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: 'var(--bg-surface-hover, #161B22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary, #8D9AAB)', fontWeight: 600, fontSize: '0.72rem', border: '1px solid var(--border-color, #1F2937)', flexShrink: 0 }}>
+                        {getInitials(displayName)}
                       </div>
-                    </td>
-                    <td style={{ padding: "14px", fontFamily: "monospace", fontWeight: 700, color: "#8B5CF6" }}>
-                      {ev.action}
-                    </td>
-                    <td style={{ padding: "14px", textTransform: "capitalize" }}>
-                      {ev.resource_type || "General"}
-                    </td>
-                    <td style={{ padding: "14px", fontFamily: "monospace", color: "#E8EDF4" }}>
-                      {ev.resource_id ? `${ev.resource_id.substring(0, 14)}...` : "GLOBAL"}
-                    </td>
-                    <td style={{ padding: "14px", fontFamily: "monospace", color: "#8D9AAB", fontSize: "0.76rem" }}>
-                      {ev.ip_address || "internal-rpc"}
-                    </td>
-                    <td style={{ padding: "14px 18px", textAlign: "right" }}>
-                      <button
-                        onClick={() => setSelectedEvent(ev)}
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "5px",
-                          padding: "5px 10px",
-                          borderRadius: "6px",
-                          border: "1px solid rgba(139, 92, 246, 0.3)",
-                          background: "rgba(139, 92, 246, 0.1)",
-                          color: "#8B5CF6",
-                          fontSize: "0.75rem",
-                          fontWeight: 600,
-                          cursor: "pointer",
-                        }}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                        <span style={{ fontWeight: 500, fontSize: '0.875rem', color: 'var(--text-primary, #E8EDF4)', whiteSpace: 'nowrap' }}>{displayName}</span>
+                        {role && <RoleBadge role={role} />}
+                      </div>
+                    </div>
+                  </td>
+
+                  {/* Action */}
+                  <td style={{ padding: '14px 16px' }}>
+                    <ActionBadge action={e.action || ''} />
+                  </td>
+
+                  {/* Resource ID */}
+                  <td style={{ padding: '14px 16px' }}>
+                    {e.resource_id ? (
+                      <span
+                        title={e.resource_id}
+                        onClick={() => navigator.clipboard?.writeText(e.resource_id)}
+                        style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(148,163,184,0.15)', cursor: 'copy', whiteSpace: 'nowrap' }}
                       >
-                        <EyeIcon />
-                        View Diff
+                        {e.resource_id.substring(0, 8)}…
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-disabled, #4E5A6B)', fontSize: '0.8rem' }}>—</span>
+                    )}
+                  </td>
+
+                  {/* Resource Type */}
+                  <td style={{ padding: '14px 16px', color: 'var(--text-secondary, #8D9AAB)', fontSize: '0.85rem', textTransform: 'capitalize' }}>
+                    {e.resource_type?.replace('_', ' ') || '—'}
+                  </td>
+
+                  {/* Diff icon */}
+                  <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                    {(e.old_value || e.new_value) && (
+                      <button
+                        onClick={() => setViewingDiff(e)}
+                        title="View change diff"
+                        style={{ background: 'none', border: '1px solid var(--border-color, #1F2937)', color: 'var(--text-secondary, #8D9AAB)', width: '28px', height: '28px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.15s, border-color 0.15s, background 0.15s' }}
+                        onMouseEnter={ev => { ev.currentTarget.style.color = '#c4b5fd'; ev.currentTarget.style.borderColor = 'rgba(139, 92, 246, 0.5)'; ev.currentTarget.style.background = 'rgba(139, 92, 246, 0.12)'; }}
+                        onMouseLeave={ev => { ev.currentTarget.style.color = 'var(--text-secondary, #8D9AAB)'; ev.currentTarget.style.borderColor = 'var(--border-color, #1F2937)'; ev.currentTarget.style.background = 'none'; }}
+                      >
+                        ⊞
                       </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
-      {/* Immutable Event Inspector Modal */}
-      {selectedEvent && (
-        <Modal isOpen={!!selectedEvent} onClose={() => setSelectedEvent(null)} title="Immutable Audit Log Record">
-          <div style={{ display: "flex", flexDirection: "column", gap: "16px", minWidth: "500px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", fontSize: "0.82rem" }}>
-              <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "8px" }}>
-                <span style={{ color: "#8D9AAB", display: "block", fontSize: "0.72rem" }}>EVENT ID</span>
-                <span style={{ fontFamily: "monospace", color: "#E8EDF4" }}>{selectedEvent.id}</span>
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
+          <button
+            disabled={currentPage === 1}
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color, #1F2937)', backgroundColor: currentPage === 1 ? 'transparent' : 'var(--bg-surface, #0D1117)', color: currentPage === 1 ? 'var(--text-disabled, #4E5A6B)' : 'var(--text-primary, #E8EDF4)', cursor: currentPage === 1 ? 'default' : 'pointer', fontSize: '0.875rem' }}
+          >
+            ← Prev
+          </button>
+          <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary, #8D9AAB)' }}>
+            Page {currentPage} of {totalPages}
+          </span>
+          <button
+            disabled={currentPage === totalPages}
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color, #1F2937)', backgroundColor: currentPage === totalPages ? 'transparent' : 'var(--bg-surface, #0D1117)', color: currentPage === totalPages ? 'var(--text-disabled, #4E5A6B)' : 'var(--text-primary, #E8EDF4)', cursor: currentPage === totalPages ? 'default' : 'pointer', fontSize: '0.875rem' }}
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
+      {/* Diff Inspector Modal */}
+      <Modal isOpen={!!viewingDiff} onClose={() => setViewingDiff(null)} title="Audit Log Change Diff" width="700px">
+        {viewingDiff && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '0.875rem', backgroundColor: 'var(--bg-surface-hover, #161B22)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color, #1F2937)' }}>
+              <div>
+                <span style={{ color: 'var(--text-secondary, #8D9AAB)', fontSize: '0.75rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Event ID</span>
+                <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{viewingDiff.id}</span>
               </div>
-              <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "8px" }}>
-                <span style={{ color: "#8D9AAB", display: "block", fontSize: "0.72rem" }}>TIMESTAMP (UTC)</span>
-                <span style={{ fontFamily: "monospace", color: "#E8EDF4" }}>
-                  {selectedEvent.created_at ? new Date(selectedEvent.created_at).toUTCString() : "N/A"}
-                </span>
+              <div>
+                <span style={{ color: 'var(--text-secondary, #8D9AAB)', fontSize: '0.75rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Timestamp</span>
+                <span>{new Date(viewingDiff.created_at).toLocaleString()}</span>
               </div>
-              <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "8px" }}>
-                <span style={{ color: "#8D9AAB", display: "block", fontSize: "0.72rem" }}>ACTION</span>
-                <span style={{ fontWeight: 700, color: "#8B5CF6" }}>{selectedEvent.action}</span>
+              <div>
+                <span style={{ color: 'var(--text-secondary, #8D9AAB)', fontSize: '0.75rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Actor ID</span>
+                <span style={{ fontFamily: 'monospace' }}>{viewingDiff.actor_id || "System"}</span>
               </div>
-              <div style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: "8px" }}>
-                <span style={{ color: "#8D9AAB", display: "block", fontSize: "0.72rem" }}>TARGET ENTITY</span>
-                <span style={{ fontFamily: "monospace", color: "#E8EDF4" }}>
-                  {selectedEvent.resource_type} / {selectedEvent.resource_id}
-                </span>
+              <div>
+                <span style={{ color: 'var(--text-secondary, #8D9AAB)', fontSize: '0.75rem', display: 'block', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Resource</span>
+                <span style={{ fontFamily: 'monospace' }}>{viewingDiff.resource_type}:{viewingDiff.resource_id}</span>
               </div>
             </div>
 
-            {/* Diff / Payload box */}
-            <div
-              style={{
-                background: "#07090E",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: "8px",
-                padding: "14px",
-                fontFamily: "monospace",
-                fontSize: "0.78rem",
-                overflowX: "auto",
-              }}
-            >
-              <div style={{ color: "#8D9AAB", marginBottom: "8px", fontSize: "0.7rem", textTransform: "uppercase" }}>
-                IMMUTABLE EVENT METADATA & CHANGE DIFF
+            {/* Diff content */}
+            {(viewingDiff.old_value || viewingDiff.new_value) && (
+              <div>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '0.875rem', color: 'var(--text-primary, #E8EDF4)' }}>Configuration Change Diff</h4>
+                {renderDiffContent(viewingDiff.old_value || '', viewingDiff.new_value || '')}
               </div>
-              <pre style={{ margin: 0, color: "#10B981" }}>
-                {JSON.stringify(
-                  selectedEvent.metadata || {
-                    before: "status: pending_review",
-                    after: "status: reviewed, decision: confirmed_fraud",
-                    reason_code: "VELOCITY_SPIKE_VERIFIED",
-                    compliance_verified: true,
-                  },
-                  null,
-                  2
-                )}
-              </pre>
-            </div>
+            )}
 
-            <div style={{ display: "flex", justifyContent: "flex-end", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "12px" }}>
-              <button
-                onClick={() => setSelectedEvent(null)}
-                style={{
-                  padding: "7px 18px",
-                  borderRadius: "6px",
-                  border: "none",
-                  background: "#8B5CF6",
-                  color: "#fff",
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                Close Record
+            {/* Payload Metadata */}
+            {viewingDiff.metadata && Object.keys(viewingDiff.metadata).length > 0 && (
+              <div>
+                <h4 style={{ margin: '0 0 8px 0', fontSize: '0.875rem', color: 'var(--text-primary, #E8EDF4)' }}>Event Metadata</h4>
+                <pre style={{ margin: 0, padding: '12px', backgroundColor: 'var(--bg-surface-hover, #161B22)', borderRadius: '6px', border: '1px solid var(--border-color, #1F2937)', fontSize: '0.8rem', fontFamily: 'monospace', color: 'var(--text-secondary, #8D9AAB)', overflowX: 'auto' }}>
+                  {JSON.stringify(viewingDiff.metadata, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <button onClick={() => setViewingDiff(null)} style={{ padding: '8px 16px', backgroundColor: 'var(--bg-surface-hover, #161B22)', border: '1px solid var(--border-color, #1F2937)', color: 'var(--text-primary, #E8EDF4)', borderRadius: 'var(--radius-md, 10px)', cursor: 'pointer' }}>
+                Close
               </button>
             </div>
           </div>
-        </Modal>
-      )}
+        )}
+      </Modal>
+
     </div>
   );
 }
