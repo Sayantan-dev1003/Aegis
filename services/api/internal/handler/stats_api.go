@@ -224,3 +224,201 @@ func (h *StatsHandler) Trends(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(respBytes)
 }
+
+func (h *StatsHandler) ExecutiveSummary(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "handler.stats_executive_summary")
+	defer span.End()
+
+	q := r.URL.Query()
+	timeFrame := q.Get("time_frame")
+	if timeFrame == "" {
+		timeFrame = "12h"
+	}
+
+	validFrames := map[string]bool{
+		"12h": true,
+		"24h": true,
+		"7d":  true,
+		"30d": true,
+		"90d": true,
+	}
+	if !validFrames[timeFrame] {
+		h.respondError(w, "invalid time_frame", http.StatusBadRequest)
+		return
+	}
+
+	cacheKey := fmt.Sprintf("aegis:stats:executive:%s", timeFrame)
+	cached, err := h.redisClient.Get(ctx, cacheKey).Bytes()
+	if err == nil && len(cached) > 0 {
+		span.SetAttributes(attribute.Bool("cache.hit", true))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
+		return
+	}
+	span.SetAttributes(attribute.Bool("cache.hit", false))
+
+	now := time.Now().UTC()
+	var fromTime time.Time
+	switch timeFrame {
+	case "12h":
+		fromTime = now.Add(-12 * time.Hour)
+	case "24h":
+		fromTime = now.Add(-24 * time.Hour)
+	case "7d":
+		fromTime = now.Add(-7 * 24 * time.Hour)
+	case "30d":
+		fromTime = now.Add(-30 * 24 * time.Hour)
+	case "90d":
+		fromTime = now.Add(-90 * 24 * time.Hour)
+	default:
+		fromTime = now.Add(-12 * time.Hour)
+	}
+
+	resp, err := h.statsRepo.GetExecutiveSummary(ctx, fromTime, timeFrame)
+	if err != nil {
+		h.respondError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	respBytes, _ := json.Marshal(resp)
+	go h.redisClient.Set(context.Background(), cacheKey, respBytes, 15*time.Second)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(respBytes)
+}
+
+func (h *StatsHandler) VerdictVelocity(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "handler.stats_verdict_velocity")
+	defer span.End()
+
+	q := r.URL.Query()
+	timeFrame := q.Get("time_frame")
+	if timeFrame == "" {
+		timeFrame = "12h"
+	}
+
+	validFrames := map[string]bool{
+		"12h": true,
+		"24h": true,
+		"7d":  true,
+		"30d": true,
+		"90d": true,
+	}
+	if !validFrames[timeFrame] {
+		h.respondError(w, "invalid time_frame", http.StatusBadRequest)
+		return
+	}
+
+	cacheKey := fmt.Sprintf("aegis:stats:velocity:%s", timeFrame)
+	cached, err := h.redisClient.Get(ctx, cacheKey).Bytes()
+	if err == nil && len(cached) > 0 {
+		span.SetAttributes(attribute.Bool("cache.hit", true))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
+		return
+	}
+	span.SetAttributes(attribute.Bool("cache.hit", false))
+
+	resp, err := h.statsRepo.GetVerdictVelocity(ctx, timeFrame)
+	if err != nil {
+		h.respondError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	respBytes, _ := json.Marshal(resp)
+	go h.redisClient.Set(context.Background(), cacheKey, respBytes, 15*time.Second)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(respBytes)
+}
+
+func (h *StatsHandler) MerchantRisk(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "StatsHandler.MerchantRisk")
+	defer span.End()
+
+	q := r.URL.Query()
+	timeFrame := q.Get("time_frame")
+	if timeFrame == "" {
+		timeFrame = "12h"
+	}
+
+	validFrames := map[string]bool{
+		"12h": true,
+		"24h": true,
+		"7d":  true,
+		"30d": true,
+		"90d": true,
+	}
+	if !validFrames[timeFrame] {
+		h.respondError(w, "invalid time_frame", http.StatusBadRequest)
+		return
+	}
+
+	cacheKey := fmt.Sprintf("aegis:stats:merchant_risk:%s", timeFrame)
+	cached, err := h.redisClient.Get(ctx, cacheKey).Bytes()
+	if err == nil && len(cached) > 0 {
+		span.SetAttributes(attribute.Bool("cache.hit", true))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
+		return
+	}
+	span.SetAttributes(attribute.Bool("cache.hit", false))
+
+	resp, err := h.statsRepo.GetMerchantRisk(ctx, timeFrame)
+	if err != nil {
+		h.respondError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	respBytes, _ := json.Marshal(resp)
+	go h.redisClient.Set(context.Background(), cacheKey, respBytes, 15*time.Second)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(respBytes)
+}
+
+func (h *StatsHandler) ChannelPerformance(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "StatsHandler.ChannelPerformance")
+	defer span.End()
+
+	q := r.URL.Query()
+	timeFrame := q.Get("time_frame")
+	if timeFrame == "" {
+		timeFrame = "12h"
+	}
+
+	validFrames := map[string]bool{
+		"12h": true,
+		"24h": true,
+		"7d":  true,
+		"30d": true,
+		"90d": true,
+	}
+	if !validFrames[timeFrame] {
+		h.respondError(w, "invalid time_frame", http.StatusBadRequest)
+		return
+	}
+
+	cacheKey := fmt.Sprintf("aegis:stats:channel_performance:%s", timeFrame)
+	cached, err := h.redisClient.Get(ctx, cacheKey).Bytes()
+	if err == nil && len(cached) > 0 {
+		span.SetAttributes(attribute.Bool("cache.hit", true))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(cached)
+		return
+	}
+	span.SetAttributes(attribute.Bool("cache.hit", false))
+
+	resp, err := h.statsRepo.GetChannelPerformance(ctx, timeFrame)
+	if err != nil {
+		h.respondError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	respBytes, _ := json.Marshal(resp)
+	go h.redisClient.Set(context.Background(), cacheKey, respBytes, 15*time.Second)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(respBytes)
+}
+

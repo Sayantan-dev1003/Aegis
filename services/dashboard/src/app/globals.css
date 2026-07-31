@@ -20,6 +20,13 @@
   --risk-low: #10B981;
   --risk-info: #3B82F6;
   
+  /* Viewer Role Purple / Violet Executive Palette */
+  --viewer-accent: #8B5CF6;
+  --viewer-accent-hover: #7C3AED;
+  --viewer-accent-glow: rgba(139, 92, 246, 0.18);
+  --viewer-accent-light: rgba(139, 92, 246, 0.12);
+  --viewer-border: rgba(139, 92, 246, 0.3);
+  
   /* Spacing (Consistent scale) */
   --space-xs: 0.25rem;
   --space-sm: 0.5rem;
@@ -143,3 +150,25 @@ button, input, select, textarea {
   border-color: var(--primary-color);
   box-shadow: 0 0 0 1px var(--primary-color);
 }
+
+/* Viewer Theme specific styles */
+.theme-viewer {
+  --primary-color: var(--viewer-accent);
+  --primary-hover: var(--viewer-accent-hover);
+}
+
+.badge-read-only {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--viewer-accent-light);
+  color: var(--viewer-accent);
+  border: 1px solid var(--viewer-border);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+

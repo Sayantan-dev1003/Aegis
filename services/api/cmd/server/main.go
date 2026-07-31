@@ -255,6 +255,24 @@ func main() {
 			w.Write([]byte(fmt.Sprintf("Hello %s, role: %s", info.ID, info.Role)))
 		})
 
+		metricsAdminHandler := handler.NewMetricsHandler()
+
+		// Read-only inspection routes for Admin and Viewer (Auditor / Executive / Compliance)
+		r.Group(func(r chi.Router) {
+			r.Use(aegismw.RequireRole("admin", "viewer"))
+			r.Get("/admin/audit", adminHandler.ListAuditLogs)
+			r.Get("/admin/analysts", analystHandler.ListAnalysts)
+			r.Get("/admin/rules", ruleHandler.List)
+			r.Get("/admin/velocity-config", velocityConfigHandler.List)
+			r.Get("/admin/queues", queueHandler.List)
+			r.Get("/admin/models", modelHandler.List)
+			r.Get("/admin/models/active/metrics", modelHandler.ActiveMetrics)
+			r.Get("/admin/retrain-jobs", retrainHandler.List)
+			r.Get("/admin/ml-worker/status", retrainHandler.Status)
+			r.Get("/admin/metrics", metricsAdminHandler.GetMetrics)
+		})
+
+		// Admin-only mutation and configuration routes
 		r.Group(func(r chi.Router) {
 			r.Use(aegismw.RequireRole("admin"))
 			r.Get("/auth/admin", func(w http.ResponseWriter, req *http.Request) {
@@ -264,22 +282,17 @@ func main() {
 			r.Patch("/admin/config/{key}", adminHandler.UpdateConfig)
 			r.Get("/admin/dlq", adminHandler.ListDLQ)
 			r.Post("/admin/dlq/{id}/requeue", adminHandler.RequeueDLQ)
-			r.Get("/admin/audit", adminHandler.ListAuditLogs)
-			r.Get("/admin/analysts", analystHandler.ListAnalysts)
 			r.Post("/admin/analysts", analystHandler.CreateAnalyst)
 			r.Patch("/admin/analysts/{id}", analystHandler.UpdateAnalyst)
 			
-			// Phase 2 Routes
-			r.Get("/admin/rules", ruleHandler.List)
+			// Phase 2 Mutation Routes
 			r.Post("/admin/rules", ruleHandler.Create)
 			r.Put("/admin/rules/{id}", ruleHandler.Update)
 			r.Patch("/admin/rules/{id}/toggle", ruleHandler.ToggleActive)
 			r.Delete("/admin/rules/{id}", ruleHandler.Delete)
 			
-			r.Get("/admin/velocity-config", velocityConfigHandler.List)
 			r.Put("/admin/velocity-config/{entity}", velocityConfigHandler.Update)
 			
-			r.Get("/admin/queues", queueHandler.List)
 			r.Post("/admin/queues", queueHandler.Create)
 			r.Patch("/admin/queues/{id}", queueHandler.Update)
 			r.Delete("/admin/queues/{id}", queueHandler.Delete)
@@ -294,18 +307,10 @@ func main() {
 			r.Delete("/admin/webhooks/{id}", intHandler.DeleteWebhook)
 			r.Get("/admin/webhooks/{id}/deliveries", intHandler.ListWebhookDeliveries)
 			
-			r.Get("/admin/models", modelHandler.List)
-			r.Get("/admin/models/active/metrics", modelHandler.ActiveMetrics)
 			r.Post("/admin/models/{id}/deploy", modelHandler.Deploy)
 			r.Post("/admin/models/{id}/rollback", modelHandler.Rollback)
 			
-			r.Get("/admin/retrain-jobs", retrainHandler.List)
 			r.Post("/admin/retrain-jobs", retrainHandler.Trigger)
-			r.Get("/admin/ml-worker/status", retrainHandler.Status)
-			
-			// Phase 3 Route
-			metricsAdminHandler := handler.NewMetricsHandler()
-			r.Get("/admin/metrics", metricsAdminHandler.GetMetrics)
 		})
 		
 		// API v1 routes (any authenticated role)
@@ -314,6 +319,10 @@ func main() {
 		r.Post("/api/v1/transactions/{id}/review", reviewHandler.SubmitReview)
 		r.Get("/api/v1/stats/summary", statsHandler.Summary)
 		r.Get("/api/v1/stats/trends", statsHandler.Trends)
+		r.Get("/api/v1/stats/executive", statsHandler.ExecutiveSummary)
+		r.Get("/api/v1/stats/verdict-velocity", statsHandler.VerdictVelocity)
+		r.Get("/api/v1/stats/merchant-risk", statsHandler.MerchantRisk)
+		r.Get("/api/v1/stats/channel-performance", statsHandler.ChannelPerformance)
 		r.Get("/api/v1/incidents", incidentHandler.GetActiveIncidents)
 	})
 

@@ -38,9 +38,9 @@ func buildMLPayload(t *model.Transaction) ([]byte, error) {
 	}
 
 	// DeviceType: approximate mapping from channel.
-	//   "desktop" for online; "mobile device" for physical point-of-sale / ATM.
+	//   "desktop" for online/ach_transfer/wire_transfer; "mobile device" for pos/atm/upi/mobile_wallet.
 	deviceType := "desktop"
-	if t.Channel == "pos" || t.Channel == "atm" {
+	if t.Channel == "pos" || t.Channel == "atm" || t.Channel == "upi" || t.Channel == "mobile_wallet" {
 		deviceType = "mobile device"
 	}
 

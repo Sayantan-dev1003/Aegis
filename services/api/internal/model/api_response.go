@@ -124,6 +124,50 @@ type StatsSummaryResponse struct {
 	ComputedAt        time.Time `json:"computed_at"`
 }
 
+// ExecutiveSummaryResponse represents the time-windowed executive overview metrics.
+type ExecutiveSummaryResponse struct {
+	TimeFrame           string    `json:"time_frame"`            // "12h", "24h", "7d", "30d", "90d"
+	TotalFraudPrevented float64   `json:"total_fraud_prevented"` // Sum of amount in INR for auto_blocked / confirmed_fraud
+	OverallFraudRate    float64   `json:"overall_fraud_rate"`    // Percentage 0.0 - 100.0
+	TotalMonitoredTxns  int       `json:"total_monitored_txns"`  // Count of ingested txns
+	QueueSlaAdherence   float64   `json:"queue_sla_adherence"`   // Avg % adherence across active queues
+	FraudTxnsCount      int       `json:"fraud_txns_count"`      // Count of auto_blocked / confirmed_fraud txns
+	AutoBlockedCount    int       `json:"auto_blocked_count"`    // Count of auto_blocked txns
+	ConfirmedFraudCount int       `json:"confirmed_fraud_count"` // Count of confirmed_fraud txns
+	LegitCount          int       `json:"legit_count"`           // Count of legit/clean txns
+	ComputedAt          time.Time `json:"computed_at"`
+}
+
+// VerdictVelocityPoint represents a single interval bucket in the Verdict Velocity chart.
+type VerdictVelocityPoint struct {
+	Time     string `json:"time"`
+	Approved int    `json:"approved"`
+	Flagged  int    `json:"flagged"`
+	Blocked  int    `json:"blocked"`
+}
+
+// MerchantRiskPoint represents a merchant category and its risk metrics.
+type MerchantRiskPoint struct {
+	Category     string  `json:"category"`
+	TxnCount     int     `json:"txn_count"`
+	Percentage   float64 `json:"percentage"`
+	TotalINR     float64 `json:"total_inr"`
+	BlockedCount int     `json:"blocked_count"`
+	SavedINR     float64 `json:"saved_inr"`
+	FraudRate    float64 `json:"fraud_rate"`
+}
+
+// ChannelPerformancePoint represents a payment channel's performance metrics.
+type ChannelPerformancePoint struct {
+	Channel      string  `json:"channel"`
+	RawChannel   string  `json:"raw_channel"`
+	Volume       int     `json:"volume"`
+	FraudRate    float64 `json:"fraud_rate"`
+	PreventedINR float64 `json:"prevented_inr"`
+	SlaHealth    string  `json:"sla_health"`
+	RiskIndex    int     `json:"risk_index"`
+}
+
 // TrendsRequest represents the query parameters for fetching trends.
 type TrendsRequest struct {
 	Period      string

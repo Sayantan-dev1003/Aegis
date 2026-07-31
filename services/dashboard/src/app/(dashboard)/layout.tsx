@@ -34,7 +34,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const viewerNav = [
     { name: "Executive Overview", path: "/viewer/overview" },
     { name: "Analytics & Reports", path: "/viewer/analytics" },
-    { name: "Model Performance", path: "/viewer/models" },
+    { name: "Transaction Ledger", path: "/viewer/transactions" },
+    { name: "Model & Rule Governance", path: "/viewer/models" },
     { name: "Audit Trail", path: "/viewer/audit" },
   ];
 
@@ -51,6 +52,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       "/admin/queue": { title: "Queue Config", subtitle: "Manage routing rules and SLAs for manual review workflows." },
       "/admin/audit": { title: "Audit Log", subtitle: "Track system changes and analyst actions." },
       "/admin/integrations": { title: "Integrations", subtitle: "Manage programmatic access and event subscriptions." },
+      "/viewer/overview": { title: "Executive Overview", subtitle: "Three-numbers-and-a-trend executive risk briefing." },
+      "/viewer/analytics": { title: "Analytics & Reports", subtitle: "Self-serve KPI reporting, SLA compliance, and fraud breakdown." },
+      "/viewer/transactions": { title: "Transaction Ledger (Read-Only)", subtitle: "Immutable historical case ledger and decision histories." },
+      "/viewer/models": { title: "Model & Rule Governance", subtitle: "Read-only compliance audit of active ML models and rules." },
+      "/viewer/audit": { title: "Audit Trail", subtitle: "System-wide immutable audit log of actions and configuration changes." },
     };
 
     const match = Object.keys(metaMap).find(k => path.startsWith(k));
@@ -61,9 +67,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
   
   const pageMeta = getPageMeta(pathname);
+  const isViewerTheme = role === "viewer" || pathname.startsWith("/viewer");
 
   return (
-    <div className={styles.layoutWrapper}>
+    <div className={`${styles.layoutWrapper} ${isViewerTheme ? 'theme-viewer' : ''}`}>
       <aside className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
           <div className={styles.sidebarTitle}>AEGIS</div>

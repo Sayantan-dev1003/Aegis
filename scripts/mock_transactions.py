@@ -62,7 +62,7 @@ _FRAUD_MERCHANTS = [
     ("M_SHADOW3",   "QuickBuy Store",  "retail",       "PH"),
 ]
 
-_CHANNELS        = ["online", "pos", "atm"]
+_CHANNELS        = ["online", "pos", "atm", "upi", "ach_transfer", "wire_transfer", "mobile_wallet"]
 _TX_TYPES        = ["purchase", "withdrawal", "transfer"]
 _CURRENCIES      = ["INR"]
 _DEVICE_PREFIXES = ["DEV", "MOB", "TAB"]
