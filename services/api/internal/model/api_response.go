@@ -168,6 +168,15 @@ type ChannelPerformancePoint struct {
 	RiskIndex    int     `json:"risk_index"`
 }
 
+// OutcomeDistributionPoint represents the count and percentage of an analyst review decision or auto-block outcome.
+type OutcomeDistributionPoint struct {
+	Name       string  `json:"name"`
+	Value      float64 `json:"value"`      // percentage (0-100) for PieChart rendering
+	Count      int     `json:"count"`      // absolute count of transactions/reviews
+	Color      string  `json:"color"`
+	Percentage float64 `json:"percentage"` // same as Value
+}
+
 // TrendsRequest represents the query parameters for fetching trends.
 type TrendsRequest struct {
 	Period      string

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
-	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
+	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
+	"github.com/Sayantan-dev1003/aegis/api/internal/service"
 	"github.com/redis/go-redis/v9"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -421,4 +423,68 @@ func (h *StatsHandler) ChannelPerformance(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(respBytes)
 }
+
+func (h *StatsHandler) OutcomeDistribution(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "handler.stats_outcome_distribution")
+	defer span.End()
+
+	timeFrame := r.URL.Query().Get("timeFrame")
+	if timeFrame == "" {
+		timeFrame = "30d"
+	}
+
+	points, err := h.statsRepo.GetOutcomeDistribution(ctx, timeFrame)
+	if err != nil {
+		h.respondError(w, "Failed to get outcome distribution", http.StatusInternalServerError)
+		return
+	}
+
+	total := 0
+	for _, p := range points {
+		total += p.Count
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"timeFrame": timeFrame,
+		"data":      points,
+		"total":     total,
+	})
+}
+
+func (h *StatsHandler) ExportReportPDF(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "handler.stats_export_report_pdf")
+	defer span.End()
+
+	reportName := r.URL.Query().Get("report")
+	if reportName == "" {
+		reportName = "Compliance_Audit_Report"
+	}
+	timeFrame := r.URL.Query().Get("timeFrame")
+	if timeFrame == "" {
+		timeFrame = "30d"
+	}
+
+	outcomes, _ := h.statsRepo.GetOutcomeDistribution(ctx, timeFrame)
+	todayTotal, _ := h.statsRepo.TodayTotal(ctx)
+	todayFlagged, _ := h.statsRepo.TodayFlagged(ctx)
+	todayAutoBlocked, _ := h.statsRepo.TodayAutoBlocked(ctx)
+	pendingReview, _ := h.statsRepo.PendingReview(ctx)
+	falsePositives, totalReviewed, _ := h.statsRepo.FalsePositiveStats(ctx)
+	channels, _ := h.statsRepo.GetChannelPerformance(ctx, timeFrame)
+
+	pdfBytes := service.GenerateAuditReportPDF(
+		reportName,
+		todayTotal, todayFlagged, todayAutoBlocked, pendingReview, falsePositives, totalReviewed,
+		outcomes,
+		channels,
+	)
+
+	filename := fmt.Sprintf("%s_%s.pdf", strings.ReplaceAll(strings.ToLower(reportName), " ", "_"), time.Now().Format("20060102"))
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(pdfBytes)))
+	w.Write(pdfBytes)
+}
+
 

@@ -242,23 +242,6 @@ export default function ViewerOverviewPage() {
     maximumFractionDigits: 0,
   }).format(totalFraudPrevented);
 
-  const handleExportBriefing = () => {
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      "Metric,Value,TimeHorizon\n" +
-      "Total Fraud Prevented," + formattedPrevented.replace(/,/g, "") + "," + timeHorizon + "\n" +
-      "Overall Fraud Rate," + fraudRateVal + "%," + timeHorizon + "\n" +
-      "Queue SLA Adherence," + slaAdherenceVal + "%," + timeHorizon + "\n" +
-      "Total Monitored Txns," + totalTxns + "," + timeHorizon + "\n";
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `aegis_executive_briefing_${timeHorizon}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const sortedMerchantRisk = [...merchantRiskData].sort((a: any, b: any) => {
     const fraudRateA = Number(a.fraud_rate || 0);
     const fraudRateB = Number(b.fraud_rate || 0);
@@ -349,27 +332,6 @@ export default function ViewerOverviewPage() {
               </button>
             ))}
           </div>
-
-          <button
-            onClick={handleExportBriefing}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "7px",
-              padding: "7px 14px",
-              borderRadius: "8px",
-              border: "1px solid rgba(139, 92, 246, 0.4)",
-              background: "rgba(139, 92, 246, 0.15)",
-              color: "#E8EDF4",
-              fontSize: "0.78rem",
-              fontWeight: 600,
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-            }}
-          >
-            <DownloadIcon />
-            Export PDF / CSV Briefing
-          </button>
         </div>
       </div>
 

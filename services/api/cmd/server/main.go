@@ -234,6 +234,9 @@ func main() {
 	// WebSocket Feed route
 	r.Get("/ws/feed", wsHandler.ServeWS)
 
+	// Public report export route for auditor/viewer download
+	r.Get("/reports/export", statsHandler.ExportReportPDF)
+
 	// Auth routes
 	r.Post("/auth/login", authHandler.Login)
 	r.Post("/auth/refresh", authHandler.Refresh)
@@ -270,6 +273,8 @@ func main() {
 			r.Get("/admin/retrain-jobs", retrainHandler.List)
 			r.Get("/admin/ml-worker/status", retrainHandler.Status)
 			r.Get("/admin/metrics", metricsAdminHandler.GetMetrics)
+			r.Get("/admin/stats/outcomes", statsHandler.OutcomeDistribution)
+			r.Get("/admin/reports/export", statsHandler.ExportReportPDF)
 		})
 
 		// Admin-only mutation and configuration routes
@@ -323,6 +328,8 @@ func main() {
 		r.Get("/api/v1/stats/verdict-velocity", statsHandler.VerdictVelocity)
 		r.Get("/api/v1/stats/merchant-risk", statsHandler.MerchantRisk)
 		r.Get("/api/v1/stats/channel-performance", statsHandler.ChannelPerformance)
+		r.Get("/api/v1/stats/outcomes", statsHandler.OutcomeDistribution)
+		r.Get("/api/v1/reports/export", statsHandler.ExportReportPDF)
 		r.Get("/api/v1/incidents", incidentHandler.GetActiveIncidents)
 	})
 

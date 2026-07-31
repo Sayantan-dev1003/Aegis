@@ -432,3 +432,54 @@ func (r *StatsRepository) GetChannelPerformance(ctx context.Context, timeFrame s
 	return points, nil
 }
 
+func (r *StatsRepository) GetOutcomeDistribution(ctx context.Context, timeFrame string) ([]model.OutcomeDistributionPoint, error) {
+	now := time.Now().UTC()
+	var duration time.Duration
+	switch timeFrame {
+	case "12h":
+		duration = 12 * time.Hour
+	case "24h":
+		duration = 24 * time.Hour
+	case "7d":
+		duration = 7 * 24 * time.Hour
+	case "30d":
+		duration = 30 * 24 * time.Hour
+	case "90d":
+		duration = 90 * 24 * time.Hour
+	default:
+		duration = 365 * 24 * time.Hour
+	}
+	startTime := now.Add(-duration)
+
+	query := `
+		SELECT
+			COUNT(*) FILTER (WHERE decision = 'legitimate') AS approved_count,
+			COUNT(*) FILTER (WHERE decision = 'confirmed_fraud') AS declined_count,
+			(SELECT COUNT(*) FROM transactions WHERE status = 'auto_blocked' AND ingested_at >= $1) AS auto_blocked_count,
+			COUNT(*) FILTER (WHERE decision = 'escalate') AS escalated_count
+		FROM reviews
+		WHERE reviewed_at >= $1;
+	`
+	var approved, declined, autoBlocked, escalated int
+	err := r.db.QueryRow(ctx, query, startTime).Scan(&approved, &declined, &autoBlocked, &escalated)
+	if err != nil {
+		return nil, fmt.Errorf("StatsRepository.GetOutcomeDistribution: %w", err)
+	}
+
+	total := approved + declined + autoBlocked + escalated
+	pct := func(val int) float64 {
+		if total == 0 {
+			return 0.0
+		}
+		return math.Round((float64(val)/float64(total))*1000.0) / 10.0
+	}
+
+	points := []model.OutcomeDistributionPoint{
+		{Name: "Approved (Legitimate)", Value: pct(approved), Count: approved, Color: "#10B981", Percentage: pct(approved)},
+		{Name: "Declined (Confirmed Fraud)", Value: pct(declined), Count: declined, Color: "#F43F5E", Percentage: pct(declined)},
+		{Name: "Auto-Blocked by Velocity", Value: pct(autoBlocked), Count: autoBlocked, Color: "#8B5CF6", Percentage: pct(autoBlocked)},
+		{Name: "Escalated to AML/PEP", Value: pct(escalated), Count: escalated, Color: "#F59E0B", Percentage: pct(escalated)},
+	}
+	return points, nil
+}
+
