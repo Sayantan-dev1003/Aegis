@@ -48,7 +48,7 @@ export default function LoginPage() {
       }
 
       const data = await res.json();
-      login(data.access_token, data.analyst);
+      login(data.access_token, data.refresh_token, data.analyst);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);

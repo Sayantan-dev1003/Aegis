@@ -35,7 +35,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: "Executive Overview", path: "/viewer/overview" },
     { name: "Analytics & Reports", path: "/viewer/analytics" },
     { name: "Transaction Ledger", path: "/viewer/transactions" },
-    { name: "Model & Rule Governance", path: "/viewer/models" },
+    { name: "Model Governance", path: "/viewer/model" },
     { name: "Audit Trail", path: "/viewer/audit" },
   ];
 
@@ -55,7 +55,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       "/viewer/overview": { title: "Executive Overview", subtitle: "Three-numbers-and-a-trend executive risk briefing." },
       "/viewer/analytics": { title: "Analytics & Reports", subtitle: "Self-serve KPI reporting, SLA compliance, and fraud breakdown." },
       "/viewer/transactions": { title: "Transaction Ledger (Read-Only)", subtitle: "Immutable historical case ledger and decision histories." },
-      "/viewer/models": { title: "Model & Rule Governance", subtitle: "Read-only compliance audit of active ML models and rules." },
+      "/viewer/model": { title: "Model & Rule Governance", subtitle: "Read-only compliance audit of active ML models and rules." },
       "/viewer/audit": { title: "Audit Trail", subtitle: "System-wide immutable audit log of actions and configuration changes." },
     };
 
