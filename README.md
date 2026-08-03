@@ -1,75 +1,69 @@
-# Aegis — Real-Time Fraud Detection System
+<div align="center">
 
-> **Production-grade event-driven fraud detection pipeline** built with Go + Python + Next.js. Every transaction flows through a durable Kafka pipeline, gets scored by an XGBoost ML model with SHAP explainability, and surfaces on a live analyst dashboard in real time via WebSocket — with end-to-end distributed tracing across all services.
+# 🛡️ Aegis — Real-Time Fraud Detection System
+
+**Production-Grade Event-Driven Fraud Detection Pipeline**
+
+> Built for high-throughput, sub-millisecond scoring with end-to-end observability. Every transaction flows through a durable **Apache Kafka** pipeline, gets scored by an **XGBoost ML** model with **SHAP explainability**, and surfaces on a live analyst dashboard in real time via **WebSocket** — monitored with **OpenTelemetry**, **Prometheus**, and **Grafana** across all microservices.
+
+<br />
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Go-1.22-00ADD8?style=for-the-badge&logo=go&logoColor=white" />
-  <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white" />
-  <img src="https://img.shields.io/badge/Next.js-14-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" />
-  <img src="https://img.shields.io/badge/Apache_Kafka-231F20?style=for-the-badge&logo=apachekafka&logoColor=white" />
-  <img src="https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white" />
-  <img src="https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white" />
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
-  <img src="https://img.shields.io/badge/XGBoost-ML-FF6600?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Go-1.26.4-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go 1.26.4" />
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.12" />
+  <img src="https://img.shields.io/badge/Next.js-16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16" />
+  <img src="https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL 15" />
+  <img src="https://img.shields.io/badge/Redis-7-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis 7" />
+  <br />
+  <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker" />
+  <img src="https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white" alt="Prometheus" />
+  <img src="https://img.shields.io/badge/Grafana-F46800?style=for-the-badge&logo=grafana&logoColor=white" alt="Grafana" />
+  <img src="https://img.shields.io/badge/OpenTelemetry-000000?style=for-the-badge&logo=opentelemetry&logoColor=white" alt="OpenTelemetry" />
+  <img src="https://img.shields.io/badge/Apache_Kafka-231F20?style=for-the-badge&logo=apachekafka&logoColor=white" alt="Apache Kafka" />
 </p>
 
----
-
-## Table of Contents
-
-1. [Problem Statement](#1-problem-statement)
-2. [Solution Overview](#2-solution-overview)
-3. [Features](#3-features)
-4. [Tech Stack](#4-tech-stack)
-5. [System Architecture](#5-system-architecture)
-6. [Folder Structure](#6-folder-structure)
-7. [Environment Variables](#7-environment-variables)
-8. [Database Schema](#8-database-schema)
-9. [API Documentation](#9-api-documentation)
-10. [Real-Time Events (WebSocket)](#10-real-time-events-websocket)
-11. [System Design Deep-Dive](#11-system-design-deep-dive)
-12. [Challenges & Solutions](#12-challenges--solutions)
-13. [Architecture Decision Records (ADRs)](#13-architecture-decision-records-adrs)
-14. [Observability](#14-observability)
-15. [Bonus / Production Features](#15-bonus--production-features)
-16. [Running Locally](#16-running-locally)
+</div>
 
 ---
 
 ## 1. Problem Statement
 
-Financial institutions process millions of transactions per second across card networks, UPI rails, and net-banking channels. Traditional fraud detection operates in one of two broken modes.
+Financial institutions process millions of transactions per second across card networks, UPI rails, and net-banking channels. Operating at this velocity requires sub-millisecond intake without degrading checkout experience, yet traditional fraud detection architectures fail in one of two fundamental ways.
 
-### Why Rule Engines Fail
+### Why Static Rule Engines Fail
 
-- Produce enormous false-positive rates — legitimate customers get blocked at checkout.
-- Cannot generalise to novel attack patterns not anticipated when rules were written.
-- Maintained manually by risk teams; every new fraud vector requires a deployment.
-- Zero contextual awareness — a ₹50,000 purchase is normal for one customer, anomalous for another.
+- **Enormous False-Positive Rates:** Deterministic thresholds block legitimate customers at checkout, damaging merchant conversion rates and customer retention.
+- **Zero-Day Vulnerability:** Rules cannot generalize to novel or mutating attack campaigns (e.g., payment testing, sophisticated ATO) not anticipated when the rules were authored.
+- **High Maintenance Overhead:** Maintained manually by risk teams; every new fraud vector requires a rule deployment and regression testing.
+- **Zero Contextual Awareness:** A ₹50,000 purchase is routine for a high-net-worth customer but highly anomalous for a dormant account.
 
-### Why Batch ML Fails
+### Why Batch Machine Learning Fails
 
-- Fraud is detected hours or days after the transaction — the money is already gone.
-- Cannot trigger real-time auto-blocking or analyst alerts.
-- Stale predictions on fresh attack campaigns that evolved after the last training run.
+- **Post-Transaction Latency:** Fraud is detected hours or days after the transaction settles — the funds are already withdrawn or transferred.
+- **No Real-Time Actionability:** Cannot trigger live auto-blocking, dynamic customer verification, or instant analyst alerts.
+- **Model Staleness:** Offline models degrade quickly against adversarial attack campaigns that evolve faster than batch retraining schedules.
 
 ### The Real Engineering Problem
 
-> Detect anomalous transaction sequences in **real-time (sub-100ms end-to-end)**, with calibrated confidence scores and per-prediction explainability, while maintaining a false-positive rate low enough that legitimate customers are not disrupted — all in a system that survives service failures **without losing a single event**.
+> **Detect anomalous transaction sequences in real-time (sub-100ms end-to-end)**, with calibrated confidence scores and per-prediction explainability, while maintaining a false-positive rate low enough that legitimate customers are not disrupted — all in a system that survives service failures **without losing a single event**.
 
 ---
 
 ## 2. Solution Overview
 
-An event-driven, three-service architecture where every transaction flows through a durable Kafka pipeline, gets scored by a machine-learning worker, and surfaces on an analyst dashboard in real time via WebSocket — with end-to-end distributed tracing propagated through Kafka message headers so any latency bottleneck is immediately observable.
+An event-driven, three-service architecture where every transaction flows through a durable **Apache Kafka** pipeline, gets scored by an **XGBoost** machine-learning worker with **SHAP explainability**, and surfaces on an analyst dashboard in real time via **WebSocket** — with end-to-end distributed tracing propagated through Kafka message headers so any latency bottleneck is immediately observable.
 
-| Service | Role |
-|---|---|
-| **Go API Server** | Receives transaction events via REST (ingestor endpoint), writes to PostgreSQL + outbox table atomically, publishes to Kafka via the Outbox Pattern. Also serves the analyst REST API and WebSocket hub. |
-| **Python ML Worker** | Consumes from `transactions.raw`, engineers features, runs XGBoost inference, computes SHAP values, publishes scored result to `transactions.scored`. |
-| **Next.js Dashboard** | Analyst-facing UI. Connects via WebSocket for live flagged transaction feed, displays SHAP feature-weight charts, supports manual review actions with RBAC. |
+| Service | Technology | Role & Capabilities |
+|---|---|---|
+| **Go API Server** | **Go 1.26.4** | Receives transaction events via REST (`/api/v1/ingest/transactions`), writes to PostgreSQL and the outbox table atomically, publishes to Kafka via the **Transactional Outbox Pattern**, and serves the analyst REST API and WebSocket hub. |
+| **Python ML Worker** | **Python 3.12** | Consumes from `transactions.raw`, engineers velocity and behavioral features, runs XGBoost inference, computes per-feature **SHAP (TreeExplainer)** contribution weights, and publishes scored results to `transactions.scored`. |
+| **Next.js Dashboard** | **Next.js 16** | Analyst-facing TypeScript web application. Connects via native WebSocket for live flagged transaction feeds, displays SHAP feature-weight charts, and supports manual review actions with RBAC. |
 
-**Key design guarantee:** The ingestor endpoint always responds in under **5ms** — it never blocks on ML inference. The scored result arrives asynchronously via the Kafka pipeline and is pushed to connected analysts via WebSocket. The Outbox Pattern ensures **zero event loss** even if the API server crashes immediately after writing to the database.
+> [!IMPORTANT]
+> **Key Design Guarantees:**
+> 1. **Sub-5ms Ingestion Guarantee:** The ingestor endpoint always responds in under **5ms** — it never blocks on ML inference.
+> 2. **Zero Event Loss:** The Transactional Outbox Pattern guarantees that even if the API server crashes immediately after writing to the database, the event is preserved and published to Kafka upon recovery.
+> 3. **Full-Stack Observability:** OpenTelemetry trace contexts (`traceparent` headers) are injected into Kafka message headers, allowing seamless distributed tracing across Go, Python, and Next.js in Jaeger and Grafana.
 
 ---
 
@@ -110,9 +104,9 @@ An event-driven, three-service architecture where every transaction flows throug
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **API Server** | Go 1.22 | chi router, pgx/v5, go-redis/v9, confluent-kafka-go, golang-jwt, zerolog, prometheus/client_golang, go.opentelemetry.io/otel |
-| **ML Worker** | Python 3.11 | FastAPI (health endpoint), scikit-learn Pipeline, XGBoost, SHAP (TreeExplainer), joblib, confluent-kafka-python, structlog, opentelemetry-sdk |
-| **Frontend** | Next.js 14 (TypeScript) | App Router, Tailwind CSS, shadcn/ui, React Query, Recharts, native WebSocket |
+| **API Server** | Go 1.26.4 | chi router, pgx/v5, go-redis/v9, confluent-kafka-go, golang-jwt, zerolog, prometheus/client_golang, go.opentelemetry.io/otel |
+| **ML Worker** | Python 3.12 | FastAPI (health endpoint), scikit-learn Pipeline, XGBoost, SHAP (TreeExplainer), joblib, confluent-kafka-python, structlog, opentelemetry-sdk |
+| **Frontend** | Next.js 16 (TypeScript) | App Router, Tailwind CSS, shadcn/ui, React Query, Recharts, native WebSocket |
 | **Message Broker** | Apache Kafka | Topics: `transactions.raw`, `transactions.scored`, `transactions.dlq`. Consumer groups for horizontal ML worker scaling |
 | **Primary DB** | PostgreSQL 15 | Transactions, fraud results, analyst actions, outbox events, audit logs, model versions, system config |
 | **Cache / Ephemeral** | Redis 7 | Rate limiting (token bucket), session store, account velocity counters (sorted sets), runtime config cache |
@@ -267,7 +261,7 @@ fraud-detection/
 │   │   ├── requirements.txt
 │   │   └── Dockerfile
 │   │
-│   └── dashboard/                   # Next.js 14
+│   └── dashboard/                   # Next.js 16
 │       ├── app/
 │       │   ├── layout.tsx
 │       │   ├── login/page.tsx
@@ -327,341 +321,6 @@ fraud-detection/
     ├── mock_transactions.py         # POST fake transactions at 10/sec
     └── attack_scenario.py           # 20 txns from same account in 2 min
 ```
-
----
-
-## 7. Environment Variables
-
-A single `.env` file at the project root, mounted into all services via Docker Compose. Copy `.env.example` and fill in the values before running.
-
-```bash
-cp .env.example .env
-```
-
-```dotenv
-# ── PostgreSQL ─────────────────────────────────────────────
-POSTGRES_HOST=postgres
-POSTGRES_PORT=5432
-POSTGRES_DB=fraud_db
-POSTGRES_USER=fraud_user
-POSTGRES_PASSWORD=strongpassword123
-
-# ── Redis ──────────────────────────────────────────────────
-REDIS_URL=redis://redis:6379
-
-# ── Kafka ──────────────────────────────────────────────────
-KAFKA_BROKERS=kafka:9092
-KAFKA_TOPIC_RAW=transactions.raw
-KAFKA_TOPIC_SCORED=transactions.scored
-KAFKA_TOPIC_DLQ=transactions.dlq
-KAFKA_CONSUMER_GROUP=ml-workers
-KAFKA_RESULTS_GROUP=api-results-consumer
-
-# ── API Server ─────────────────────────────────────────────
-API_PORT=8080
-BANK_API_KEY=bank-secret-key-abc123
-INGESTOR_RATE_LIMIT_RPS=1000
-JWT_SECRET=your-256-bit-secret-here
-JWT_ACCESS_TTL=15m
-JWT_REFRESH_TTL=7d
-CORS_ALLOWED_ORIGINS=http://localhost:3000
-
-# ── ML Worker ──────────────────────────────────────────────
-MODEL_PATH=/app/model/fraud_model_v1.pkl
-FEATURE_CONFIG_PATH=/app/model/feature_config.json
-SHAP_MAX_FEATURES=8
-ML_MAX_RETRIES=3
-
-# ── Observability ──────────────────────────────────────────
-OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
-OTEL_SERVICE_NAME_API=fraud-api-server
-OTEL_SERVICE_NAME_ML=fraud-ml-worker
-PROMETHEUS_PORT=9090
-
-# ── Runtime Config Defaults (seeded into system_config) ───
-FRAUD_THRESHOLD=0.75
-AUTO_BLOCK_THRESHOLD=0.92
-FRAUD_SPIKE_ALERT_RATE=0.05
-
-# ── Dashboard ──────────────────────────────────────────────
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
-NEXT_PUBLIC_WS_URL=ws://localhost:8080/ws/feed
-```
-
----
-
-## 8. Database Schema
-
-Eight tables with clear separation of concerns. All primary keys are `UUID` (`gen_random_uuid()`). Timestamps are `TIMESTAMPTZ`. `JSONB` is used for flexible feature weights.
-
-### `analysts`
-
-```sql
-CREATE TABLE analysts (
-    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email         TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    full_name     TEXT NOT NULL,
-    role          TEXT NOT NULL CHECK (role IN ('viewer', 'reviewer', 'admin')),
-    is_active     BOOLEAN DEFAULT true,
-    created_at    TIMESTAMPTZ DEFAULT NOW(),
-    last_login    TIMESTAMPTZ
-);
-```
-
-### `transactions`
-
-```sql
-CREATE TABLE transactions (
-    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    external_id       TEXT UNIQUE NOT NULL,  -- bank's own transaction ID
-    account_id        TEXT NOT NULL,
-    merchant_id       TEXT NOT NULL,
-    merchant_name     TEXT NOT NULL,
-    merchant_category TEXT NOT NULL,         -- MCC code label
-    amount            NUMERIC(12,2) NOT NULL,
-    currency          CHAR(3) NOT NULL DEFAULT 'INR',
-    country_code      CHAR(2) NOT NULL,
-    transaction_type  TEXT NOT NULL,         -- purchase / withdrawal / transfer
-    channel           TEXT NOT NULL,         -- online / pos / atm
-    device_id         TEXT,
-    ip_address        INET,
-    timestamp         TIMESTAMPTZ NOT NULL,  -- when bank says txn happened
-    ingested_at       TIMESTAMPTZ DEFAULT NOW(),
-    status            TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'scored', 'auto_blocked', 'reviewed', 'scoring_failed'))
-);
-
-CREATE INDEX idx_transactions_account_id ON transactions(account_id);
-CREATE INDEX idx_transactions_timestamp  ON transactions(timestamp DESC);
-CREATE INDEX idx_transactions_status     ON transactions(status);
-```
-
-### `outbox_events`
-
-```sql
--- Outbox Pattern: ensures Kafka publish is never lost on crash
-CREATE TABLE outbox_events (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    aggregate_id UUID NOT NULL,       -- transaction_id
-    event_type   TEXT NOT NULL,       -- transaction.created
-    payload      JSONB NOT NULL,
-    published    BOOLEAN DEFAULT false,
-    published_at TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Partial index: only unpublished rows — keeps the poller scan O(1)
-CREATE INDEX idx_outbox_unpublished
-    ON outbox_events(published, created_at)
-    WHERE published = false;
-```
-
-### `fraud_results`
-
-```sql
-CREATE TABLE fraud_results (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    transaction_id  UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
-    fraud_score     NUMERIC(5,4) NOT NULL,   -- 0.0000 to 1.0000
-    is_fraud        BOOLEAN NOT NULL,
-    threshold_used  NUMERIC(5,4) NOT NULL,   -- active threshold at scoring time
-    auto_blocked    BOOLEAN DEFAULT false,
-    model_version   TEXT NOT NULL,           -- e.g. v1.2.0
-    feature_weights JSONB NOT NULL,          -- SHAP values per feature
-    inference_ms    INTEGER,                 -- ML latency tracking
-    trace_id        TEXT,                    -- OTel trace for this transaction
-    scored_at       TIMESTAMPTZ DEFAULT NOW()
-);
-
--- One result per transaction (also enforces idempotent re-processing)
-CREATE UNIQUE INDEX idx_fraud_results_tx ON fraud_results(transaction_id);
-```
-
-**Example `feature_weights` JSONB** — positive values push toward fraud, negative toward legitimate:
-
-```json
-{
-  "amount_zscore":           0.42,
-  "txn_velocity_1h":         0.31,
-  "country_mismatch":        0.18,
-  "hour_of_day_sin":        -0.09,
-  "merchant_category_risk":  0.27,
-  "device_seen_before":     -0.15,
-  "amount_vs_avg_ratio":     0.38
-}
-```
-
-### `reviews`
-
-```sql
-CREATE TABLE reviews (
-    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    transaction_id UUID NOT NULL REFERENCES transactions(id),
-    analyst_id     UUID NOT NULL REFERENCES analysts(id),
-    decision       TEXT NOT NULL
-        CHECK (decision IN ('confirmed_fraud', 'false_positive', 'escalated')),
-    notes          TEXT,
-    reviewed_at    TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE UNIQUE INDEX idx_reviews_transaction ON reviews(transaction_id);
-```
-
-### `model_versions`
-
-```sql
-CREATE TABLE model_versions (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    version      TEXT UNIQUE NOT NULL,  -- v1.0.0, v1.1.0
-    artifact_path TEXT NOT NULL,
-    f1_score     NUMERIC(5,4),
-    precision    NUMERIC(5,4),
-    recall       NUMERIC(5,4),
-    is_active    BOOLEAN DEFAULT false,
-    trained_at   TIMESTAMPTZ NOT NULL,
-    deployed_at  TIMESTAMPTZ
-);
-```
-
-### `system_config`
-
-```sql
-CREATE TABLE system_config (
-    key         TEXT PRIMARY KEY,
-    value       TEXT NOT NULL,
-    description TEXT,
-    updated_by  UUID REFERENCES analysts(id),
-    updated_at  TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Seed:
-INSERT INTO system_config VALUES
-    ('fraud_threshold',       '0.75', 'Min score to flag as fraud',          null, NOW()),
-    ('auto_block_threshold',  '0.92', 'Score for immediate auto-block',      null, NOW()),
-    ('fraud_spike_alert_rate','0.05', 'Rate to trigger spike alert',         null, NOW());
-```
-
-### `audit_logs`
-
-```sql
-CREATE TABLE audit_logs (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    analyst_id UUID REFERENCES analysts(id),
-    action     TEXT NOT NULL,   -- LOGIN, REVIEW_SUBMIT, CONFIG_UPDATE
-    resource   TEXT,            -- transaction_id or config key
-    metadata   JSONB DEFAULT '{}',
-    ip_address INET,
-    trace_id   TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE INDEX idx_audit_logs_analyst ON audit_logs(analyst_id);
-CREATE INDEX idx_audit_logs_created ON audit_logs(created_at DESC);
-```
-
----
-
-## 9. API Documentation
-
-**Base URL:** `/api/v1`
-
-All endpoints except `/auth/*` require `Authorization: Bearer <access_token>`. The ingest endpoint uses `X-Bank-API-Key` header (separate from analyst JWT).
-
----
-
-### Auth Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/auth/login` | Body: `{ email, password }`. Returns `{ access_token, refresh_token, expires_in, analyst }` |
-| `POST` | `/auth/refresh` | Body: `{ refresh_token }`. Returns `{ access_token, expires_in }` |
-| `POST` | `/auth/logout` | Invalidates refresh token in Redis. Returns `204` |
-
----
-
-### Ingest Endpoint *(Bank-Facing)*
-
-**Header:** `X-Bank-API-Key` — Rate limited: token bucket per API key via Redis.
-
-**`POST /api/v1/ingest/transactions`**
-
-**Request:**
-```json
-{
-  "external_id":        "TXN-2025-ABC123",
-  "account_id":         "ACC-98765",
-  "merchant_id":        "MER-001",
-  "merchant_name":      "Amazon India",
-  "merchant_category":  "E-Commerce",
-  "amount":             45999.00,
-  "currency":           "INR",
-  "country_code":       "IN",
-  "transaction_type":   "purchase",
-  "channel":            "online",
-  "device_id":          "DEV-iPhone14-XYZ",
-  "ip_address":         "103.21.58.44",
-  "timestamp":          "2025-03-27T14:32:00Z"
-}
-```
-
-**Response `202 Accepted`:**
-```json
-{
-  "status":         "queued",
-  "transaction_id": "uuid-here",
-  "trace_id":       "abc123def456",
-  "message":        "Transaction accepted for async fraud scoring"
-}
-```
-
-**Response `429 Too Many Requests`:**
-```json
-{ "error": "rate limit exceeded", "retry_after_seconds": 12 }
-```
-
----
-
-### Transaction Endpoints *(Analyst-Facing)*
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/transactions` | Query: `page`, `limit`, `status`, `from_date`, `to_date`, `min_score`, `merchant_category`, `is_fraud`. Cursor-based pagination. Returns `{ data: [...], pagination: { next_cursor, limit, total } }` |
-| `GET` | `/transactions/:id` | Full transaction + fraud_result (with SHAP feature weights) + review (if exists) + `trace_id` for Jaeger link |
-| `POST` | `/transactions/:id/review` | **Role: reviewer or admin.** Body: `{ decision: confirmed_fraud \| false_positive \| escalated, notes? }` |
-
----
-
-### Stats Endpoints
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/stats/summary` | Returns `{ total_transactions_today, flagged_today, auto_blocked_today, false_positive_rate_7d, avg_fraud_score_flagged, pending_review_count, kafka_consumer_lag }` |
-| `GET` | `/stats/trends` | Query: `period` (7d/30d/90d), `granularity` (hour/day). Returns array of `{ timestamp, total, flagged, confirmed_fraud, false_positive }` |
-
----
-
-### Config Endpoints *(Admin Only)*
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/admin/config` | Returns all `system_config` rows |
-| `PATCH` | `/admin/config/:key` | Body: `{ value: '0.80' }`. Writes to DB, invalidates Redis cache key, writes audit log |
-| `GET` | `/admin/dlq` | Returns transactions in `transactions.dlq` topic. Query: `limit`, `offset` |
-| `POST` | `/admin/dlq/:id/requeue` | Re-publishes a DLQ message to `transactions.raw` for re-scoring |
-
----
-
-### WebSocket
-
-```
-GET /ws/feed?token=<access_token>
-```
-
-- Token is validated on connection upgrade.
-- Server sends heartbeat `{ "event": "ping" }` every 25s; client must respond `{ "event": "pong" }` or connection closes after 60s.
-- On reconnect, client should call `GET /stats/summary` to re-sync state.
-- Slow-reader clients get a buffered channel (256 messages); if buffer fills, connection is dropped to protect the broadcast loop.
 
 ---
 
@@ -1093,8 +752,8 @@ A background goroutine on the API server computes the fraud rate over a rolling 
 ### Prerequisites
 
 - Docker and Docker Compose v2
-- Go 1.22 (for local development without Docker)
-- Python 3.11 (for local development without Docker)
+- Go 1.26.4 (for local development without Docker)
+- Python 3.12 (for local development without Docker)
 - Node.js 20+ (for local development without Docker)
 
 ### Quickstart (Docker Compose)
