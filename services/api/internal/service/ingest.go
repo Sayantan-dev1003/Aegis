@@ -104,13 +104,17 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 	}
 
 	// Determine initial status based on rules
-	skipML := false
+	now := time.Now().UTC()
+	t.PriorityLevel = "normal"
 	if action == "block" {
 		t.Status = "auto_blocked"
-		skipML = true
+		source := "rule"
+		t.RiskSource = &source
 	} else if action == "flag" {
 		t.Status = "escalated"
-		skipML = true
+		source := "rule"
+		t.RiskSource = &source
+		t.SLAStartAt = &now
 		if rule != nil && rule.QueueID != nil && *rule.QueueID != "" {
 			t.QueueID = rule.QueueID
 		} else if s.queueRepo != nil {
@@ -119,6 +123,11 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 				t.QueueID = &fallbackQ.ID
 			}
 		}
+	} else if action == "step_up" {
+		t.Status = "step_up_pending"
+		source := "rule"
+		t.RiskSource = &source
+		t.SLAStartAt = &now
 	} else {
 		t.Status = "pending"
 	}
@@ -135,16 +144,14 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 		return "", fmt.Errorf("failed to insert transaction: %w", err)
 	}
 
-	// 5. Insert into outbox_events table ONLY if we shouldn't skip ML
-	if !skipML {
-		payloadBytes, err := buildMLPayload(t)
-		if err != nil {
-			return "", fmt.Errorf("failed to marshal ML outbox payload: %w", err)
-		}
+	// 5. Unconditionally insert into outbox_events table for ML scoring (skipML removed)
+	payloadBytes, err := buildMLPayload(t)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal ML outbox payload: %w", err)
+	}
 
-		if err := s.outboxRepo.CreateEvent(ctx, tx, t.ID, "transactions.raw", payloadBytes); err != nil {
-			return "", fmt.Errorf("failed to insert outbox event: %w", err)
-		}
+	if err := s.outboxRepo.CreateEvent(ctx, tx, t.ID, "transactions.raw", payloadBytes); err != nil {
+		return "", fmt.Errorf("failed to insert outbox event: %w", err)
 	}
 
 	// 6. Commit transaction

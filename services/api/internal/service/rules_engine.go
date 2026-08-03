@@ -33,18 +33,24 @@ func NewRulesEngine(ruleRepo *repository.RuleRepository, txRepo *repository.Tran
 }
 
 func getRulePriority(rule model.Rule) int {
+	if strings.EqualFold(rule.Action, "block") {
+		return 0 // Priority 0: block rules always take precedence
+	}
+	if strings.EqualFold(rule.Action, "step_up") {
+		return 10 // Priority 1: step_up rules win over flag rules
+	}
 	name := strings.ToLower(rule.Name)
 	if strings.Contains(name, "vip") || strings.Contains(name, "high-value") || strings.Contains(name, "high value") || rule.Metric == "amount" {
-		return 1
+		return 20 // Priority 2: VIP / high-value flag rules
 	}
 	if strings.Contains(name, "ato") || strings.Contains(name, "takeover") || strings.Contains(name, "drain") {
-		return 2
+		return 30 // Priority 3: Account takeover flag rules
 	}
 	if strings.Contains(name, "aml") || strings.Contains(name, "smurf") || strings.Contains(name, "structur") ||
 		strings.Contains(name, "kyc") || strings.Contains(name, "unverified") || strings.Contains(name, "dispute") || strings.Contains(name, "chargeback") {
-		return 3
+		return 40 // Priority 4: AML / KYC flag rules
 	}
-	return 4
+	return 50 // Priority 5: General flag rules
 }
 
 // Evaluate runs active rules against a transaction. Returns (action, triggeredRule, error).

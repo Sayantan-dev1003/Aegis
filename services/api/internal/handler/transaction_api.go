@@ -63,7 +63,7 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if status := q.Get("status"); status != "" {
-		validStatuses := map[string]bool{"pending": true, "processing": true, "scored": true, "auto_blocked": true, "scoring_failed": true, "reviewed": true, "escalated": true}
+		validStatuses := map[string]bool{"pending": true, "processing": true, "scored": true, "auto_blocked": true, "scoring_failed": true, "reviewed": true, "escalated": true, "breached": true}
 		if !validStatuses[status] {
 			h.respondError(w, "invalid status", http.StatusBadRequest)
 			return
@@ -135,8 +135,13 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 		req.Search = search
 	}
 
+	if qID := q.Get("queue_id"); qID != "" {
+		req.QueueID = qID
+	}
+
 	span.SetAttributes(
 		attribute.String("filter.status", req.Status),
+		attribute.String("filter.queue_id", req.QueueID),
 		attribute.Int("pagination.limit", req.Limit),
 	)
 
@@ -221,6 +226,7 @@ func (h *TransactionHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 			MerchantCategory: tx.MerchantCategory,
 			CardID:           tx.AccountID,
 			Status:           tx.Status,
+			QueueID:          tx.QueueID,
 			TransactionType:  tx.TransactionType,
 			Channel:          tx.Channel,
 			CountryCode:      tx.CountryCode,

@@ -57,6 +57,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       "/viewer/transactions": { title: "Transaction Ledger (Read-Only)", subtitle: "Immutable historical case ledger and decision histories." },
       "/viewer/model": { title: "Model & Rule Governance", subtitle: "Read-only compliance audit of active ML models and rules." },
       "/viewer/audit": { title: "Audit Trail", subtitle: "System-wide immutable audit log of actions and configuration changes." },
+      "/reviewer/queue": { title: "Case Queue", subtitle: "Your assigned worklist — claim and triage flagged transactions." },
+      "/reviewer/investigate": { title: "Transaction Investigation", subtitle: "Full forensic view of a flagged case. Make your decision here." },
+      "/reviewer/customer": { title: "Customer 360 Profile", subtitle: "Complete entity history, linked accounts, and risk timeline." },
+      "/reviewer/performance": { title: "My Performance", subtitle: "Personal scorecard — accuracy, throughput, and SLA compliance." },
+      "/reviewer/alerts": { title: "Alerts & Notifications", subtitle: "Real-time feed of new high-priority cases from your queues." },
     };
 
     const match = Object.keys(metaMap).find(k => path.startsWith(k));
@@ -68,9 +73,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   
   const pageMeta = getPageMeta(pathname);
   const isViewerTheme = role === "viewer" || pathname.startsWith("/viewer");
+  const isReviewerTheme = role === "reviewer" || pathname.startsWith("/reviewer");
 
   return (
-    <div className={`${styles.layoutWrapper} ${isViewerTheme ? 'theme-viewer' : ''}`}>
+    <div className={`${styles.layoutWrapper} ${isViewerTheme ? 'theme-viewer' : ''} ${isReviewerTheme ? 'theme-reviewer' : ''}`}>
       <aside className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
           <div className={styles.sidebarTitle}>AEGIS</div>

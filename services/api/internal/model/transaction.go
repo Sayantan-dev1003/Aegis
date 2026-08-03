@@ -22,11 +22,24 @@ type Transaction struct {
 	IPAddress        *string   `json:"ip_address,omitempty" db:"ip_address"`
 	Timestamp        time.Time  `json:"timestamp" db:"timestamp"`     // when bank says txn happened
 	IngestedAt       time.Time  `json:"ingested_at" db:"ingested_at"` // Defaults to NOW()
-	Status           string     `json:"status" db:"status"`           // pending, scored, auto_blocked, reviewed, scoring_failed
-	QueueID          *string    `json:"queue_id,omitempty" db:"queue_id"`
-	RequeueCount     int        `json:"requeue_count" db:"requeue_count"`
-	LastRequeuedAt   *time.Time `json:"last_requeued_at,omitempty" db:"last_requeued_at"`
-	UpdatedAt        time.Time  `json:"updated_at" db:"updated_at"`
+	Status              string     `json:"status" db:"status"`           // pending, scored, auto_blocked, reviewed, scoring_failed
+	QueueID             *string    `json:"queue_id,omitempty" db:"queue_id"`
+	ClaimedBy           *string    `json:"claimed_by,omitempty" db:"claimed_by"`
+	ClaimedAt           *time.Time `json:"claimed_at,omitempty" db:"claimed_at"`
+	SLAStartAt          *time.Time `json:"sla_start_at,omitempty" db:"sla_start_at"`
+	SLARemainingSeconds *int       `json:"sla_remaining_seconds,omitempty" db:"sla_remaining_seconds"`
+	SLAPausedAt         *time.Time `json:"sla_paused_at,omitempty" db:"sla_paused_at"`
+	PriorityLevel       string     `json:"priority_level" db:"priority_level"` // normal, high_risk, urgent
+	RiskScore           *float64   `json:"risk_score,omitempty" db:"risk_score"`
+	RiskBand            *string    `json:"risk_band,omitempty" db:"risk_band"`     // low, medium, high
+	RiskSource          *string    `json:"risk_source,omitempty" db:"risk_source"` // rule, ml, hybrid
+	RejectCount         int        `json:"reject_count" db:"reject_count"`
+	StepUpResult        *string    `json:"step_up_result,omitempty" db:"step_up_result"`
+	SLABreachType       string     `json:"sla_breach_type" db:"sla_breach_type"`
+	RequiresAdminReview bool       `json:"requires_admin_review" db:"requires_admin_review"`
+	RequeueCount        int        `json:"requeue_count" db:"requeue_count"`
+	LastRequeuedAt      *time.Time `json:"last_requeued_at,omitempty" db:"last_requeued_at"`
+	UpdatedAt           time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // OutboxEvent represents an event to be processed asynchronously.

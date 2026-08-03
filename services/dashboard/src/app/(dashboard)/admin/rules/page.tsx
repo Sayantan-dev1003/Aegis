@@ -443,7 +443,11 @@ export default function RulesPage() {
                     <td style={{ padding: '13px 16px', color: '#8D9AAB', fontFamily: 'monospace', fontSize: '0.82rem' }}>{r.window}</td>
                     <td style={{ padding: '13px 16px' }}><ActionBadge action={r.action} /></td>
                     <td style={{ padding: '13px 16px', whiteSpace: 'nowrap' }}>
-                      {r.queue_id ? (
+                      {r.action === 'block' ? (
+                        <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600, background: 'rgba(244,63,94,0.12)', color: '#F43F5E', border: '1px solid rgba(244,63,94,0.25)', whiteSpace: 'nowrap' }}>
+                          Auto-Block (No Queue)
+                        </span>
+                      ) : r.queue_id ? (
                         <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 600, background: 'rgba(92,110,248,0.12)', color: '#A5B4FC', border: '1px solid rgba(92,110,248,0.25)', whiteSpace: 'nowrap' }}>
                           {queues.find(q => q.id === r.queue_id)?.name || 'Assigned Queue'}
                         </span>
@@ -528,14 +532,16 @@ export default function RulesPage() {
               <option value="block">Block Transaction (High Friction)</option>
             </select>
           </FormField>
-          <FormField label="Target Queue (Optional - Default Fallback Queue if empty)">
-            <select style={selectStyle} value={newRule.queue_id} onChange={e => setNewRule({ ...newRule, queue_id: e.target.value })}>
-              <option value="">-- None (Use Default Fallback Queue) --</option>
-              {queues.map(q => (
-                <option key={q.id} value={q.id}>{q.name}</option>
-              ))}
-            </select>
-          </FormField>
+          {newRule.action !== 'block' && (
+            <FormField label="Target Queue (Optional - Default Fallback Queue if empty)">
+              <select style={selectStyle} value={newRule.queue_id} onChange={e => setNewRule({ ...newRule, queue_id: e.target.value })}>
+                <option value="">-- None (Use Default Fallback Queue) --</option>
+                {queues.map(q => (
+                  <option key={q.id} value={q.id}>{q.name}</option>
+                ))}
+              </select>
+            </FormField>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
             <CancelBtn onClick={() => setIsCreateOpen(false)}>Cancel</CancelBtn>
             <PrimaryBtn onClick={handleCreate} disabled={!newRule.name.trim() || !newRule.value}>Save Rule</PrimaryBtn>
@@ -604,14 +610,16 @@ export default function RulesPage() {
               <option value="block">Block Transaction (High Friction)</option>
             </select>
           </FormField>
-          <FormField label="Target Queue (Optional - Default Fallback Queue if empty)">
-            <select style={selectStyle} value={editForm.queue_id} onChange={e => setEditForm({ ...editForm, queue_id: e.target.value })}>
-              <option value="">-- None (Use Default Fallback Queue) --</option>
-              {queues.map(q => (
-                <option key={q.id} value={q.id}>{q.name}</option>
-              ))}
-            </select>
-          </FormField>
+          {editForm.action !== 'block' && (
+            <FormField label="Target Queue (Optional - Default Fallback Queue if empty)">
+              <select style={selectStyle} value={editForm.queue_id} onChange={e => setEditForm({ ...editForm, queue_id: e.target.value })}>
+                <option value="">-- None (Use Default Fallback Queue) --</option>
+                {queues.map(q => (
+                  <option key={q.id} value={q.id}>{q.name}</option>
+                ))}
+              </select>
+            </FormField>
+          )}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
             <CancelBtn onClick={() => setEditingRule(null)}>Cancel</CancelBtn>
             <PrimaryBtn onClick={handleUpdate} disabled={!editForm.name.trim() || !editForm.value}>Update Rule</PrimaryBtn>

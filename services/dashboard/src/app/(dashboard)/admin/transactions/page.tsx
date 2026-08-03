@@ -362,10 +362,53 @@ export default function TransactionsPage() {
                   <td style={{ padding: '14px 16px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
                       <StatusBadge status={t.status} decision={t.review_decision} />
+                      {t.reject_count && t.reject_count >= 2 && (
+                        <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#F87171', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.4)', fontWeight: 600 }}>
+                          🚫 2+ Rejects (Admin)
+                        </span>
+                      )}
                     </div>
                   </td>
-                  <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: '0.85rem' }}>
-                    {t.fraud_score !== undefined && t.fraud_score !== null ? t.fraud_score.toFixed(3) : '-'}
+                  <td style={{ padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ fontFamily: 'monospace', fontSize: '0.88rem', fontWeight: 700, color: '#f8fafc' }}>
+                        {t.fraud_score !== undefined && t.fraud_score !== null ? t.fraud_score.toFixed(3) : '-'}
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                        {t.status === "auto_blocked" || (t.fraud_score !== undefined && t.fraud_score >= 0.95) ? (
+                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#F87171', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
+                            Critical (Block)
+                          </span>
+                        ) : t.fraud_score >= 0.85 ? (
+                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(249, 115, 22, 0.15)', color: '#FB923C', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
+                            High Risk
+                          </span>
+                        ) : null}
+                        {t.risk_source && (
+                          <span style={{
+                            fontSize: "0.65rem",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            padding: "1px 5px",
+                            borderRadius: "4px",
+                            backgroundColor:
+                              t.risk_source === "hybrid"
+                                ? "rgba(139, 92, 246, 0.15)"
+                                : t.risk_source === "ml"
+                                ? "rgba(6, 182, 212, 0.15)"
+                                : "rgba(245, 158, 11, 0.15)",
+                            color:
+                              t.risk_source === "hybrid"
+                                ? "#A78BFA"
+                                : t.risk_source === "ml"
+                                ? "#22D3EE"
+                                : "#FBBF24"
+                          }}>
+                            {t.risk_source}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </td>
                   <td style={{ padding: '14px 16px', textTransform: 'capitalize' }}>
                     <div style={{ fontSize: '0.85rem' }}>{t.channel}</div>

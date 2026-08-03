@@ -70,6 +70,10 @@ const ActionBadge = ({ action }: { action: string }) => {
     case 'deployed': color = '#a78bfa'; bg = 'rgba(167, 139, 250, 0.15)'; break;
     case 'revoked': color = '#fb923c'; bg = 'rgba(251, 146, 60, 0.15)'; break;
     case 'requeued': color = '#facc15'; bg = 'rgba(250, 204, 21, 0.15)'; break;
+    case 'ml_auto_block': color = '#ef4444'; bg = 'rgba(239, 68, 68, 0.2)'; break;
+    case 'rule_block': color = '#f97316'; bg = 'rgba(249, 115, 22, 0.2)'; break;
+    case 'force_escalated': color = '#f59e0b'; bg = 'rgba(245, 158, 11, 0.2)'; break;
+    case 'sla_breached': color = '#ec4899'; bg = 'rgba(236, 72, 153, 0.2)'; break;
     default: color = 'var(--text-secondary)'; bg = 'var(--bg-surface-hover)';
   }
 

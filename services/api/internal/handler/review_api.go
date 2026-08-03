@@ -33,10 +33,10 @@ func (h *ReviewHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 	txID := chi.URLParam(r, "id")
 	
 	info, ok := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
-	if !ok || info.Role != "reviewer" {
+	if !ok || (info.Role != "reviewer" && info.Role != "supervisor" && info.Role != "admin") {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		fmt.Fprintf(w, `{"error": "insufficient permissions: only reviewers can review escalated transactions"}`)
+		fmt.Fprintf(w, `{"error": "insufficient permissions: only reviewers, supervisors, or admins can review escalated transactions"}`)
 		return
 	}
 
@@ -103,4 +103,62 @@ func (h *ReviewHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *ReviewHandler) ClaimTransaction(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "handler.claim_transaction")
+	defer span.End()
+
+	txID := chi.URLParam(r, "id")
+	info, ok := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	if !ok || (info.Role != "reviewer" && info.Role != "supervisor" && info.Role != "admin") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintf(w, `{"error": "insufficient permissions: only reviewers, supervisors, or admins can claim transactions"}`)
+		return
+	}
+
+	err := h.reviewService.ClaimTransaction(ctx, txID, info.ID)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintf(w, `{"error": "%s"}`, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status": "claimed", "transaction_id": "%s"}`, txID)
+}
+
+func (h *ReviewHandler) RejectTransaction(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.tracer.Start(r.Context(), "handler.reject_transaction")
+	defer span.End()
+
+	txID := chi.URLParam(r, "id")
+	info, ok := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	if !ok || (info.Role != "reviewer" && info.Role != "supervisor" && info.Role != "admin") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		fmt.Fprintf(w, `{"error": "insufficient permissions: only reviewers, supervisors, or admins can reject transactions"}`)
+		return
+	}
+
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	r.Body.Close()
+
+	err := h.reviewService.RejectTransaction(ctx, txID, info.ID, req.Reason)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprintf(w, `{"error": "%s"}`, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `{"status": "rejected", "transaction_id": "%s"}`, txID)
 }

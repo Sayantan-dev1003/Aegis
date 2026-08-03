@@ -137,6 +137,16 @@ func main() {
 		wsHub.Run(serverCtx)
 	}()
 
+	// Initialize SLA Monitor & Notification Service
+	incidentRepo := repository.NewIncidentRepository(pgPool)
+	notifService := service.NewNotificationService()
+	slaMonitor := service.NewSLAMonitor(pgPool, queueRepo, outboxRepo, txRepo, incidentRepo, notifService, wsHub)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		slaMonitor.Start(serverCtx)
+	}()
+
 	fraudResultRepo := repository.NewFraudResultRepository(pgPool)
 	configRepo := repository.NewConfigRepository(pgPool)
 	reviewRepo := repository.NewReviewRepository(pgPool)
@@ -153,10 +163,10 @@ func main() {
 		log.Error().Err(err).Msg("Failed to clean up zombie retrain jobs")
 	}
 
+	auditSampleRepo := repository.NewAuditSampleRepository(pgPool)
 	configService := service.NewConfigService(configRepo, redisClient, &log.Logger)
-	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub, queueRepo)
-	reviewService := service.NewReviewService(pgPool, txRepo, reviewRepo, auditRepo, wsHub)
-	incidentRepo := repository.NewIncidentRepository(pgPool)
+	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub, queueRepo, auditSampleRepo)
+	reviewService := service.NewReviewService(pgPool, txRepo, reviewRepo, auditRepo, queueRepo, analystRepo, incidentRepo, notifService, wsHub)
 	incidentService := service.NewIncidentService(incidentRepo)
 
 	wsHandler := handler.NewWebSocketHandler(wsHub, authService)
@@ -253,16 +263,13 @@ func main() {
 	r.Group(func(r chi.Router) {
 		r.Use(aegismw.Auth(authService))
 
-		r.Get("/auth/me", func(w http.ResponseWriter, req *http.Request) {
-			info := req.Context().Value(aegismw.AnalystInfoKey).(aegismw.AnalystInfo)
-			w.Write([]byte(fmt.Sprintf("Hello %s, role: %s", info.ID, info.Role)))
-		})
+		r.Get("/auth/me", analystHandler.GetMe)
 
 		metricsAdminHandler := handler.NewMetricsHandler()
 
-		// Read-only inspection routes for Admin and Viewer (Auditor / Executive / Compliance)
+		// Read-only inspection routes for Admin, Viewer, and Reviewer
 		r.Group(func(r chi.Router) {
-			r.Use(aegismw.RequireRole("admin", "viewer"))
+			r.Use(aegismw.RequireRole("admin", "viewer", "reviewer"))
 			r.Get("/admin/audit", adminHandler.ListAuditLogs)
 			r.Get("/admin/analysts", analystHandler.ListAnalysts)
 			r.Get("/admin/rules", ruleHandler.List)
@@ -322,6 +329,11 @@ func main() {
 		r.Get("/api/v1/transactions", txHandler.List)
 		r.Get("/api/v1/transactions/{id}", txHandler.GetByID)
 		r.Post("/api/v1/transactions/{id}/review", reviewHandler.SubmitReview)
+		r.Post("/api/v1/transactions/{id}/claim", reviewHandler.ClaimTransaction)
+		r.Post("/api/v1/transactions/{id}/reject", reviewHandler.RejectTransaction)
+		r.Get("/api/v1/queues", queueHandler.List)
+		r.Get("/api/v1/analysts", analystHandler.ListAnalysts)
+		r.Get("/api/v1/analysts/me", analystHandler.GetMe)
 		r.Get("/api/v1/stats/summary", statsHandler.Summary)
 		r.Get("/api/v1/stats/trends", statsHandler.Trends)
 		r.Get("/api/v1/stats/executive", statsHandler.ExecutiveSummary)

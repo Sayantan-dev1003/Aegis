@@ -54,6 +54,27 @@ func (h *AnalystHandler) ListAnalysts(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(analysts)
 }
 
+func (h *AnalystHandler) GetMe(w http.ResponseWriter, r *http.Request) {
+	info, ok := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+	if !ok {
+		h.respondError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	analyst, err := h.analystRepo.FindByID(r.Context(), info.ID)
+	if err != nil {
+		h.respondError(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+	if analyst == nil {
+		h.respondError(w, "analyst not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(analyst)
+}
+
 // CreateAnalystRequest is the payload for creating a new analyst.
 type CreateAnalystRequest struct {
 	FullName string  `json:"full_name"`

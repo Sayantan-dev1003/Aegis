@@ -8,6 +8,7 @@ type ListTransactionsRequest struct {
 	CursorDate      time.Time `json:"-"`
 	Limit           int       `json:"limit"`
 	Status          string    `json:"status"`
+	QueueID         string    `json:"queue_id"`
 	FromDate        time.Time `json:"from_date"`
 	ToDate          time.Time `json:"to_date"`
 	MinScore        float64   `json:"min_score"`
@@ -43,9 +44,23 @@ type TransactionSummary struct {
 	ReviewDecision   *string    `json:"review_decision,omitempty"`
 	FraudScore       *float64   `json:"fraud_score,omitempty"`
 	IsFraud          *bool      `json:"is_fraud,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"` // maps to ingested_at
-	Timestamp        time.Time  `json:"timestamp"`
-	ScoredAt         *time.Time `json:"scored_at,omitempty"`
+	QueueID          *string    `json:"queue_id,omitempty"`
+	QueueName        *string    `json:"queue_name,omitempty"`
+	Assignee         *string    `json:"assignee,omitempty"`
+	CreatedAt           time.Time  `json:"created_at"` // maps to ingested_at
+	Timestamp           time.Time  `json:"timestamp"`
+	ScoredAt            *time.Time `json:"scored_at,omitempty"`
+	SLAStartAt          *time.Time `json:"sla_start_at,omitempty"`
+	SLAPausedAt         *time.Time `json:"sla_paused_at,omitempty"`
+	PriorityLevel       string     `json:"priority_level,omitempty"`
+	RiskScore           *float64   `json:"risk_score,omitempty"`
+	RiskBand            *string    `json:"risk_band,omitempty"`
+	RiskSource          *string    `json:"risk_source,omitempty"`
+	RejectCount         int        `json:"reject_count"`
+	StepUpResult        *string    `json:"step_up_result,omitempty"`
+	SLABreachType       string     `json:"sla_breach_type,omitempty"`
+	RequiresAdminReview bool       `json:"requires_admin_review"`
+	ClaimedAt           *time.Time `json:"claimed_at,omitempty"`
 }
 
 // ListTransactionsResponse represents the response for listing transactions.
@@ -73,15 +88,27 @@ type TransactionDetail struct {
 	MerchantCategory string     `json:"merchant_category"`
 	CardID           string     `json:"card_id"` // mapped from DB account_id
 	Status           string     `json:"status"`
+	QueueID          *string    `json:"queue_id,omitempty"`
+	QueueName        *string    `json:"queue_name,omitempty"`
 	TransactionType  string     `json:"transaction_type"`
 	Channel          string     `json:"channel"`
 	CountryCode      string     `json:"country_code"`
 	IPAddress        *string    `json:"ip_address,omitempty"`
 	DeviceID         *string    `json:"device_id,omitempty"`
-	Metadata         any        `json:"metadata"` // Raw metadata or standard fields
-	CreatedAt        time.Time  `json:"created_at"` // maps to ingested_at
-	Timestamp        time.Time  `json:"timestamp"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	Metadata            any        `json:"metadata"` // Raw metadata or standard fields
+	CreatedAt           time.Time  `json:"created_at"` // maps to ingested_at
+	Timestamp           time.Time  `json:"timestamp"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	PriorityLevel       string     `json:"priority_level,omitempty"`
+	RiskScore           *float64   `json:"risk_score,omitempty"`
+	RiskBand            *string    `json:"risk_band,omitempty"`
+	RiskSource          *string    `json:"risk_source,omitempty"`
+	RejectCount         int        `json:"reject_count"`
+	StepUpResult        *string    `json:"step_up_result,omitempty"`
+	SLABreachType       string     `json:"sla_breach_type,omitempty"`
+	RequiresAdminReview bool       `json:"requires_admin_review"`
+	ClaimedAt           *time.Time `json:"claimed_at,omitempty"`
+	SLAPausedAt         *time.Time `json:"sla_paused_at,omitempty"`
 }
 
 // FeatureWeight represents the impact of a specific feature on the fraud score.
