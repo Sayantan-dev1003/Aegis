@@ -152,6 +152,10 @@ export default function ReviewerQueuePage() {
   // Claimed state in-memory during session
   const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
   // Determine reviewer's assigned queue
   const myQueueId = analystProfile?.queue_id || (user as any)?.queue_id;
   const myQueueName =
@@ -378,6 +382,34 @@ export default function ReviewerQueuePage() {
     searchQuery,
   ]);
 
+  // ─── Pagination Calculations & Reset on Filter Change ───────────────────────
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dateFilter, statusFilter, amountRangeFilter, searchQuery, pageSize]);
+
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
+  }, [filteredTransactions.length, pageSize]);
+
+  const paginatedTransactions = useMemo(() => {
+    const safePage = Math.min(currentPage, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredTransactions.slice(start, start + pageSize);
+  }, [filteredTransactions, currentPage, totalPages, pageSize]);
+
+  const getPageNumbers = useCallback((current: number, total: number) => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 4) {
+      return [1, 2, 3, 4, 5, "...", total];
+    }
+    if (current >= total - 3) {
+      return [1, "...", total - 4, total - 3, total - 2, total - 1, total];
+    }
+    return [1, "...", current - 1, current, current + 1, "...", total];
+  }, []);
+
   // ─── KPI Metrics Calculation (Dynamic from logged in reviewer's queue) ──────
   const queueDepthCount = useMemo(() => myQueueCases.length, [myQueueCases]);
 
@@ -438,6 +470,16 @@ export default function ReviewerQueuePage() {
     fontSize: "0.84rem",
     outline: "none",
     cursor: "pointer",
+  };
+
+  const thStyle: React.CSSProperties = {
+    padding: "14px 16px",
+    color: "#94A3B8",
+    fontWeight: 600,
+    fontSize: "0.78rem",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    whiteSpace: "nowrap",
   };
 
   return (
@@ -530,7 +572,7 @@ export default function ReviewerQueuePage() {
           value={loading ? "..." : slaAtRiskCount}
           sub={
             slaAtRiskCount > 0
-              ? `⚠️ ${slaAtRiskCount} cases < 15m remaining`
+              ? `${slaAtRiskCount} cases < 15m remaining`
               : "All cases within safe SLA window"
           }
           accent={slaAtRiskCount > 0 ? "#EF4444" : "#10B981"}
@@ -674,7 +716,7 @@ export default function ReviewerQueuePage() {
 
           <div style={{ display: "flex", gap: "12px", alignItems: "center", whiteSpace: "nowrap" }}>
             <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>
-              Showing {filteredTransactions.length} results
+              {filteredTransactions.length} {filteredTransactions.length === 1 ? "case" : "cases"} found
             </span>
             <button
               title="Refresh Data"
@@ -708,10 +750,11 @@ export default function ReviewerQueuePage() {
         }}
       >
         {/* ── Real-Time Cases Table (Dark Theme, No Checkboxes/Shortcuts) ───── */}
-        <div style={{ overflowX: "auto" }}>
+        <div style={{ overflowX: "auto", width: "100%" }}>
           <table
             style={{
               width: "100%",
+              minWidth: "1480px",
               borderCollapse: "collapse",
               textAlign: "left",
               fontSize: "0.875rem",
@@ -720,115 +763,28 @@ export default function ReviewerQueuePage() {
             <thead>
               <tr
                 style={{
-                  borderBottom: "1px solid rgba(255, 255, 255, 0.07)",
+                  borderBottom: "1px solid rgba(255, 255, 255, 0.08)",
                   backgroundColor: "rgba(255, 255, 255, 0.02)",
                 }}
               >
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    color: "#94A3B8",
-                    fontWeight: 500,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  TX ID
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    color: "#94A3B8",
-                    fontWeight: 500,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  Timestamp
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    color: "#94A3B8",
-                    fontWeight: 500,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  Account
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    color: "#94A3B8",
-                    fontWeight: 500,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                    textAlign: "right",
-                  }}
-                >
-                  Amount
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    color: "#94A3B8",
-                    fontWeight: 500,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  Flag Reason
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    color: "#94A3B8",
-                    fontWeight: 500,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  SLA Timer
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    color: "#94A3B8",
-                    fontWeight: 500,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                  }}
-                >
-                  Status
-                </th>
-                <th
-                  style={{
-                    padding: "14px 16px",
-                    color: "#94A3B8",
-                    fontWeight: 500,
-                    fontSize: "0.8rem",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.04em",
-                    textAlign: "right",
-                  }}
-                >
-                  Action
-                </th>
+                <th style={thStyle}>Timestamp</th>
+                <th style={thStyle}>Transaction ID</th>
+                <th style={thStyle}>Account</th>
+                <th style={thStyle}>Merchant</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
+                <th style={{ ...thStyle, textAlign: "center" }}>Score</th>
+                <th style={thStyle}>Risk Source</th>
+                <th style={thStyle}>Flag Reason</th>
+                <th style={thStyle}>SLA Timer</th>
+                <th style={thStyle}>Status</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={11}
                     style={{
                       padding: "60px",
                       textAlign: "center",
@@ -850,32 +806,25 @@ export default function ReviewerQueuePage() {
                 </tr>
               ) : filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ padding: "60px", textAlign: "center" }}>
+                  <td colSpan={11} style={{ padding: "60px", textAlign: "center" }}>
                     <EmptyState
-                      icon="🛡️"
+                      icon={<ShieldAlert size={36} color="#64748B" />}
                       title="No cases match selected filters"
                       description="All clear! Try clearing the date or search filter to inspect other cases."
                     />
                   </td>
                 </tr>
               ) : (
-                filteredTransactions.map((t, idx) => {
-                  const isLast = idx === filteredTransactions.length - 1;
+                paginatedTransactions.map((t, idx) => {
+                  const isLast = idx === paginatedTransactions.length - 1;
                   const isClaimedByMe =
                     claimedIds.has(t.id) ||
                     t.assignee === "You" ||
                     t.assignee === user?.full_name;
                   const score = t.fraud_score || 0;
-                  const scoreVal = Math.round(score * 100);
                   const slaRem = getSlaRemaining(t);
                   const isSlaBreached = slaRem <= 0;
                   const isSlaWarning = slaRem <= 15 && !isSlaBreached;
-
-                  // Dynamic Queue Label
-                  const displayQueue =
-                    t.queue_name ||
-                    (t.queue_id ? queues.find((q: any) => q.id === t.queue_id)?.name : null) ||
-                    (t.queue_id === myQueueId ? myQueueName : "Unassigned Queue");
 
                   const statusStyle = getStatusStyle(t.status || "scored");
 
@@ -905,35 +854,10 @@ export default function ReviewerQueuePage() {
                           : "transparent";
                       }}
                     >
-                      {/* TX ID Badge (Admin ledger copy pill style) */}
-                      <td style={{ padding: "16px" }}>
-                        <span
-                          title="Copy Transaction ID"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard?.writeText(t.id);
-                          }}
-                          style={{
-                            fontFamily: "monospace",
-                            fontSize: "0.78rem",
-                            color: "#94a3b8",
-                            backgroundColor: "rgba(148, 163, 184, 0.08)",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                            border: "1px solid rgba(148, 163, 184, 0.15)",
-                            cursor: "copy",
-                            whiteSpace: "nowrap",
-                            display: "inline-block",
-                          }}
-                        >
-                          {t.id.substring(0, 8)}…
-                        </span>
-                      </td>
-
                       {/* Timestamp */}
                       <td
                         style={{
-                          padding: "16px",
+                          padding: "16px 18px",
                           color: "#94A3B8",
                           fontSize: "0.82rem",
                           whiteSpace: "nowrap",
@@ -944,15 +868,60 @@ export default function ReviewerQueuePage() {
                         )}
                       </td>
 
-                      {/* Customer Account ID */}
-                      <td style={{ padding: "16px", fontWeight: 500, color: "#E2E8F0" }}>
+                      {/* Transaction ID */}
+                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
+                        <span
+                          title="Copy Transaction ID"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard?.writeText(t.id);
+                          }}
+                          style={{
+                            fontFamily: "monospace",
+                            fontSize: "0.78rem",
+                            color: "#CBD5E1",
+                            backgroundColor: "rgba(148, 163, 184, 0.08)",
+                            padding: "4px 8px",
+                            borderRadius: "6px",
+                            border: "1px solid rgba(148, 163, 184, 0.18)",
+                            cursor: "copy",
+                            whiteSpace: "nowrap",
+                            display: "inline-block",
+                          }}
+                        >
+                          {t.id.substring(0, 8)}…
+                        </span>
+                      </td>
+
+                      {/* Account */}
+                      <td
+                        style={{
+                          padding: "16px 18px",
+                          fontWeight: 600,
+                          color: "#E2E8F0",
+                          whiteSpace: "nowrap",
+                          fontSize: "0.85rem",
+                        }}
+                      >
                         {t.account_id || "ACCT-UNKNOWN"}
+                      </td>
+
+                      {/* Merchant */}
+                      <td
+                        style={{
+                          padding: "16px 18px",
+                          color: "#CBD5E1",
+                          whiteSpace: "nowrap",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        {t.merchant_name || "N/A"}
                       </td>
 
                       {/* Amount */}
                       <td
                         style={{
-                          padding: "16px",
+                          padding: "16px 18px",
                           textAlign: "right",
                           fontFamily: "monospace",
                           fontWeight: 700,
@@ -968,93 +937,126 @@ export default function ReviewerQueuePage() {
                         })}
                       </td>
 
-                      {/* Computed Readable Flag Reason Pill + Risk Score + Source Badge */}
-                      <td style={{ padding: "16px" }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <span
-                              style={{
-                                padding: "3px 8px",
-                                borderRadius: "6px",
-                                backgroundColor:
-                                  score >= 0.85
-                                    ? "rgba(239, 68, 68, 0.12)"
-                                    : score >= 0.7
-                                    ? "rgba(249, 115, 22, 0.12)"
-                                    : "rgba(255, 255, 255, 0.05)",
-                                color:
-                                  score >= 0.85
-                                    ? "#EF4444"
-                                    : score >= 0.7
-                                    ? "#F97316"
-                                    : "#CBD5E1",
-                                border:
-                                  score >= 0.85
-                                    ? "1px solid rgba(239, 68, 68, 0.3)"
-                                    : score >= 0.7
-                                    ? "1px solid rgba(249, 115, 22, 0.3)"
-                                    : "1px solid rgba(255, 255, 255, 0.12)",
-                                fontSize: "0.76rem",
-                                fontWeight: 600,
-                                display: "inline-block",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {getFlagReason(t)}
-                            </span>
-                            {/* Risk Source Badge */}
-                            {t.risk_source && (
-                              <span
-                                title={`Risk Source: ${t.risk_source}`}
-                                style={{
-                                  padding: "2px 6px",
-                                  borderRadius: "4px",
-                                  fontSize: "0.68rem",
-                                  fontWeight: 600,
-                                  textTransform: "uppercase",
-                                  backgroundColor:
-                                    t.risk_source === "hybrid"
-                                      ? "rgba(139, 92, 246, 0.15)"
-                                      : t.risk_source === "ml"
-                                      ? "rgba(6, 182, 212, 0.15)"
-                                      : "rgba(245, 158, 11, 0.15)",
-                                  color:
-                                    t.risk_source === "hybrid"
-                                      ? "#A78BFA"
-                                      : t.risk_source === "ml"
-                                      ? "#22D3EE"
-                                      : "#FBBF24",
-                                  border:
-                                    t.risk_source === "hybrid"
-                                      ? "1px solid rgba(139, 92, 246, 0.3)"
-                                      : t.risk_source === "ml"
-                                      ? "1px solid rgba(6, 182, 212, 0.3)"
-                                      : "1px solid rgba(245, 158, 11, 0.3)",
-                                }}
-                              >
-                                {t.risk_source === "hybrid" ? "⚡ Hybrid" : t.risk_source === "ml" ? "🤖 ML" : "📋 Rule"}
-                              </span>
-                            )}
-                          </div>
-                          {/* Risk Score Progress Bar */}
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <div style={{ width: "80px", height: "4px", borderRadius: "2px", backgroundColor: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
-                              <div style={{
-                                width: `${Math.min(100, Math.max(0, score * 100))}%`,
-                                height: "100%",
-                                backgroundColor: score >= 0.95 ? "#EF4444" : score >= 0.85 ? "#F97316" : score >= 0.45 ? "#FACC15" : "#10B981",
-                                transition: "width 0.3s ease"
-                              }} />
-                            </div>
-                            <span style={{ fontSize: "0.72rem", color: "#94A3B8", fontFamily: "monospace", fontWeight: 600 }}>
-                              {(score * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                        </div>
+                      {/* Score (No horizontal progress bar) */}
+                      <td
+                        style={{
+                          padding: "16px 18px",
+                          textAlign: "center",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            fontSize: "0.78rem",
+                            fontFamily: "monospace",
+                            fontWeight: 700,
+                            backgroundColor:
+                              score >= 0.85
+                                ? "rgba(239, 68, 68, 0.15)"
+                                : score >= 0.7
+                                ? "rgba(249, 115, 22, 0.15)"
+                                : score >= 0.45
+                                ? "rgba(250, 204, 21, 0.15)"
+                                : "rgba(16, 185, 129, 0.15)",
+                            color:
+                              score >= 0.85
+                                ? "#EF4444"
+                                : score >= 0.7
+                                ? "#FB923C"
+                                : score >= 0.45
+                                ? "#FACC15"
+                                : "#10B981",
+                            border:
+                              score >= 0.85
+                                ? "1px solid rgba(239, 68, 68, 0.3)"
+                                : score >= 0.7
+                                ? "1px solid rgba(249, 115, 22, 0.3)"
+                                : score >= 0.45
+                                ? "1px solid rgba(250, 204, 21, 0.3)"
+                                : "1px solid rgba(16, 185, 129, 0.3)",
+                          }}
+                        >
+                          {(score * 100).toFixed(0)}%
+                        </span>
                       </td>
 
-                      {/* SLA Live Countdown Timer */}
-                      <td style={{ padding: "16px" }}>
+                      {/* Risk Source */}
+                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "3px 10px",
+                            borderRadius: "4px",
+                            fontSize: "0.72rem",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.04em",
+                            backgroundColor:
+                              t.risk_source === "hybrid"
+                                ? "rgba(139, 92, 246, 0.12)"
+                                : t.risk_source === "ml"
+                                ? "rgba(6, 182, 212, 0.12)"
+                                : "rgba(245, 158, 11, 0.12)",
+                            color:
+                              t.risk_source === "hybrid"
+                                ? "#A78BFA"
+                                : t.risk_source === "ml"
+                                ? "#22D3EE"
+                                : "#FBBF24",
+                            border:
+                              t.risk_source === "hybrid"
+                                ? "1px solid rgba(139, 92, 246, 0.25)"
+                                : t.risk_source === "ml"
+                                ? "1px solid rgba(6, 182, 212, 0.25)"
+                                : "1px solid rgba(245, 158, 11, 0.25)",
+                          }}
+                        >
+                          {t.risk_source === "hybrid"
+                            ? "Hybrid"
+                            : t.risk_source === "ml"
+                            ? "ML"
+                            : "Rule"}
+                        </span>
+                      </td>
+
+                      {/* Flag Reason */}
+                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
+                        <span
+                          style={{
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            backgroundColor:
+                              score >= 0.85
+                                ? "rgba(239, 68, 68, 0.1)"
+                                : score >= 0.7
+                                ? "rgba(249, 115, 22, 0.1)"
+                                : "rgba(255, 255, 255, 0.04)",
+                            color:
+                              score >= 0.85
+                                ? "#EF4444"
+                                : score >= 0.7
+                                ? "#FB923C"
+                                : "#CBD5E1",
+                            border:
+                              score >= 0.85
+                                ? "1px solid rgba(239, 68, 68, 0.25)"
+                                : score >= 0.7
+                                ? "1px solid rgba(249, 115, 22, 0.25)"
+                                : "1px solid rgba(255, 255, 255, 0.1)",
+                            fontSize: "0.78rem",
+                            fontWeight: 500,
+                            display: "inline-block",
+                          }}
+                        >
+                          {getFlagReason(t)}
+                        </span>
+                      </td>
+
+                      {/* SLA Timer */}
+                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
                         <div
                           style={{
                             display: "flex",
@@ -1067,92 +1069,59 @@ export default function ReviewerQueuePage() {
                               : isSlaWarning
                               ? "#F59E0B"
                               : "#10B981",
-                            fontWeight: 700,
+                            fontWeight: 600,
                             fontSize: "0.82rem",
                             fontFamily: "monospace",
-                            whiteSpace: "nowrap",
                           }}
                         >
                           <Clock size={14} />
-                          {t.sla_paused_at ? "⏸ PAUSED" : isSlaBreached ? "⚠ BREACHED" : `${slaRem}m LEFT`}
+                          {t.sla_paused_at
+                            ? "Paused"
+                            : isSlaBreached
+                            ? "Breached"
+                            : `${slaRem}m left`}
                           {isSlaWarning && !t.sla_paused_at && (
-                            <span style={{
-                              fontSize: "0.68rem",
-                              backgroundColor: "rgba(245, 158, 11, 0.15)",
-                              color: "#F59E0B",
-                              padding: "2px 6px",
-                              borderRadius: "4px",
-                              border: "1px solid rgba(245, 158, 11, 0.3)",
-                              fontWeight: 700,
-                              textTransform: "uppercase"
-                            }}>
+                            <span
+                              style={{
+                                fontSize: "0.68rem",
+                                backgroundColor: "rgba(245, 158, 11, 0.12)",
+                                color: "#F59E0B",
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                                border: "1px solid rgba(245, 158, 11, 0.25)",
+                                fontWeight: 600,
+                                textTransform: "uppercase",
+                              }}
+                            >
                               VIP SLA (≤15m)
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* Status Pill & Distinct Risk Band Badge */}
-                      <td style={{ padding: "16px" }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                          <span
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              padding: "3px 8px",
-                              borderRadius: "6px",
-                              fontSize: "0.75rem",
-                              fontWeight: 600,
-                              textTransform: "capitalize",
-                              whiteSpace: "nowrap",
-                              backgroundColor: statusStyle.bg,
-                              color: statusStyle.color,
-                              width: "fit-content",
-                            }}
-                          >
-                            {(t.status || "scored").replace("_", " ")}
-                          </span>
-                          {t.status === "auto_blocked" || score >= 0.95 ? (
-                            <span
-                              title="Hard auto-block threshold reached (score ≥ 0.95)"
-                              style={{
-                                display: "inline-block",
-                                padding: "2px 6px",
-                                borderRadius: "4px",
-                                fontSize: "0.68rem",
-                                fontWeight: 700,
-                                backgroundColor: "rgba(239, 68, 68, 0.2)",
-                                color: "#F87171",
-                                border: "1px solid rgba(239, 68, 68, 0.4)",
-                                width: "fit-content",
-                              }}
-                            >
-                              🔴 Critical (ML Block)
-                            </span>
-                          ) : score >= 0.85 ? (
-                            <span
-                              title="High risk band — requires human review (score 0.85–0.94)"
-                              style={{
-                                display: "inline-block",
-                                padding: "2px 6px",
-                                borderRadius: "4px",
-                                fontSize: "0.68rem",
-                                fontWeight: 600,
-                                backgroundColor: "rgba(249, 115, 22, 0.15)",
-                                color: "#FB923C",
-                                border: "1px solid rgba(249, 115, 22, 0.3)",
-                                width: "fit-content",
-                              }}
-                            >
-                              🟠 High Risk (Human Review)
-                            </span>
-                          ) : null}
-                        </div>
+                      {/* Status */}
+                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            textTransform: "capitalize",
+                            backgroundColor: statusStyle.bg,
+                            color: statusStyle.color,
+                            border: `1px solid ${statusStyle.color}35`,
+                          }}
+                        >
+                          {(t.status || "scored").replace("_", " ")}
+                        </span>
                       </td>
 
                       {/* Action Column */}
                       <td
-                        style={{ padding: "16px", textAlign: "right" }}
+                        style={{ padding: "16px 18px", textAlign: "right", whiteSpace: "nowrap" }}
                         onClick={(e) => e.stopPropagation()}
                       >
                         {!isClaimedByMe && !t.review_decision ? (
@@ -1160,8 +1129,8 @@ export default function ReviewerQueuePage() {
                             <button
                               onClick={(e) => claimSingle(t.id, e)}
                               style={{
-                                padding: "6px 12px",
-                                borderRadius: "8px",
+                                padding: "6px 14px",
+                                borderRadius: "6px",
                                 backgroundColor: "rgba(16, 185, 129, 0.15)",
                                 color: "#10B981",
                                 border: "1px solid rgba(16, 185, 129, 0.3)",
@@ -1169,7 +1138,6 @@ export default function ReviewerQueuePage() {
                                 fontSize: "0.78rem",
                                 cursor: "pointer",
                                 transition: "all 0.2s",
-                                whiteSpace: "nowrap",
                               }}
                             >
                               Claim
@@ -1185,17 +1153,16 @@ export default function ReviewerQueuePage() {
                                   border: "1px solid rgba(239, 68, 68, 0.35)",
                                   fontWeight: 600,
                                   fontSize: "0.72rem",
-                                  whiteSpace: "nowrap",
                                 }}
                               >
-                                🚫 Reject Cap (Admin)
+                                Reject Cap (Admin)
                               </span>
                             ) : (
                               <button
                                 onClick={(e) => rejectSingle(t.id, e)}
                                 style={{
-                                  padding: "6px 12px",
-                                  borderRadius: "8px",
+                                  padding: "6px 14px",
+                                  borderRadius: "6px",
                                   backgroundColor: "rgba(239, 68, 68, 0.12)",
                                   color: "#EF4444",
                                   border: "1px solid rgba(239, 68, 68, 0.3)",
@@ -1203,7 +1170,6 @@ export default function ReviewerQueuePage() {
                                   fontSize: "0.78rem",
                                   cursor: "pointer",
                                   transition: "all 0.2s",
-                                  whiteSpace: "nowrap",
                                 }}
                               >
                                 Reject
@@ -1211,28 +1177,25 @@ export default function ReviewerQueuePage() {
                             )}
                           </div>
                         ) : (
-                          <div style={{ display: "inline-flex", gap: "8px" }}>
-                            <button
-                              onClick={() => router.push(`/reviewer/investigate?id=${t.id}`)}
-                              style={{
-                                padding: "6px 12px",
-                                borderRadius: "8px",
-                                backgroundColor: "rgba(56, 189, 248, 0.15)",
-                                border: "1px solid rgba(56, 189, 248, 0.3)",
-                                color: "#38BDF8",
-                                fontWeight: 600,
-                                fontSize: "0.78rem",
-                                cursor: "pointer",
-                                transition: "all 0.2s",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "4px",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              Investigate
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => router.push(`/reviewer/investigate?id=${t.id}`)}
+                            style={{
+                              padding: "6px 14px",
+                              borderRadius: "6px",
+                              backgroundColor: "rgba(56, 189, 248, 0.15)",
+                              border: "1px solid rgba(56, 189, 248, 0.3)",
+                              color: "#38BDF8",
+                              fontWeight: 600,
+                              fontSize: "0.78rem",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            Investigate
+                          </button>
                         )}
                       </td>
                     </tr>
@@ -1242,6 +1205,181 @@ export default function ReviewerQueuePage() {
             </tbody>
           </table>
         </div>
+
+        {/* ── 5. Premium Pagination Control Bar (Page 1, 2, 3... upto last page) ── */}
+        {filteredTransactions.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "16px 20px",
+              borderTop: "1px solid rgba(255, 255, 255, 0.07)",
+              backgroundColor: "rgba(15, 23, 42, 0.6)",
+              flexWrap: "wrap",
+              gap: "12px",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                color: "#94A3B8",
+                fontSize: "0.82rem",
+              }}
+            >
+              <span>
+                Showing{" "}
+                <strong style={{ color: "#E8EDF4" }}>
+                  {filteredTransactions.length === 0
+                    ? 0
+                    : (currentPage - 1) * pageSize + 1}{" "}
+                  -{" "}
+                  {Math.min(
+                    currentPage * pageSize,
+                    filteredTransactions.length
+                  )}
+                </strong>{" "}
+                of{" "}
+                <strong style={{ color: "#E8EDF4" }}>
+                  {filteredTransactions.length}
+                </strong>{" "}
+                cases
+              </span>
+              <span style={{ color: "#334155" }}>|</span>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <span>Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  style={{
+                    backgroundColor: "#0F172A",
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    color: "#E8EDF4",
+                    borderRadius: "6px",
+                    padding: "4px 8px",
+                    fontSize: "0.8rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value={5} style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>5</option>
+                  <option value={10} style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>10</option>
+                  <option value={20} style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>20</option>
+                  <option value={50} style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>50</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Page 1, 2, 3... upto last page controls */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  backgroundColor:
+                    currentPage === 1
+                      ? "rgba(255, 255, 255, 0.02)"
+                      : "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  color: currentPage === 1 ? "#475569" : "#E8EDF4",
+                  cursor: currentPage === 1 ? "not-allowed" : "pointer",
+                  fontSize: "0.8rem",
+                  fontWeight: 500,
+                  transition: "all 0.15s",
+                }}
+              >
+                Prev
+              </button>
+
+              {getPageNumbers(currentPage, totalPages).map((page, idx) => {
+                if (page === "...") {
+                  return (
+                    <span
+                      key={`ellipsis-${idx}`}
+                      style={{
+                        padding: "0 6px",
+                        color: "#64748B",
+                        fontSize: "0.85rem",
+                        userSelect: "none",
+                      }}
+                    >
+                      ...
+                    </span>
+                  );
+                }
+                const pageNum = page as number;
+                const isActive = pageNum === currentPage;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    style={{
+                      minWidth: "32px",
+                      height: "32px",
+                      padding: "0 8px",
+                      borderRadius: "6px",
+                      backgroundColor: isActive
+                        ? "rgba(56, 189, 248, 0.2)"
+                        : "rgba(255, 255, 255, 0.04)",
+                      border: isActive
+                        ? "1px solid rgba(56, 189, 248, 0.5)"
+                        : "1px solid rgba(255, 255, 255, 0.08)",
+                      color: isActive ? "#38BDF8" : "#94A3B8",
+                      fontWeight: isActive ? 700 : 500,
+                      fontSize: "0.82rem",
+                      cursor: "pointer",
+                      transition: "all 0.15s",
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(totalPages, p + 1))
+                }
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  backgroundColor:
+                    currentPage === totalPages
+                      ? "rgba(255, 255, 255, 0.02)"
+                      : "rgba(255, 255, 255, 0.05)",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                  color: currentPage === totalPages ? "#475569" : "#E8EDF4",
+                  cursor:
+                    currentPage === totalPages ? "not-allowed" : "pointer",
+                  fontSize: "0.8rem",
+                  fontWeight: 500,
+                  transition: "all 0.15s",
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
