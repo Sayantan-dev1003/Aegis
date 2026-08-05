@@ -34,11 +34,13 @@ const FilterLabel = ({ label }: { label: string }) => (
 const FilterGroup = ({
   label,
   children,
+  style,
 }: {
   label: string;
   children: React.ReactNode;
+  style?: React.CSSProperties;
 }) => (
-  <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+  <div style={{ display: "flex", flexDirection: "column", gap: "4px", ...style }}>
     <FilterLabel label={label} />
     {children}
   </div>
@@ -690,8 +692,8 @@ export default function ReviewerQueuePage() {
             </select>
           </FilterGroup>
 
-          <FilterGroup label="Risk Source">
-            <select value={riskSourceFilter} onChange={(e) => setRiskSourceFilter(e.target.value)} style={selectStyle}>
+          <FilterGroup label="Risk Source" style={{ flex: 1 }}>
+            <select value={riskSourceFilter} onChange={(e) => setRiskSourceFilter(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
               <option value="all" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>All Sources</option>
               <option value="rule" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Rule</option>
               <option value="ml" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>ML</option>
@@ -699,8 +701,8 @@ export default function ReviewerQueuePage() {
             </select>
           </FilterGroup>
 
-          <FilterGroup label="Channel">
-            <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} style={selectStyle}>
+          <FilterGroup label="Channel" style={{ flex: 1 }}>
+            <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
               <option value="all" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>All Channels</option>
               <option value="online" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Online</option>
               <option value="pos" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>POS</option>
@@ -710,8 +712,8 @@ export default function ReviewerQueuePage() {
             </select>
           </FilterGroup>
 
-          <FilterGroup label="Location">
-            <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} style={selectStyle}>
+          <FilterGroup label="Location" style={{ flex: 1 }}>
+            <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} style={{ ...selectStyle, width: "100%" }}>
               <option value="all" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>All Locations</option>
               {Array.from(new Set(myQueueCases.map(t => t.country_code || t.location?.country).filter(Boolean))).map(loc => (
                 <option key={loc} value={loc} style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>{loc}</option>

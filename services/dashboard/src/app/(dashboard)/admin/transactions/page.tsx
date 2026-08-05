@@ -1,12 +1,18 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { fetchApi } from "../../../lib/api";
 import { Modal } from '@/components/Modal';
 import { RefreshCw } from 'lucide-react';
 import ALL_COUNTRIES from '../../../../data/countries.json';
 
-const FETCH_LIMIT = 500; // Fetch a large batch; paginate client-side
+// Domain-known values for static dropdowns (channels/types/categories used by the simulator).
+const KNOWN_CHANNELS = ['online', 'pos', 'upi', 'mobile_wallet'];
+const KNOWN_TYPES = ['purchase', 'transfer'];
+const KNOWN_CATEGORIES = [
+  'retail', 'food_delivery', 'transport', 'streaming', 'grocery',
+  'fashion', 'travel', 'fintech', 'gaming', 'wholesale', 'electronics',
+];
 
 const selectStyle: React.CSSProperties = {
   padding: '6px 8px',
@@ -113,10 +119,12 @@ const thStyle: React.CSSProperties = {
 };
 
 export default function TransactionsPage() {
-  const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  // ── Server-returned data ────────────────────────────────────────────
+  const [rows, setRows] = useState<any[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
-  // Filters
+  // ── Filters (all server-side) ───────────────────────────────────────
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
   const [fromTimeFilter, setFromTimeFilter] = useState('');
@@ -128,124 +136,103 @@ export default function TransactionsPage() {
   const [countryFilter, setCountryFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
+  // ── Cursor-based pagination ─────────────────────────────────────────
+  // pageCursors[i] = the cursor required to fetch page i.
+  //   pageCursors[0] = "" (page 1 needs no cursor)
+  //   pageCursors[1] = cursor returned at end of page 1 (to fetch page 2)
+  //   etc.
+  const [pageCursors, setPageCursors] = useState<string[]>(['']);
+  const [currentPageIdx, setCurrentPageIdx] = useState(0); // 0-based
+  const [nextCursor, setNextCursor] = useState('');
   const [pageSize, setPageSize] = useState(10);
 
   const [viewingTx, setViewingTx] = useState<any>(null);
 
-  const loadData = useCallback(async () => {
+  // ── Build URL from current filters ─────────────────────────────────
+  const buildUrl = useCallback((cursor: string): string => {
+    let url = `http://localhost:8080/api/v1/transactions?limit=${pageSize}&_t=${Date.now()}`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+    if (statusFilter) url += `&status=${statusFilter}`;
+    if (dateFilter) {
+      url += fromTimeFilter
+        ? `&from_date=${new Date(`${dateFilter}T${fromTimeFilter}:00`).toISOString()}`
+        : `&from_date=${new Date(`${dateFilter}T00:00:00`).toISOString()}`;
+      url += toTimeFilter
+        ? `&to_date=${new Date(`${dateFilter}T${toTimeFilter}:00`).toISOString()}`
+        : `&to_date=${new Date(`${dateFilter}T23:59:59`).toISOString()}`;
+    }
+    if (countryFilter) url += `&country_code=${countryFilter}`;
+    if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
+    if (channelFilter) url += `&channel=${channelFilter}`;
+    if (typeFilter) url += `&transaction_type=${typeFilter}`;
+    if (merchantCategoryFilter) url += `&merchant_category=${merchantCategoryFilter}`;
+    if (amountRangeFilter) {
+      switch (amountRangeFilter) {
+        case '<1000':          url += `&max_amount=1000`; break;
+        case '1000 to 5000':   url += `&min_amount=1000&max_amount=5000`; break;
+        case '5000 to 10000':  url += `&min_amount=5000&max_amount=10000`; break;
+        case '10000 to 50000': url += `&min_amount=10000&max_amount=50000`; break;
+        case '50000 to 1L':    url += `&min_amount=50000&max_amount=100000`; break;
+        case '1L to 5L':       url += `&min_amount=100000&max_amount=500000`; break;
+        case '5L to 10L':      url += `&min_amount=500000&max_amount=1000000`; break;
+        case '10L to 50L':     url += `&min_amount=1000000&max_amount=5000000`; break;
+        case '50L to 1Cr':     url += `&min_amount=5000000&max_amount=10000000`; break;
+        case '> 1Cr':          url += `&min_amount=10000000`; break;
+      }
+    }
+    return url;
+  }, [pageSize, statusFilter, dateFilter, fromTimeFilter, toTimeFilter, amountRangeFilter,
+      channelFilter, typeFilter, merchantCategoryFilter, countryFilter, searchQuery]);
+
+  // ── Core fetch ──────────────────────────────────────────────────────
+  const loadPage = useCallback(async (cursor: string) => {
     setLoading(true);
     try {
-      let url = `http://localhost:8080/api/v1/transactions?limit=${FETCH_LIMIT}&_t=${Date.now()}`;
-      if (statusFilter) url += `&status=${statusFilter}`;
-
-      if (dateFilter) {
-        if (fromTimeFilter) {
-          url += `&from_date=${new Date(`${dateFilter}T${fromTimeFilter}:00`).toISOString()}`;
-        } else {
-          url += `&from_date=${new Date(`${dateFilter}T00:00:00`).toISOString()}`;
-        }
-        if (toTimeFilter) {
-          url += `&to_date=${new Date(`${dateFilter}T${toTimeFilter}:00`).toISOString()}`;
-        } else {
-          url += `&to_date=${new Date(`${dateFilter}T23:59:59`).toISOString()}`;
-        }
-      }
-
-      if (countryFilter) url += `&country_code=${countryFilter}`;
-      if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
-
-      if (amountRangeFilter) {
-        switch (amountRangeFilter) {
-          case '<1000': url += `&max_amount=1000`; break;
-          case '1000 to 5000': url += `&min_amount=1000&max_amount=5000`; break;
-          case '5000 to 10000': url += `&min_amount=5000&max_amount=10000`; break;
-          case '10000 to 50000': url += `&min_amount=10000&max_amount=50000`; break;
-          case '50000 to 1L': url += `&min_amount=50000&max_amount=100000`; break;
-          case '1L to 5L': url += `&min_amount=100000&max_amount=500000`; break;
-          case '5L to 10L': url += `&min_amount=500000&max_amount=1000000`; break;
-          case '10L to 50L': url += `&min_amount=1000000&max_amount=5000000`; break;
-          case '50L to 1Cr': url += `&min_amount=5000000&max_amount=10000000`; break;
-          case '> 1Cr': url += `&min_amount=10000000`; break;
-        }
-      }
-
+      const url = buildUrl(cursor);
       const data = await fetchApi(url);
-      setAllTransactions(data.data || []);
+      setRows(data.data || []);
+      setTotalCount(data.total ?? 0);
+      setNextCursor(data.next_cursor || '');
     } catch (err) {
-      console.error("Failed to load transactions", err);
+      console.error('Failed to load transactions', err);
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, dateFilter, fromTimeFilter, toTimeFilter, amountRangeFilter, countryFilter, searchQuery]);
+  }, [buildUrl]);
 
+  // ── Reset + reload when filters or page size change ─────────────────
   useEffect(() => {
-    setCurrentPage(1);
-    loadData();
-  }, [loadData]);
+    setPageCursors(['']);
+    setCurrentPageIdx(0);
+    setNextCursor('');
+    loadPage('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, dateFilter, fromTimeFilter, toTimeFilter, amountRangeFilter,
+      channelFilter, typeFilter, merchantCategoryFilter, countryFilter, searchQuery, pageSize]);
 
-  // --- Dynamic filter options derived from loaded data ---
-  const dynamicChannels = useMemo(() => {
-    const vals = Array.from(new Set(allTransactions.map(t => t.channel).filter(Boolean))) as string[];
-    return vals.sort();
-  }, [allTransactions]);
-
-  const dynamicTypes = useMemo(() => {
-    const vals = Array.from(new Set(allTransactions.map(t => t.transaction_type).filter(Boolean))) as string[];
-    return vals.sort();
-  }, [allTransactions]);
-
-  const dynamicCategories = useMemo(() => {
-    const vals = Array.from(new Set(allTransactions.map(t => t.merchant_category).filter(Boolean))) as string[];
-    return vals.sort();
-  }, [allTransactions]);
-
-  // --- Client-side filtering for dynamic filters ---
-  const filteredTransactions = useMemo(() => {
-    return allTransactions.filter(t => {
-      if (channelFilter && t.channel !== channelFilter) return false;
-      if (typeFilter && t.transaction_type !== typeFilter) return false;
-      if (merchantCategoryFilter && t.merchant_category !== merchantCategoryFilter) return false;
-      return true;
+  // ── Navigation ──────────────────────────────────────────────────────
+  const goNext = useCallback(() => {
+    if (!nextCursor) return;
+    const newIdx = currentPageIdx + 1;
+    setPageCursors(prev => {
+      const updated = [...prev];
+      if (newIdx >= updated.length) updated.push(nextCursor);
+      return updated;
     });
-  }, [allTransactions, channelFilter, typeFilter, merchantCategoryFilter]);
+    setCurrentPageIdx(newIdx);
+    loadPage(nextCursor);
+  }, [nextCursor, currentPageIdx, loadPage]);
 
-  // Reset to page 1 when client-side filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [channelFilter, typeFilter, merchantCategoryFilter, pageSize]);
+  const goPrev = useCallback(() => {
+    if (currentPageIdx === 0) return;
+    const newIdx = currentPageIdx - 1;
+    setCurrentPageIdx(newIdx);
+    loadPage(pageCursors[newIdx]);
+  }, [currentPageIdx, pageCursors, loadPage]);
 
-  // --- Pagination ---
-  const totalItems = filteredTransactions.length;
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
-
-  const paginatedTransactions = useMemo(() => {
-    const safePage = Math.min(currentPage, totalPages);
-    const start = (safePage - 1) * pageSize;
-    return filteredTransactions.slice(start, start + pageSize);
-  }, [filteredTransactions, currentPage, totalPages, pageSize]);
-
-  const getPageNumbers = useCallback((current: number, total: number): (number | string)[] => {
-    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-    if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
-    if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
-    return [1, '...', current - 1, current, current + 1, '...', total];
-  }, []);
-
-  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(currentPage * pageSize, totalItems);
-
-  const viewTransactionDetails = async (id: string) => {
-    try {
-      const data = await fetchApi(`http://localhost:8080/api/v1/transactions/${id}`);
-      setViewingTx(data);
-    } catch (err) {
-      console.error("Failed to fetch details", err);
-    }
-  };
-
-  const hasActiveFilters = statusFilter || dateFilter || fromTimeFilter || toTimeFilter || amountRangeFilter || channelFilter || typeFilter || merchantCategoryFilter || countryFilter || searchQuery;
+  const hasActiveFilters = statusFilter || dateFilter || fromTimeFilter || toTimeFilter ||
+    amountRangeFilter || channelFilter || typeFilter || merchantCategoryFilter ||
+    countryFilter || searchQuery;
 
   const clearAllFilters = () => {
     setStatusFilter('');
@@ -258,6 +245,21 @@ export default function TransactionsPage() {
     setMerchantCategoryFilter('');
     setCountryFilter('');
     setSearchQuery('');
+  };
+
+  // ── Pagination display values ───────────────────────────────────────
+  const currentPageNum = currentPageIdx + 1;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const startItem = totalCount === 0 ? 0 : currentPageIdx * pageSize + 1;
+  const endItem = Math.min(currentPageIdx * pageSize + rows.length, totalCount);
+
+  const viewTransactionDetails = async (id: string) => {
+    try {
+      const data = await fetchApi(`http://localhost:8080/api/v1/transactions/${id}`);
+      setViewingTx(data);
+    } catch (err) {
+      console.error('Failed to fetch details', err);
+    }
   };
 
   return (
@@ -311,7 +313,7 @@ export default function TransactionsPage() {
           <FilterGroup label="Channel">
             <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)} style={{ ...selectStyle, minWidth: '108px' }}>
               <option value="">All</option>
-              {dynamicChannels.map(ch => (
+              {KNOWN_CHANNELS.map(ch => (
                 <option key={ch} value={ch}>{ch.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
               ))}
             </select>
@@ -320,24 +322,24 @@ export default function TransactionsPage() {
           <FilterGroup label="Type">
             <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ ...selectStyle, minWidth: '108px' }}>
               <option value="">All</option>
-              {dynamicTypes.map(tp => (
+              {KNOWN_TYPES.map(tp => (
                 <option key={tp} value={tp}>{tp.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
               ))}
             </select>
           </FilterGroup>
 
-          {/* Clear button aligned to end of row 1 */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'flex-end', visibility: hasActiveFilters ? 'visible' : 'hidden' }}>
-            <button
-              onClick={clearAllFilters}
-              style={{ ...selectStyle, padding: '6px 12px', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.05)', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '0.8rem' }}
-            >
-              Clear Filters
-            </button>
-          </div>
+          <FilterGroup label="Merchant Category">
+            <select value={merchantCategoryFilter} onChange={e => setMerchantCategoryFilter(e.target.value)} style={{ ...selectStyle, minWidth: '148px' }}>
+              <option value="">All Categories</option>
+              {KNOWN_CATEGORIES.map(cat => (
+                <option key={cat} value={cat}>{cat.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
+              ))}
+            </select>
+          </FilterGroup>
+
         </div>
 
-        {/* ── Row 2: Shorter search + Merchant Category + Country + Refresh ── */}
+        {/* ── Row 2: Search + Refresh ── */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', width: '100%' }}>
 
           <div>
@@ -346,31 +348,21 @@ export default function TransactionsPage() {
               placeholder="Txn ID, Account ID or Merchant"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ ...selectStyle, width: '270px', padding: '7px 12px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+              style={{ ...selectStyle, width: '540px', padding: '7px 12px', fontSize: '0.85rem', boxSizing: 'border-box' }}
             />
           </div>
 
-          <FilterGroup label="Merchant Category">
-            <select value={merchantCategoryFilter} onChange={e => setMerchantCategoryFilter(e.target.value)} style={{ ...selectStyle, minWidth: '148px' }}>
-              <option value="">All Categories</option>
-              {dynamicCategories.map(cat => (
-                <option key={cat} value={cat}>{cat.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
-              ))}
-            </select>
-          </FilterGroup>
-
-          <FilterGroup label="Country">
-            <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)} style={{ ...selectStyle, minWidth: '130px' }}>
-              <option value="">All Countries</option>
-              {ALL_COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
-            </select>
-          </FilterGroup>
-
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={clearAllFilters}
+              style={{ ...selectStyle, padding: '6px 12px', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.05)', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '0.8rem', visibility: hasActiveFilters ? 'visible' : 'hidden' }}
+            >
+              Clear Filters
+            </button>
             <button
               title="Refresh Data"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}
-              onClick={() => loadData()}
+              onClick={() => loadPage(pageCursors[currentPageIdx] || '')}
             >
               <RefreshCw size={18} />
             </button>
@@ -402,10 +394,10 @@ export default function TransactionsPage() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={13} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading transactions...</td></tr>
-              ) : paginatedTransactions.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr><td colSpan={13} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>No transactions found.</td></tr>
-              ) : paginatedTransactions.map((t: any, idx: number) => {
-                const isLast = idx === paginatedTransactions.length - 1;
+              ) : rows.map((t: any, idx: number) => {
+                const isLast = idx === rows.length - 1;
                 return (
                   <tr key={t.id} style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-color)', transition: 'background 0.15s' }}
                     onMouseEnter={ev => (ev.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
@@ -510,20 +502,20 @@ export default function TransactionsPage() {
           </table>
         </div>
 
-        {/* ── Pagination Bar (Reviewer-style) ── */}
-        {!loading && totalItems > 0 && (
+        {/* ── Pagination Bar ── */}
+        {!loading && totalCount > 0 && (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '14px 20px', borderTop: '1px solid var(--border-color)',
             backgroundColor: 'rgba(15, 23, 42, 0.4)', flexWrap: 'wrap', gap: '12px',
           }}>
-            {/* Left: Showing X-Y of Z cases | Rows per page */}
+            {/* Left: Showing X-Y of Z | Rows per page */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
               <span>
                 Showing{' '}
                 <strong style={{ color: 'var(--text-primary)' }}>{startItem} – {endItem}</strong>
                 {' '}of{' '}
-                <strong style={{ color: 'var(--text-primary)' }}>{totalItems}</strong>
+                <strong style={{ color: 'var(--text-primary)' }}>{totalCount.toLocaleString()}</strong>
                 {' '}cases
               </span>
               <span style={{ color: 'var(--border-color)' }}>|</span>
@@ -531,7 +523,7 @@ export default function TransactionsPage() {
                 <span>Rows per page:</span>
                 <select
                   value={pageSize}
-                  onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                  onChange={e => setPageSize(Number(e.target.value))}
                   style={{ backgroundColor: '#0F172A', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 8px', fontSize: '0.8rem', cursor: 'pointer' }}
                 >
                   <option value={5}>5</option>
@@ -542,60 +534,42 @@ export default function TransactionsPage() {
               </div>
             </div>
 
-            {/* Right: Prev | Page numbers | Next */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            {/* Right: Prev | Page N of M | Next */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
+                onClick={goPrev}
+                disabled={currentPageIdx === 0 || loading}
                 style={{
                   padding: '6px 12px', borderRadius: '6px',
-                  backgroundColor: currentPage === 1 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+                  backgroundColor: currentPageIdx === 0 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.08)',
-                  color: currentPage === 1 ? '#475569' : 'var(--text-primary)',
-                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  color: currentPageIdx === 0 ? '#475569' : 'var(--text-primary)',
+                  cursor: currentPageIdx === 0 ? 'not-allowed' : 'pointer',
                   fontSize: '0.8rem', fontWeight: 500, transition: 'all 0.15s',
                 }}
               >
                 Prev
               </button>
 
-              {getPageNumbers(currentPage, totalPages).map((page, idx) => {
-                if (page === '...') {
-                  return (
-                    <span key={`ellipsis-${idx}`} style={{ padding: '0 6px', color: '#64748B', fontSize: '0.85rem', userSelect: 'none' }}>
-                      ...
-                    </span>
-                  );
-                }
-                const pageNum = page as number;
-                const isActive = pageNum === currentPage;
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    style={{
-                      minWidth: '32px', height: '32px', padding: '0 8px', borderRadius: '6px',
-                      backgroundColor: isActive ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.04)',
-                      border: isActive ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255,255,255,0.08)',
-                      color: isActive ? '#38BDF8' : '#94A3B8',
-                      fontWeight: isActive ? 700 : 500, fontSize: '0.82rem',
-                      cursor: 'pointer', transition: 'all 0.15s',
-                    }}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
+              <span style={{
+                padding: '6px 14px', borderRadius: '6px', fontSize: '0.82rem', fontWeight: 600,
+                backgroundColor: 'rgba(56, 189, 248, 0.15)',
+                border: '1px solid rgba(56, 189, 248, 0.3)',
+                color: '#38BDF8',
+                whiteSpace: 'nowrap',
+              }}>
+                Page {currentPageNum} of {totalPages}
+              </span>
 
               <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
+                onClick={goNext}
+                disabled={!nextCursor || loading}
                 style={{
                   padding: '6px 12px', borderRadius: '6px',
-                  backgroundColor: currentPage === totalPages ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+                  backgroundColor: !nextCursor ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.08)',
-                  color: currentPage === totalPages ? '#475569' : 'var(--text-primary)',
-                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  color: !nextCursor ? '#475569' : 'var(--text-primary)',
+                  cursor: !nextCursor ? 'not-allowed' : 'pointer',
                   fontSize: '0.8rem', fontWeight: 500, transition: 'all 0.15s',
                 }}
               >
@@ -643,7 +617,7 @@ export default function TransactionsPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                  <div style={{ backgroundColor: 'var(--bg-surface-hover)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <h4 style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Account & Merchant</h4>
+                    <h4 style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Account &amp; Merchant</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                        <div>
                           <FilterLabel label="Account ID" />
@@ -665,7 +639,7 @@ export default function TransactionsPage() {
                  </div>
 
                  <div style={{ backgroundColor: 'var(--bg-surface-hover)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                    <h4 style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Source & Location</h4>
+                    <h4 style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Source &amp; Location</h4>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                        <div>
                           <FilterLabel label="Channel" />

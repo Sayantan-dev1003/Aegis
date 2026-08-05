@@ -193,10 +193,10 @@ func (r *TransactionRepository) GetByID(ctx context.Context, id string) (*model.
 }
 
 // List transactions with keyset pagination and dynamic filters.
-func (r *TransactionRepository) List(ctx context.Context, req model.ListTransactionsRequest) ([]model.TransactionSummary, string, error) {
+func (r *TransactionRepository) List(ctx context.Context, req model.ListTransactionsRequest) ([]model.TransactionSummary, int, error) {
 	args := []interface{}{req.QueueID} // $1 is always req.QueueID (or "" if not set)
 	argIdx := 2
-	where := "WHERE 1=1"
+	where := "WHERE (1=1 OR $1::text IS NULL)" // $1 must be present in COUNT query too; 1=1 short-circuits so this is always true
 
 	if req.Status != "" && !strings.EqualFold(req.Status, "all") {
 		if strings.EqualFold(req.Status, "breached") {
@@ -262,6 +262,12 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 		argIdx++
 	}
 
+	if req.MerchantCategory != "" {
+		where += fmt.Sprintf(" AND t.merchant_category ILIKE $%d", argIdx)
+		args = append(args, req.MerchantCategory)
+		argIdx++
+	}
+
 	if req.CountryCode != "" {
 		where += fmt.Sprintf(" AND t.country_code ILIKE $%d", argIdx)
 		args = append(args, req.CountryCode)
@@ -285,6 +291,7 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 		}
 	}
 
+	// Note: QueueID filter is applied before the cursor clause so it's included in the COUNT.
 	if req.QueueID != "" {
 		if strings.EqualFold(req.Status, "breached") {
 			where += " AND EXISTS (SELECT 1 FROM sla_breaches sb WHERE sb.transaction_id = t.id AND sb.original_queue_id::text = $1)"
@@ -299,6 +306,22 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 		}
 	}
 
+	// COUNT query uses the same WHERE but WITHOUT the cursor clause so it returns the
+	// true total of matching records (not just those after the cursor position).
+	countQuery := `
+		SELECT COUNT(*)
+		FROM transactions t
+		LEFT JOIN fraud_results fr ON fr.transaction_id = t.id
+		LEFT JOIN reviews r ON r.transaction_id = t.id
+		LEFT JOIN queues q ON t.queue_id = q.id
+		` + where
+
+	var total int
+	if err := r.db.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("TransactionRepository.List count: %w", err)
+	}
+
+	// Append cursor clause AFTER the count so it only affects the paginated data query.
 	if req.CursorID != "" && !req.CursorDate.IsZero() {
 		where += fmt.Sprintf(" AND (t.ingested_at, t.id) < ($%d, $%d)", argIdx, argIdx+1)
 		args = append(args, req.CursorDate, req.CursorID)
@@ -373,13 +396,13 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 		LEFT JOIN reviews r ON r.transaction_id = t.id
 		LEFT JOIN queues q ON t.queue_id = q.id
 		` + where + `
-		ORDER BY t.risk_score DESC NULLS LAST, t.ingested_at DESC, t.id DESC
+		ORDER BY t.ingested_at DESC, t.id DESC
 		LIMIT $` + fmt.Sprintf("%d", argIdx)
 
 	args = append(args, req.Limit)
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, "", fmt.Errorf("TransactionRepository.List: %w", err)
+		return nil, 0, fmt.Errorf("TransactionRepository.List: %w", err)
 	}
 	defer rows.Close()
 
@@ -403,16 +426,14 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 			&summary.ClaimedAt,
 		)
 		if err != nil {
-			return nil, "", fmt.Errorf("TransactionRepository.List scan: %w", err)
+			return nil, 0, fmt.Errorf("TransactionRepository.List scan: %w", err)
 		}
 		results = append(results, summary)
 	}
 
-	// Calculate next cursor
-	nextCursor := ""
-	// Handler will generate it from the last item.
+	// The total count was computed above via the COUNT query.
 
-	return results, nextCursor, nil
+	return results, total, nil
 }
 
 // ListDLQ lists scoring failed transactions for DLQ with keyset pagination.

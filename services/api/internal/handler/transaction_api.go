@@ -53,7 +53,7 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 	limitStr := q.Get("limit")
 	limit := 20
 	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 1000 {
 			limit = l
 		}
 	}
@@ -63,7 +63,7 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if status := q.Get("status"); status != "" {
-		validStatuses := map[string]bool{"pending": true, "processing": true, "scored": true, "auto_blocked": true, "scoring_failed": true, "reviewed": true, "escalated": true, "breached": true}
+		validStatuses := map[string]bool{"received": true, "pending": true, "processing": true, "scored": true, "scored_approved": true, "auto_blocked": true, "scoring_failed": true, "reviewed": true, "escalated": true, "breached": true}
 		if !validStatuses[status] {
 			h.respondError(w, "invalid status", http.StatusBadRequest)
 			return
@@ -127,6 +127,10 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 		req.TransactionType = txType
 	}
 
+	if category := q.Get("merchant_category"); category != "" {
+		req.MerchantCategory = category
+	}
+
 	if country := q.Get("country_code"); country != "" {
 		req.CountryCode = country
 	}
@@ -170,7 +174,7 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 		span.SetAttributes(attribute.Bool("pagination.has_cursor", false))
 	}
 
-	results, _, err := h.txRepo.List(ctx, req)
+	results, total, err := h.txRepo.List(ctx, req)
 	if err != nil {
 		h.respondError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -188,6 +192,7 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 	resp := model.ListTransactionsResponse{
 		Data:       results,
 		NextCursor: nextCursor,
+		Total:      total,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

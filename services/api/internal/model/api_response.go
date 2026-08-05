@@ -15,9 +15,10 @@ type ListTransactionsRequest struct {
 	IsFraud         *bool     `json:"is_fraud"`
 	MinAmount       *float64  `json:"min_amount"`
 	MaxAmount       *float64  `json:"max_amount"`
-	Channel         string    `json:"channel"`
-	TransactionType string    `json:"transaction_type"`
-	CountryCode     string    `json:"country_code"`
+	Channel          string    `json:"channel"`
+	TransactionType  string    `json:"transaction_type"`
+	MerchantCategory string    `json:"merchant_category"`
+	CountryCode      string    `json:"country_code"`
 	Search          string    `json:"search"`
 }
 
