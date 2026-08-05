@@ -123,11 +123,6 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 				t.QueueID = &fallbackQ.ID
 			}
 		}
-	} else if action == "step_up" {
-		t.Status = "step_up_pending"
-		source := "rule"
-		t.RiskSource = &source
-		t.SLAStartAt = &now
 	} else {
 		t.Status = "pending"
 	}

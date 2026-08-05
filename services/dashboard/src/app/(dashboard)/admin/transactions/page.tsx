@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { fetchApi } from "../../../lib/api";
 import { Modal } from '@/components/Modal';
 import { RefreshCw } from 'lucide-react';
 import ALL_COUNTRIES from '../../../../data/countries.json';
 
-const PAGE_SIZE = 20;
+const FETCH_LIMIT = 500; // Fetch a large batch; paginate client-side
 
 const selectStyle: React.CSSProperties = {
   padding: '6px 8px',
@@ -22,7 +22,7 @@ const selectStyle: React.CSSProperties = {
 const StatusBadge = ({ status, decision }: { status: string, decision?: string }) => {
   let color = '';
   let bg = '';
-  
+
   if (status === 'reviewed') {
     if (decision === 'confirmed_fraud') {
       return (
@@ -31,7 +31,7 @@ const StatusBadge = ({ status, decision }: { status: string, decision?: string }
           <span style={{ backgroundColor: '#ef4444', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem' }}>Fraud</span>
         </span>
       );
-    } else if (decision === 'legitimate') {
+    } else if (decision === 'legitimate' || decision === 'false_positive') {
       return (
         <span style={{ display: 'inline-flex', gap: '6px', alignItems: 'center', padding: '3px 8px', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.15)', color: 'var(--risk-low)', fontSize: '0.75rem', fontWeight: 600, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
           Reviewed 
@@ -39,21 +39,22 @@ const StatusBadge = ({ status, decision }: { status: string, decision?: string }
         </span>
       );
     }
-    color = '#60a5fa'; bg = 'rgba(96, 165, 250, 0.15)'; 
+    color = '#60a5fa'; bg = 'rgba(96, 165, 250, 0.15)';
   } else {
     switch (status) {
-      case 'scored': color = 'var(--risk-low)'; bg = 'rgba(18, 183, 106, 0.15)'; break;
-      case 'auto_blocked': color = 'var(--risk-critical)'; bg = 'rgba(229, 72, 77, 0.15)'; break;
-      case 'escalated': color = '#facc15'; bg = 'rgba(250, 204, 21, 0.15)'; break;
-      case 'pending': color = '#a78bfa'; bg = 'rgba(167, 139, 250, 0.15)'; break;
+      case 'received':       color = '#94a3b8'; bg = 'rgba(148, 163, 184, 0.12)'; break;
+      case 'pending':        color = '#a78bfa'; bg = 'rgba(167, 139, 250, 0.15)'; break;
+      case 'escalated':      color = '#facc15'; bg = 'rgba(250, 204, 21, 0.15)';  break;
+      case 'auto_blocked':   color = 'var(--risk-critical)'; bg = 'rgba(229, 72, 77, 0.15)'; break;
+      case 'scored_approved':color = 'var(--risk-low)'; bg = 'rgba(18, 183, 106, 0.15)'; break;
       case 'scoring_failed': color = 'var(--text-disabled)'; bg = 'rgba(71, 85, 105, 0.25)'; break;
-      default: color = 'var(--text-secondary)'; bg = 'var(--bg-surface-hover)';
+      default:               color = 'var(--text-secondary)'; bg = 'var(--bg-surface-hover)';
     }
   }
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 8px', borderRadius: '6px', backgroundColor: bg, color: color, fontSize: '0.75rem', fontWeight: 600, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-      {status.replace('_', ' ')}
+      {status.replace(/_/g, ' ')}
     </span>
   );
 };
@@ -91,7 +92,7 @@ const TimeSelect = ({ value, onChange, disabled }: { value: string, onChange: (v
       <span style={{ display: 'flex', alignItems: 'center', color: 'var(--text-secondary)' }}>:</span>
       <select disabled={disabled} value={minute} onChange={e => updateValue(hour || '12', e.target.value, period)} style={{...selectStyle, padding: '6px 4px'}} title={disabled ? "Select a date first" : ""}>
         <option value="">MM</option>
-        {['00', '15', '30', '45'].map(m => <option key={m} value={m}>{m}</option>)} 
+        {['00', '15', '30', '45'].map(m => <option key={m} value={m}>{m}</option>)}
       </select>
       <select disabled={disabled} value={period} onChange={e => updateValue(hour || '12', minute || '00', e.target.value)} style={{...selectStyle, padding: '6px 4px'}} title={disabled ? "Select a date first" : ""}>
         <option value="AM">AM</option>
@@ -101,11 +102,20 @@ const TimeSelect = ({ value, onChange, disabled }: { value: string, onChange: (v
   );
 };
 
+const thStyle: React.CSSProperties = {
+  padding: '12px 12px',
+  color: 'var(--text-secondary)',
+  fontWeight: 500,
+  fontSize: '0.78rem',
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  whiteSpace: 'nowrap',
+};
+
 export default function TransactionsPage() {
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  
   // Filters
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
@@ -114,44 +124,38 @@ export default function TransactionsPage() {
   const [amountRangeFilter, setAmountRangeFilter] = useState('');
   const [channelFilter, setChannelFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [merchantCategoryFilter, setMerchantCategoryFilter] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-
-  // Pagination cursor
-  const [cursorStack, setCursorStack] = useState<string[]>([]);
-  const [currentCursor, setCurrentCursor] = useState('');
-  const [nextCursor, setNextCursor] = useState('');
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [viewingTx, setViewingTx] = useState<any>(null);
-  const [submittingTxId, setSubmittingTxId] = useState<string | null>(null);
 
-  
-  const loadData = async (cursor: string = '') => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      let url = `http://localhost:8080/api/v1/transactions?limit=${PAGE_SIZE}&_t=${Date.now()}`;
+      let url = `http://localhost:8080/api/v1/transactions?limit=${FETCH_LIMIT}&_t=${Date.now()}`;
       if (statusFilter) url += `&status=${statusFilter}`;
-      if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
-      
+
       if (dateFilter) {
         if (fromTimeFilter) {
           url += `&from_date=${new Date(`${dateFilter}T${fromTimeFilter}:00`).toISOString()}`;
         } else {
           url += `&from_date=${new Date(`${dateFilter}T00:00:00`).toISOString()}`;
         }
-        
         if (toTimeFilter) {
           url += `&to_date=${new Date(`${dateFilter}T${toTimeFilter}:00`).toISOString()}`;
         } else {
           url += `&to_date=${new Date(`${dateFilter}T23:59:59`).toISOString()}`;
         }
       }
-      if (channelFilter) url += `&channel=${channelFilter}`;
-      if (typeFilter) url += `&transaction_type=${typeFilter}`;
+
       if (countryFilter) url += `&country_code=${countryFilter}`;
       if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
-      
+
       if (amountRangeFilter) {
         switch (amountRangeFilter) {
           case '<1000': url += `&max_amount=1000`; break;
@@ -168,38 +172,69 @@ export default function TransactionsPage() {
       }
 
       const data = await fetchApi(url);
-      setTransactions(data.data || []);
-      setNextCursor(data.next_cursor || '');
+      setAllTransactions(data.data || []);
     } catch (err) {
       console.error("Failed to load transactions", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, dateFilter, fromTimeFilter, toTimeFilter, amountRangeFilter, countryFilter, searchQuery]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+    loadData();
+  }, [loadData]);
 
-  useEffect(() => { 
-    setCursorStack([]);
-    setCurrentCursor('');
-    loadData(''); 
-  }, [statusFilter, dateFilter, fromTimeFilter, toTimeFilter, amountRangeFilter, channelFilter, typeFilter, countryFilter, searchQuery]);
+  // --- Dynamic filter options derived from loaded data ---
+  const dynamicChannels = useMemo(() => {
+    const vals = Array.from(new Set(allTransactions.map(t => t.channel).filter(Boolean))) as string[];
+    return vals.sort();
+  }, [allTransactions]);
 
-  const handleNextPage = () => {
-    if (nextCursor) {
-      setCursorStack([...cursorStack, currentCursor]);
-      setCurrentCursor(nextCursor);
-      loadData(nextCursor);
-    }
-  };
+  const dynamicTypes = useMemo(() => {
+    const vals = Array.from(new Set(allTransactions.map(t => t.transaction_type).filter(Boolean))) as string[];
+    return vals.sort();
+  }, [allTransactions]);
 
-  const handlePrevPage = () => {
-    if (cursorStack.length > 0) {
-      const prevCursor = cursorStack[cursorStack.length - 1];
-      setCursorStack(cursorStack.slice(0, -1));
-      setCurrentCursor(prevCursor);
-      loadData(prevCursor);
-    }
-  };
+  const dynamicCategories = useMemo(() => {
+    const vals = Array.from(new Set(allTransactions.map(t => t.merchant_category).filter(Boolean))) as string[];
+    return vals.sort();
+  }, [allTransactions]);
+
+  // --- Client-side filtering for dynamic filters ---
+  const filteredTransactions = useMemo(() => {
+    return allTransactions.filter(t => {
+      if (channelFilter && t.channel !== channelFilter) return false;
+      if (typeFilter && t.transaction_type !== typeFilter) return false;
+      if (merchantCategoryFilter && t.merchant_category !== merchantCategoryFilter) return false;
+      return true;
+    });
+  }, [allTransactions, channelFilter, typeFilter, merchantCategoryFilter]);
+
+  // Reset to page 1 when client-side filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [channelFilter, typeFilter, merchantCategoryFilter, pageSize]);
+
+  // --- Pagination ---
+  const totalItems = filteredTransactions.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+  const paginatedTransactions = useMemo(() => {
+    const safePage = Math.min(currentPage, totalPages);
+    const start = (safePage - 1) * pageSize;
+    return filteredTransactions.slice(start, start + pageSize);
+  }, [filteredTransactions, currentPage, totalPages, pageSize]);
+
+  const getPageNumbers = useCallback((current: number, total: number): (number | string)[] => {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+    if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  }, []);
+
+  const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const endItem = Math.min(currentPage * pageSize, totalItems);
 
   const viewTransactionDetails = async (id: string) => {
     try {
@@ -210,256 +245,372 @@ export default function TransactionsPage() {
     }
   };
 
+  const hasActiveFilters = statusFilter || dateFilter || fromTimeFilter || toTimeFilter || amountRangeFilter || channelFilter || typeFilter || merchantCategoryFilter || countryFilter || searchQuery;
+
+  const clearAllFilters = () => {
+    setStatusFilter('');
+    setDateFilter('');
+    setFromTimeFilter('');
+    setToTimeFilter('');
+    setAmountRangeFilter('');
+    setChannelFilter('');
+    setTypeFilter('');
+    setMerchantCategoryFilter('');
+    setCountryFilter('');
+    setSearchQuery('');
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)', paddingBottom: 'var(--space-xl)' }}>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
-        <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '10px', alignItems: 'flex-end', overflowX: 'auto', paddingBottom: '4px' }}>
+        {/* ── Row 1: All 7 filters in one nowrap line ── */}
+        <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '8px', alignItems: 'flex-end', width: '100%' }}>
+
           <FilterGroup label="Status">
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
+            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...selectStyle, minWidth: '120px' }}>
               <option value="">All Statuses</option>
+              <option value="received">Received</option>
               <option value="pending">Pending</option>
-              <option value="scored">Scored</option>
-              <option value="auto_blocked">Auto Blocked</option>
               <option value="escalated">Escalated</option>
-              <option value="scoring_failed">Scoring Failed</option>
+              <option value="auto_blocked">Auto Blocked</option>
+              <option value="scored_approved">Scored Approved</option>
               <option value="reviewed">Reviewed</option>
             </select>
           </FilterGroup>
 
           <FilterGroup label="Date">
-            <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} style={{ ...selectStyle, colorScheme: 'dark' }} />
+            <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)} style={{ ...selectStyle, minWidth: '120px', colorScheme: 'dark' }} />
           </FilterGroup>
+
           <FilterGroup label="From Time">
             <TimeSelect value={fromTimeFilter} onChange={setFromTimeFilter} disabled={!dateFilter} />
           </FilterGroup>
+
           <FilterGroup label="To Time">
             <TimeSelect value={toTimeFilter} onChange={setToTimeFilter} disabled={!dateFilter} />
           </FilterGroup>
+
           <FilterGroup label="Amount Range">
-            <select value={amountRangeFilter} onChange={e => setAmountRangeFilter(e.target.value)} style={selectStyle}>
+            <select value={amountRangeFilter} onChange={e => setAmountRangeFilter(e.target.value)} style={{ ...selectStyle, minWidth: '100px' }}>
               <option value="">Any</option>
               <option value="<1000">&lt;1000</option>
-              <option value="1000 to 5000">1000 to 5000</option>
-              <option value="5000 to 10000">5000 to 10000</option>
-              <option value="10000 to 50000">10000 to 50000</option>
-              <option value="50000 to 1L">50000 to 1L</option>
-              <option value="1L to 5L">1L to 5L</option>
-              <option value="5L to 10L">5L to 10L</option>
-              <option value="10L to 50L">10L to 50L</option>
-              <option value="50L to 1Cr">50L to 1Cr</option>
-              <option value="> 1Cr">&gt; 1Cr</option>
+              <option value="1000 to 5000">1k–5k</option>
+              <option value="5000 to 10000">5k–10k</option>
+              <option value="10000 to 50000">10k–50k</option>
+              <option value="50000 to 1L">50k–1L</option>
+              <option value="1L to 5L">1L–5L</option>
+              <option value="5L to 10L">5L–10L</option>
+              <option value="10L to 50L">10L–50L</option>
+              <option value="50L to 1Cr">50L–1Cr</option>
+              <option value="> 1Cr">&gt;1Cr</option>
             </select>
           </FilterGroup>
+
           <FilterGroup label="Channel">
-            <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)} style={selectStyle}>
+            <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)} style={{ ...selectStyle, minWidth: '108px' }}>
               <option value="">All</option>
-              <option value="online">Online</option>
-              <option value="pos">POS</option>
-              <option value="atm">ATM</option>
+              {dynamicChannels.map(ch => (
+                <option key={ch} value={ch}>{ch.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
+              ))}
             </select>
           </FilterGroup>
+
           <FilterGroup label="Type">
-            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={selectStyle}>
+            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ ...selectStyle, minWidth: '108px' }}>
               <option value="">All</option>
-              <option value="purchase">Purchase</option>
-              <option value="withdrawal">Withdrawal</option>
-              <option value="transfer">Transfer</option>
+              {dynamicTypes.map(tp => (
+                <option key={tp} value={tp}>{tp.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
+              ))}
             </select>
           </FilterGroup>
+
+          {/* Clear button aligned to end of row 1 */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'flex-end', visibility: hasActiveFilters ? 'visible' : 'hidden' }}>
+            <button
+              onClick={clearAllFilters}
+              style={{ ...selectStyle, padding: '6px 12px', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.05)', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '0.8rem' }}
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
+
+        {/* ── Row 2: Shorter search + Merchant Category + Country + Refresh ── */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', width: '100%' }}>
+
+          <div>
+            <input
+              type="text"
+              placeholder="Txn ID, Account ID or Merchant"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{ ...selectStyle, width: '270px', padding: '7px 12px', fontSize: '0.85rem', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          <FilterGroup label="Merchant Category">
+            <select value={merchantCategoryFilter} onChange={e => setMerchantCategoryFilter(e.target.value)} style={{ ...selectStyle, minWidth: '148px' }}>
+              <option value="">All Categories</option>
+              {dynamicCategories.map(cat => (
+                <option key={cat} value={cat}>{cat.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>
+              ))}
+            </select>
+          </FilterGroup>
+
           <FilterGroup label="Country">
-            <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)} style={{...selectStyle, maxWidth: '140px'}}>
+            <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)} style={{ ...selectStyle, minWidth: '130px' }}>
               <option value="">All Countries</option>
               {ALL_COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.name}</option>)}
             </select>
           </FilterGroup>
 
-        </div>
-
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', width: '100%' }}>
-          
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', width: '60%' }}>
-            <div style={{ flex: 1 }}>
-              <input 
-                type="text" 
-                placeholder="Enter Transaction ID, Account ID or Merchant Name" 
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ ...selectStyle, width: '100%', padding: '10px 14px', fontSize: '0.9rem', boxSizing: 'border-box' }}
-              />
-            </div>
-
-            <div style={{ visibility: (statusFilter || dateFilter || fromTimeFilter || toTimeFilter || amountRangeFilter || channelFilter || typeFilter || countryFilter || searchQuery) ? 'visible' : 'hidden' }}>
-              <button
-                onClick={() => { setStatusFilter(''); setDateFilter(''); setFromTimeFilter(''); setToTimeFilter(''); setAmountRangeFilter(''); setChannelFilter(''); setTypeFilter(''); setCountryFilter(''); setSearchQuery(''); }}
-                style={{ ...selectStyle, padding: '9px 14px', color: '#f87171', borderColor: 'rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.05)', cursor: 'pointer', whiteSpace: 'nowrap', fontSize: '0.85rem' }}
-              >
-                Clear Filters
-              </button>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', whiteSpace: 'nowrap', marginLeft: 'auto' }}>
-            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Showing {transactions.length} results</span>
-            <button title="Refresh Data" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px', borderRadius: '6px', cursor: 'pointer' }} onClick={() => loadData(currentCursor)}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center' }}>
+            <button
+              title="Refresh Data"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}
+              onClick={() => loadData()}
+            >
               <RefreshCw size={18} />
             </button>
           </div>
         </div>
       </div>
 
+      {/* ── Table ── */}
       <div style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-hover)' }}>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Tx ID</th>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Timestamp</th>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Account</th>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Merchant</th>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right' }}>Amount</th>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Status</th>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Fraud Score</th>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Channel / Type</th>
-              <th style={{ padding: '12px 16px', color: 'var(--text-secondary)', fontWeight: 500, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Location / IP</th>
-              <th style={{ padding: '12px 16px', width: '40px' }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-               <tr><td colSpan={10} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading transactions...</td></tr>
-            ) : transactions.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>No transactions found.</td></tr>
-            ) : transactions.map((t: any, idx: number) => {
-              const isLast = idx === transactions.length - 1;
-              return (
-                <tr key={t.id} style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-color)', transition: 'background 0.15s' }}
-                  onMouseEnter={ev => (ev.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
-                  onMouseLeave={ev => (ev.currentTarget.style.backgroundColor = 'transparent')}
-                >
-                  <td style={{ padding: '14px 16px' }}>
-                    <span
-                      title={t.id}
-                      onClick={() => navigator.clipboard?.writeText(t.id)}
-                      style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(148,163,184,0.15)', cursor: 'copy', whiteSpace: 'nowrap' }}
-                    >
-                      {t.id.substring(0, 8)}…
-                    </span>
-                  </td>
-                  <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
-                    {new Date(t.timestamp || t.ingested_at).toLocaleString()}
-                  </td>
-                  <td style={{ padding: '14px 16px', fontWeight: 500 }}>
-                    {t.account_id}
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <div style={{ fontWeight: 500, fontSize: '0.85rem' }}>{t.merchant_name}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.merchant_category}</div>
-                  </td>
-                  <td style={{ padding: '14px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: '0.9rem' }}>
-                    {t.currency === 'INR' ? '₹' : (t.currency || '')}{t.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
-                      <StatusBadge status={t.status} decision={t.review_decision} />
-                      {t.reject_count && t.reject_count >= 2 && (
-                        <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#F87171', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.4)', fontWeight: 600 }}>
-                          🚫 2+ Rejects (Admin)
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div style={{ fontFamily: 'monospace', fontSize: '0.88rem', fontWeight: 700, color: '#f8fafc' }}>
-                        {t.fraud_score !== undefined && t.fraud_score !== null ? t.fraud_score.toFixed(3) : '-'}
-                      </div>
-                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                        {t.status === "auto_blocked" || (t.fraud_score !== undefined && t.fraud_score >= 0.95) ? (
-                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#F87171', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>
-                            Critical (Block)
-                          </span>
-                        ) : t.fraud_score >= 0.85 ? (
-                          <span style={{ fontSize: '0.65rem', backgroundColor: 'rgba(249, 115, 22, 0.15)', color: '#FB923C', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
-                            High Risk
-                          </span>
-                        ) : null}
-                        {t.risk_source && (
-                          <span style={{
-                            fontSize: "0.65rem",
-                            fontWeight: 600,
-                            textTransform: "uppercase",
-                            padding: "1px 5px",
-                            borderRadius: "4px",
-                            backgroundColor:
-                              t.risk_source === "hybrid"
-                                ? "rgba(139, 92, 246, 0.15)"
-                                : t.risk_source === "ml"
-                                ? "rgba(6, 182, 212, 0.15)"
-                                : "rgba(245, 158, 11, 0.15)",
-                            color:
-                              t.risk_source === "hybrid"
-                                ? "#A78BFA"
-                                : t.risk_source === "ml"
-                                ? "#22D3EE"
-                                : "#FBBF24"
-                          }}>
-                            {t.risk_source}
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', minWidth: '1400px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface-hover)' }}>
+                <th style={thStyle}>Timestamp</th>
+                <th style={thStyle}>Txn ID</th>
+                <th style={thStyle}>Account</th>
+                <th style={thStyle}>Status</th>
+                <th style={thStyle}>Fraud Score</th>
+                <th style={thStyle}>Risk Source</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>Amount</th>
+                <th style={thStyle}>Merchant Name</th>
+                <th style={thStyle}>Merchant Category</th>
+                <th style={thStyle}>Channel</th>
+                <th style={thStyle}>Type</th>
+                <th style={thStyle}>Location</th>
+                <th style={{ ...thStyle, width: '40px' }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={13} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading transactions...</td></tr>
+              ) : paginatedTransactions.length === 0 ? (
+                <tr><td colSpan={13} style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>No transactions found.</td></tr>
+              ) : paginatedTransactions.map((t: any, idx: number) => {
+                const isLast = idx === paginatedTransactions.length - 1;
+                return (
+                  <tr key={t.id} style={{ borderBottom: isLast ? 'none' : '1px solid var(--border-color)', transition: 'background 0.15s' }}
+                    onMouseEnter={ev => (ev.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)')}
+                    onMouseLeave={ev => (ev.currentTarget.style.backgroundColor = 'transparent')}
+                  >
+                    {/* Timestamp */}
+                    <td style={{ padding: '14px 12px', color: 'var(--text-secondary)', fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                      {new Date(t.timestamp || t.ingested_at).toLocaleString()}
+                    </td>
+                    {/* Txn ID */}
+                    <td style={{ padding: '14px 12px' }}>
+                      <span
+                        title={t.id}
+                        onClick={() => navigator.clipboard?.writeText(t.id)}
+                        style={{ fontFamily: 'monospace', fontSize: '0.78rem', color: '#94a3b8', backgroundColor: 'rgba(148,163,184,0.08)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(148,163,184,0.15)', cursor: 'copy', whiteSpace: 'nowrap' }}
+                      >
+                        {t.id.substring(0, 8)}…
+                      </span>
+                    </td>
+                    {/* Account */}
+                    <td style={{ padding: '14px 12px', fontWeight: 500 }}>
+                      {t.account_id}
+                    </td>
+                    {/* Status */}
+                    <td style={{ padding: '14px 12px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-start' }}>
+                        <StatusBadge status={t.status} decision={t.review_decision} />
+                        {(t.reject_count || 0) >= 2 && (
+                          <span style={{ fontSize: '0.68rem', backgroundColor: 'rgba(239, 68, 68, 0.2)', color: '#F87171', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.4)', fontWeight: 600 }}>
+                            🚫 2+ Rejects (Admin)
                           </span>
                         )}
                       </div>
-                    </div>
-                  </td>
-                  <td style={{ padding: '14px 16px', textTransform: 'capitalize' }}>
-                    <div style={{ fontSize: '0.85rem' }}>{t.channel}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.transaction_type}</div>
-                  </td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <div style={{ fontSize: '0.85rem' }}>{t.country_code}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{t.ip_address || 'N/A'}</div>
-                  </td>
-                  <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                    <button
-                      onClick={() => viewTransactionDetails(t.id)}
-                      title="View transaction details"
-                      style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', width: '28px', height: '28px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
-                      onMouseEnter={ev => { ev.currentTarget.style.color = '#a5b4fc'; ev.currentTarget.style.borderColor = 'rgba(165,180,252,0.5)'; ev.currentTarget.style.background = 'rgba(165,180,252,0.08)'; }}
-                      onMouseLeave={ev => { ev.currentTarget.style.color = 'var(--text-secondary)'; ev.currentTarget.style.borderColor = 'var(--border-color)'; ev.currentTarget.style.background = 'none'; }}
-                    >
-                      ›
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    </td>
+                    {/* Fraud Score */}
+                    <td style={{ padding: '14px 12px' }}>
+                      {t.fraud_score !== undefined && t.fraud_score !== null ? (() => {
+                        const s = t.fraud_score;
+                        const bg = s >= 0.85 ? 'rgba(239,68,68,0.15)' : s >= 0.7 ? 'rgba(249,115,22,0.15)' : s >= 0.45 ? 'rgba(250,204,21,0.15)' : 'rgba(16,185,129,0.15)';
+                        const border = s >= 0.85 ? '1px solid rgba(239,68,68,0.3)' : s >= 0.7 ? '1px solid rgba(249,115,22,0.3)' : s >= 0.45 ? '1px solid rgba(250,204,21,0.3)' : '1px solid rgba(16,185,129,0.3)';
+                        const color = s >= 0.85 ? '#F87171' : s >= 0.7 ? '#FB923C' : s >= 0.45 ? '#FACC15' : '#10B981';
+                        return (
+                          <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '999px', backgroundColor: bg, border, color, fontFamily: 'monospace', fontSize: '0.82rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                            {s.toFixed(3)}
+                          </span>
+                        );
+                      })() : <span style={{ color: 'var(--text-disabled)', fontSize: '0.82rem' }}>—</span>}
+                    </td>
+                    {/* Risk Source */}
+                    <td style={{ padding: '14px 12px' }}>
+                      {t.risk_source && (
+                        <span style={{
+                          fontSize: "0.65rem", fontWeight: 600, textTransform: "uppercase", padding: "1px 5px", borderRadius: "4px",
+                          backgroundColor: t.risk_source === "hybrid" ? "rgba(139, 92, 246, 0.15)" : t.risk_source === "ml" ? "rgba(6, 182, 212, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                          color: t.risk_source === "hybrid" ? "#A78BFA" : t.risk_source === "ml" ? "#22D3EE" : "#FBBF24"
+                        }}>
+                          {t.risk_source}
+                        </span>
+                      )}
+                    </td>
+                    {/* Amount */}
+                    <td style={{ padding: '14px 12px', textAlign: 'right', fontFamily: 'monospace', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                      {t.currency === 'INR' ? '₹' : (t.currency || '')}{t.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    {/* Merchant Name */}
+                    <td style={{ padding: '14px 12px', fontWeight: 500, fontSize: '0.85rem' }}>
+                      {t.merchant_name}
+                    </td>
+                    {/* Merchant Category */}
+                    <td style={{ padding: '14px 12px', fontSize: '0.78rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
+                      {t.merchant_category?.replace(/_/g, ' ') || '—'}
+                    </td>
+                    {/* Channel */}
+                    <td style={{ padding: '14px 12px', fontSize: '0.85rem', textTransform: 'capitalize' }}>
+                      {t.channel?.replace(/_/g, ' ') || '—'}
+                    </td>
+                    {/* Type */}
+                    <td style={{ padding: '14px 12px', fontSize: '0.85rem', textTransform: 'capitalize', color: 'var(--text-secondary)' }}>
+                      {t.transaction_type?.replace(/_/g, ' ') || '—'}
+                    </td>
+                    {/* Location */}
+                    <td style={{ padding: '14px 12px' }}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 500 }}>{t.country_code}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{t.ip_address || 'N/A'}</div>
+                    </td>
+                    {/* Action */}
+                    <td style={{ padding: '14px 12px', textAlign: 'center' }}>
+                      <button
+                        onClick={() => viewTransactionDetails(t.id)}
+                        title="View transaction details"
+                        style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', width: '28px', height: '28px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}
+                        onMouseEnter={ev => { ev.currentTarget.style.color = '#a5b4fc'; ev.currentTarget.style.borderColor = 'rgba(165,180,252,0.5)'; ev.currentTarget.style.background = 'rgba(165,180,252,0.08)'; }}
+                        onMouseLeave={ev => { ev.currentTarget.style.color = 'var(--text-secondary)'; ev.currentTarget.style.borderColor = 'var(--border-color)'; ev.currentTarget.style.background = 'none'; }}
+                      >
+                        ›
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Pagination Bar (Reviewer-style) ── */}
+        {!loading && totalItems > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '14px 20px', borderTop: '1px solid var(--border-color)',
+            backgroundColor: 'rgba(15, 23, 42, 0.4)', flexWrap: 'wrap', gap: '12px',
+          }}>
+            {/* Left: Showing X-Y of Z cases | Rows per page */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+              <span>
+                Showing{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>{startItem} – {endItem}</strong>
+                {' '}of{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>{totalItems}</strong>
+                {' '}cases
+              </span>
+              <span style={{ color: 'var(--border-color)' }}>|</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span>Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                  style={{ backgroundColor: '#0F172A', border: '1px solid rgba(255,255,255,0.12)', color: 'var(--text-primary)', borderRadius: '6px', padding: '4px 8px', fontSize: '0.8rem', cursor: 'pointer' }}
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Right: Prev | Page numbers | Next */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                style={{
+                  padding: '6px 12px', borderRadius: '6px',
+                  backgroundColor: currentPage === 1 ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: currentPage === 1 ? '#475569' : 'var(--text-primary)',
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                  fontSize: '0.8rem', fontWeight: 500, transition: 'all 0.15s',
+                }}
+              >
+                Prev
+              </button>
+
+              {getPageNumbers(currentPage, totalPages).map((page, idx) => {
+                if (page === '...') {
+                  return (
+                    <span key={`ellipsis-${idx}`} style={{ padding: '0 6px', color: '#64748B', fontSize: '0.85rem', userSelect: 'none' }}>
+                      ...
+                    </span>
+                  );
+                }
+                const pageNum = page as number;
+                const isActive = pageNum === currentPage;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    style={{
+                      minWidth: '32px', height: '32px', padding: '0 8px', borderRadius: '6px',
+                      backgroundColor: isActive ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255,255,255,0.04)',
+                      border: isActive ? '1px solid rgba(56, 189, 248, 0.5)' : '1px solid rgba(255,255,255,0.08)',
+                      color: isActive ? '#38BDF8' : '#94A3B8',
+                      fontWeight: isActive ? 700 : 500, fontSize: '0.82rem',
+                      cursor: 'pointer', transition: 'all 0.15s',
+                    }}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                style={{
+                  padding: '6px 12px', borderRadius: '6px',
+                  backgroundColor: currentPage === totalPages ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.08)',
+                  color: currentPage === totalPages ? '#475569' : 'var(--text-primary)',
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                  fontSize: '0.8rem', fontWeight: 500, transition: 'all 0.15s',
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-        <button
-          disabled={cursorStack.length === 0}
-          onClick={handlePrevPage}
-          style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: cursorStack.length === 0 ? 'transparent' : 'var(--bg-surface)', color: cursorStack.length === 0 ? 'var(--text-disabled)' : 'var(--text-primary)', cursor: cursorStack.length === 0 ? 'default' : 'pointer', fontSize: '0.875rem' }}
-        >
-          ← Prev
-        </button>
-
-        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Page {cursorStack.length + 1}</span>
-
-        <button
-          disabled={!nextCursor}
-          onClick={handleNextPage}
-          style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', backgroundColor: !nextCursor ? 'transparent' : 'var(--bg-surface)', color: !nextCursor ? 'var(--text-disabled)' : 'var(--text-primary)', cursor: !nextCursor ? 'default' : 'pointer', fontSize: '0.875rem' }}
-        >
-          Next →
-        </button>
-      </div>
-
+      {/* ── Transaction Detail Modal ── */}
       <Modal isOpen={!!viewingTx} onClose={() => setViewingTx(null)} title="Transaction Details" width="800px">
         {viewingTx && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: '16px', backgroundColor: 'var(--bg-surface-hover)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                  <div>
@@ -508,7 +659,7 @@ export default function TransactionsPage() {
                        </div>
                        <div>
                           <FilterLabel label="Merchant Category" />
-                          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{viewingTx.transaction?.merchant_category}</div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{viewingTx.transaction?.merchant_category?.replace(/_/g, ' ')}</div>
                        </div>
                     </div>
                  </div>
@@ -544,7 +695,7 @@ export default function TransactionsPage() {
             {viewingTx.fraud_result && (
               <div style={{ backgroundColor: 'rgba(79, 70, 229, 0.05)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(79, 70, 229, 0.2)' }}>
                 <h4 style={{ margin: '0 0 12px 0', fontSize: '0.9rem', color: '#a5b4fc', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ML Fraud Analysis</h4>
-                
+
                 <div style={{ display: 'flex', gap: '32px', marginBottom: '16px' }}>
                   <div>
                     <FilterLabel label="Fraud Score" />
@@ -572,10 +723,7 @@ export default function TransactionsPage() {
                            <div key={idx} style={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem', gap: '8px' }}>
                               <div style={{ width: '160px', fontFamily: 'monospace', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fw.feature}>{fw.feature}</div>
                               <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.05)', height: '6px', borderRadius: '3px', overflow: 'hidden', display: 'flex' }}>
-                                 <div style={{ 
-                                   width: `${Math.min(100, fw.importance * 1000)}%`, 
-                                   backgroundColor: fw.weight > 0 ? '#ef4444' : '#3b82f6' 
-                                  }}></div>
+                                 <div style={{ width: `${Math.min(100, fw.importance * 1000)}%`, backgroundColor: fw.weight > 0 ? '#ef4444' : '#3b82f6' }}></div>
                               </div>
                               <div style={{ width: '60px', textAlign: 'right', fontFamily: 'monospace', color: fw.weight > 0 ? '#ef4444' : '#3b82f6' }}>
                                  {fw.weight > 0 ? '+' : ''}{fw.weight.toFixed(4)}

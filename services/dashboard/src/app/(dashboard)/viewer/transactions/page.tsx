@@ -224,7 +224,7 @@ export default function ViewerTransactionsPage() {
             <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={selectStyle}>
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
-              <option value="scored">Scored</option>
+              <option value="scored_approved">Scored</option>
               <option value="auto_blocked">Auto Blocked</option>
               <option value="escalated">Escalated</option>
               <option value="scoring_failed">Scoring Failed</option>

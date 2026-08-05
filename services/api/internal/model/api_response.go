@@ -44,9 +44,10 @@ type TransactionSummary struct {
 	ReviewDecision   *string    `json:"review_decision,omitempty"`
 	FraudScore       *float64   `json:"fraud_score,omitempty"`
 	IsFraud          *bool      `json:"is_fraud,omitempty"`
-	QueueID          *string    `json:"queue_id,omitempty"`
-	QueueName        *string    `json:"queue_name,omitempty"`
-	Assignee         *string    `json:"assignee,omitempty"`
+	QueueID             *string    `json:"queue_id,omitempty"`
+	QueueName           *string    `json:"queue_name,omitempty"`
+	OriginalQueueName   *string    `json:"original_queue_name,omitempty"`
+	Assignee            *string    `json:"assignee,omitempty"`
 	CreatedAt           time.Time  `json:"created_at"` // maps to ingested_at
 	Timestamp           time.Time  `json:"timestamp"`
 	ScoredAt            *time.Time `json:"scored_at,omitempty"`
@@ -57,7 +58,6 @@ type TransactionSummary struct {
 	RiskBand            *string    `json:"risk_band,omitempty"`
 	RiskSource          *string    `json:"risk_source,omitempty"`
 	RejectCount         int        `json:"reject_count"`
-	StepUpResult        *string    `json:"step_up_result,omitempty"`
 	SLABreachType       string     `json:"sla_breach_type,omitempty"`
 	RequiresAdminReview bool       `json:"requires_admin_review"`
 	ClaimedAt           *time.Time `json:"claimed_at,omitempty"`
@@ -104,7 +104,6 @@ type TransactionDetail struct {
 	RiskBand            *string    `json:"risk_band,omitempty"`
 	RiskSource          *string    `json:"risk_source,omitempty"`
 	RejectCount         int        `json:"reject_count"`
-	StepUpResult        *string    `json:"step_up_result,omitempty"`
 	SLABreachType       string     `json:"sla_breach_type,omitempty"`
 	RequiresAdminReview bool       `json:"requires_admin_review"`
 	ClaimedAt           *time.Time `json:"claimed_at,omitempty"`

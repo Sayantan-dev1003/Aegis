@@ -164,10 +164,6 @@ func (s *FraudService) HandleScoredResult(ctx context.Context, result *model.Fra
 				})
 			}
 		}
-	case "step_up_pending":
-		if err := s.txRepo.UpdateRiskEnrichment(ctx, result.TransactionID, riskScore, riskBand, "hybrid"); err != nil {
-			return err
-		}
 	default:
 		_ = s.txRepo.UpdateRiskEnrichment(ctx, result.TransactionID, riskScore, riskBand, "hybrid")
 	}

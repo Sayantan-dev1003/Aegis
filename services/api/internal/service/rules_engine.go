@@ -36,9 +36,6 @@ func getRulePriority(rule model.Rule) int {
 	if strings.EqualFold(rule.Action, "block") {
 		return 0 // Priority 0: block rules always take precedence
 	}
-	if strings.EqualFold(rule.Action, "step_up") {
-		return 10 // Priority 1: step_up rules win over flag rules
-	}
 	name := strings.ToLower(rule.Name)
 	if strings.Contains(name, "vip") || strings.Contains(name, "high-value") || strings.Contains(name, "high value") || rule.Metric == "amount" {
 		return 20 // Priority 2: VIP / high-value flag rules
@@ -54,7 +51,7 @@ func getRulePriority(rule model.Rule) int {
 }
 
 // Evaluate runs active rules against a transaction. Returns (action, triggeredRule, error).
-// Action can be "", "block", "flag", "step_up". "" means it passed cleanly.
+// Action can be "", "block", "flag". "" means it passed cleanly.
 func (e *RulesEngine) Evaluate(ctx context.Context, t *model.Transaction) (string, *model.Rule, error) {
 	ctx, span := e.tracer.Start(ctx, "rules_engine.evaluate")
 	defer span.End()

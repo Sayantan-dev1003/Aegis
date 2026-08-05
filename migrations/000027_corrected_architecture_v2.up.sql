@@ -5,7 +5,6 @@ ADD COLUMN IF NOT EXISTS risk_score DOUBLE PRECISION NULL,
 ADD COLUMN IF NOT EXISTS risk_band VARCHAR(20) NULL,
 ADD COLUMN IF NOT EXISTS risk_source VARCHAR(20) NULL,
 ADD COLUMN IF NOT EXISTS reject_count INTEGER NOT NULL DEFAULT 0,
-ADD COLUMN IF NOT EXISTS step_up_result VARCHAR(20) NULL,
 ADD COLUMN IF NOT EXISTS sla_breach_type VARCHAR(50) NOT NULL DEFAULT 'none',
 ADD COLUMN IF NOT EXISTS requires_admin_review BOOLEAN NOT NULL DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS sla_paused_at TIMESTAMPTZ NULL;
@@ -21,7 +20,7 @@ END $$;
 ALTER TABLE transactions
 ADD CONSTRAINT transactions_status_check
 CHECK (status IN (
-    'received', 'pending', 'step_up_pending', 'escalated', 'auto_blocked',
+    'received', 'pending', 'escalated', 'auto_blocked',
     'scored_approved', 'reviewed', 'processing', 'scored', 'scoring_failed',
     'breached', 'claimed', 'approved', 'rejected'
 ));

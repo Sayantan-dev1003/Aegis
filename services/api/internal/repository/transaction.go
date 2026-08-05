@@ -35,13 +35,13 @@ func (r *TransactionRepository) Create(ctx context.Context, tx pgx.Tx, t *model.
 			external_id, account_id, merchant_id, merchant_name, merchant_category,
 			amount, currency, country_code, transaction_type, channel, device_id,
 			ip_address, timestamp, status, queue_id, sla_start_at, priority_level,
-			risk_score, risk_band, risk_source, reject_count, step_up_result,
+			risk_score, risk_band, risk_source, reject_count,
 			sla_breach_type, requires_admin_review, sla_paused_at
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
 			COALESCE($16, NOW()), $17,
-			$18, $19, $20, COALESCE($21, 0), $22,
-			$23, COALESCE($24, FALSE), $25
+			$18, $19, $20, COALESCE($21, 0),
+			$22, COALESCE($23, FALSE), $24
 		) RETURNING id, ingested_at
 	`
 
@@ -67,7 +67,6 @@ func (r *TransactionRepository) Create(ctx context.Context, tx pgx.Tx, t *model.
 		t.RiskBand,
 		t.RiskSource,
 		t.RejectCount,
-		t.StepUpResult,
 		t.SLABreachType,
 		t.RequiresAdminReview,
 		t.SLAPausedAt,
@@ -139,7 +138,7 @@ func (r *TransactionRepository) FindByID(ctx context.Context, id string) (*model
 			amount, currency, country_code, transaction_type, channel, device_id,
 			ip_address::text, timestamp, ingested_at, status, queue_id,
 			claimed_by, claimed_at, sla_start_at, sla_remaining_seconds, COALESCE(priority_level, 'normal'),
-			risk_score, risk_band, risk_source, COALESCE(reject_count, 0), step_up_result,
+			risk_score, risk_band, risk_source, COALESCE(reject_count, 0),
 			COALESCE(sla_breach_type, 'none'), COALESCE(requires_admin_review, FALSE), sla_paused_at
 		FROM transactions
 		WHERE id = $1
@@ -173,7 +172,6 @@ func (r *TransactionRepository) FindByID(ctx context.Context, id string) (*model
 		&t.RiskBand,
 		&t.RiskSource,
 		&t.RejectCount,
-		&t.StepUpResult,
 		&t.SLABreachType,
 		&t.RequiresAdminReview,
 		&t.SLAPausedAt,
@@ -347,7 +345,19 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 				) THEN (SELECT name FROM queues WHERE id::text = $1)
 				ELSE COALESCE(q.name, '')
 			END as queue_name,
-			(SELECT a.full_name FROM analysts a WHERE a.queue_id = t.queue_id AND a.role = 'reviewer' LIMIT 1) as assignee,
+			COALESCE(
+				(
+					SELECT q_orig.name 
+					FROM sla_breaches sb
+					JOIN queues q_orig ON sb.original_queue_id = q_orig.id
+					WHERE sb.transaction_id = t.id 
+					ORDER BY sb.breached_at DESC
+					LIMIT 1
+				),
+				q.name,
+				''
+			) as original_queue_name,
+			(SELECT a.full_name FROM analysts a WHERE a.id = t.claimed_by) as assignee,
 			t.sla_start_at,
 			t.sla_paused_at,
 			COALESCE(t.priority_level, 'normal') as priority_level,
@@ -355,7 +365,6 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 			t.risk_band,
 			t.risk_source,
 			COALESCE(t.reject_count, 0) as reject_count,
-			t.step_up_result,
 			COALESCE(t.sla_breach_type, 'none') as sla_breach_type,
 			COALESCE(t.requires_admin_review, FALSE) as requires_admin_review,
 			t.claimed_at
@@ -381,7 +390,7 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 			&summary.ID, &summary.Amount, &summary.Currency, &summary.AccountID, &summary.MerchantID, &summary.MerchantName, &summary.MerchantCategory, &summary.TransactionType, &summary.Channel, &summary.CountryCode, &summary.IPAddress, &summary.Status, &summary.CreatedAt, &summary.Timestamp,
 			&summary.FraudScore, &summary.IsFraud, &summary.ScoredAt,
 			&summary.ReviewDecision,
-			&summary.QueueID, &summary.QueueName, &summary.Assignee,
+			&summary.QueueID, &summary.QueueName, &summary.OriginalQueueName, &summary.Assignee,
 			&summary.SLAStartAt,
 			&summary.SLAPausedAt,
 			&summary.PriorityLevel,
@@ -389,7 +398,6 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 			&summary.RiskBand,
 			&summary.RiskSource,
 			&summary.RejectCount,
-			&summary.StepUpResult,
 			&summary.SLABreachType,
 			&summary.RequiresAdminReview,
 			&summary.ClaimedAt,

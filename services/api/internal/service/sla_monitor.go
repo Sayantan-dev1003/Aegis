@@ -128,11 +128,11 @@ func (m *SLAMonitor) processTier1Breaches(ctx context.Context) error {
 
 		updateQ := `
 			UPDATE transactions 
-			SET status = 'breached', queue_id = $2, priority_level = 'high_risk', sla_start_at = NOW(),
-			    sla_remaining_seconds = $3, sla_breach_type = 'auto_breach', claimed_by = NULL, claimed_at = NULL, updated_at = NOW()
+			SET status = 'breached', priority_level = 'high_risk', sla_start_at = NOW(),
+			    sla_remaining_seconds = $2, sla_breach_type = 'auto_breach', claimed_by = NULL, claimed_at = NULL, updated_at = NOW()
 			WHERE id = $1
 		`
-		if _, err := m.db.Exec(ctx, updateQ, item.txID, fallbackQ.ID, reducedSec); err == nil {
+		if _, err := m.db.Exec(ctx, updateQ, item.txID, reducedSec); err == nil {
 			log.Warn().Str("transaction_id", item.txID).Msg("Tier 1 SLA Breach: Transferred to Default Queue with 50% reduced SLA")
 			if m.hub != nil {
 				event := map[string]any{

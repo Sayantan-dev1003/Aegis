@@ -112,7 +112,6 @@ const ShieldIcon = () => (
 const ActionBadge = ({ action }: { action: string }) => {
   const map: Record<string, { color: string; bg: string }> = {
     block:   { color: '#F43F5E', bg: 'rgba(244,63,94,0.12)'  },
-    step_up: { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
     flag:    { color: '#34D399', bg: 'rgba(52,211,153,0.12)' },
   };
   const m = map[action?.toLowerCase()] || { color: '#8D9AAB', bg: 'rgba(148,163,184,0.1)' };
@@ -408,9 +407,6 @@ export default function ViewerModelsPage() {
               </option>
               <option value="flag" style={{ background: "#1A202C" }}>
                 Flag
-              </option>
-              <option value="step_up" style={{ background: "#1A202C" }}>
-                Step Up
               </option>
               <option value="block" style={{ background: "#1A202C" }}>
                 Block

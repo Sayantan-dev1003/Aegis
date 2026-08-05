@@ -147,6 +147,11 @@ export default function ReviewerQueuePage() {
   );
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [amountRangeFilter, setAmountRangeFilter] = useState<string>("");
+  const [scoreRangeFilter, setScoreRangeFilter] = useState<string>("");
+  const [riskSourceFilter, setRiskSourceFilter] = useState<string>("all");
+  const [channelFilter, setChannelFilter] = useState<string>("all");
+  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [origQueueFilter, setOrigQueueFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   // Claimed state in-memory during session
@@ -363,6 +368,31 @@ export default function ReviewerQueuePage() {
       if (amountRangeFilter === "50000 to 1L" && (amt < 50000 || amt > 100000)) return false;
       if (amountRangeFilter === "> 1L" && amt <= 100000) return false;
 
+      // Score range filter
+      const score = t.fraud_score || 0;
+      if (scoreRangeFilter === "low" && score >= 0.45) return false;
+      if (scoreRangeFilter === "medium" && (score < 0.45 || score >= 0.70)) return false;
+      if (scoreRangeFilter === "high" && (score < 0.70 || score >= 0.85)) return false;
+      if (scoreRangeFilter === "critical" && score < 0.85) return false;
+
+      // Risk Source filter
+      if (riskSourceFilter !== "all" && t.risk_source !== riskSourceFilter) return false;
+
+      // Channel filter
+      if (channelFilter !== "all" && (t.channel || t.transaction_channel || "").toLowerCase() !== channelFilter.toLowerCase()) return false;
+      
+      // Location filter (exact match on country code, ignoring case)
+      if (locationFilter !== "all") {
+        const loc = (t.country_code || t.location?.country || "").toLowerCase();
+        if (loc !== locationFilter.toLowerCase()) return false;
+      }
+      
+      // Original Queue filter
+      if (origQueueFilter !== "all") {
+        const qName = (t.queue_name || t.original_queue_name || t.queue_id || "").toLowerCase();
+        if (qName !== origQueueFilter.toLowerCase()) return false;
+      }
+
       // Search query filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -379,13 +409,18 @@ export default function ReviewerQueuePage() {
     dateFilter,
     statusFilter,
     amountRangeFilter,
+    scoreRangeFilter,
+    riskSourceFilter,
+    channelFilter,
+    locationFilter,
+    origQueueFilter,
     searchQuery,
   ]);
 
   // ─── Pagination Calculations & Reset on Filter Change ───────────────────────
   useEffect(() => {
     setCurrentPage(1);
-  }, [dateFilter, statusFilter, amountRangeFilter, searchQuery, pageSize]);
+  }, [dateFilter, statusFilter, amountRangeFilter, scoreRangeFilter, riskSourceFilter, channelFilter, locationFilter, origQueueFilter, searchQuery, pageSize]);
 
   const totalPages = useMemo(() => {
     return Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
@@ -627,9 +662,6 @@ export default function ReviewerQueuePage() {
               <option value="escalated" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Escalated</option>
               <option value="breached" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Breached</option>
               <option value="reviewed" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Reviewed</option>
-              <option value="pending" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Pending</option>
-              <option value="scored" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Scored</option>
-              <option value="auto_blocked" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Auto Blocked</option>
             </select>
           </FilterGroup>
 
@@ -647,6 +679,47 @@ export default function ReviewerQueuePage() {
               <option value="> 1L" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>&gt; ₹1L</option>
             </select>
           </FilterGroup>
+
+          <FilterGroup label="Score Range">
+            <select value={scoreRangeFilter} onChange={(e) => setScoreRangeFilter(e.target.value)} style={selectStyle}>
+              <option value="" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Any Score</option>
+              <option value="low" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Low (&lt; 45%)</option>
+              <option value="medium" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Medium (45-70%)</option>
+              <option value="high" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>High (70-85%)</option>
+              <option value="critical" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Critical (≥ 85%)</option>
+            </select>
+          </FilterGroup>
+
+          <FilterGroup label="Risk Source">
+            <select value={riskSourceFilter} onChange={(e) => setRiskSourceFilter(e.target.value)} style={selectStyle}>
+              <option value="all" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>All Sources</option>
+              <option value="rule" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Rule</option>
+              <option value="ml" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>ML</option>
+              <option value="hybrid" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Hybrid</option>
+            </select>
+          </FilterGroup>
+
+          <FilterGroup label="Channel">
+            <select value={channelFilter} onChange={(e) => setChannelFilter(e.target.value)} style={selectStyle}>
+              <option value="all" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>All Channels</option>
+              <option value="online" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Online</option>
+              <option value="pos" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>POS</option>
+              <option value="atm" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>ATM</option>
+              <option value="upi" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>UPI</option>
+              <option value="mobile_wallet" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>Mobile Wallet</option>
+            </select>
+          </FilterGroup>
+
+          <FilterGroup label="Location">
+            <select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} style={selectStyle}>
+              <option value="all" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>All Locations</option>
+              {Array.from(new Set(myQueueCases.map(t => t.country_code || t.location?.country).filter(Boolean))).map(loc => (
+                <option key={loc} value={loc} style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>{loc}</option>
+              ))}
+            </select>
+          </FilterGroup>
+
+
         </div>
 
         {/* Second Row of Filters: Full-width Search Input & Action Controls */}
@@ -660,8 +733,8 @@ export default function ReviewerQueuePage() {
             flexWrap: "wrap",
           }}
         >
-          <div style={{ display: "flex", gap: "16px", alignItems: "center", flex: "1 1 320px" }}>
-            <div style={{ position: "relative", flex: 1 }}>
+          <div style={{ display: "flex", gap: "16px", alignItems: "center", flex: "0 1 60%" }}>
+            <div style={{ position: "relative", flex: 1, width: "100%" }}>
               <Search
                 size={16}
                 style={{
@@ -686,38 +759,58 @@ export default function ReviewerQueuePage() {
                 }}
               />
             </div>
+            {myQueueName === "Default Fallback Queue" && (
+              <div style={{ width: "220px", flexShrink: 0 }}>
+                <select value={origQueueFilter} onChange={(e) => setOrigQueueFilter(e.target.value)} style={{ ...selectStyle, width: "100%", padding: "10px 14px" }}>
+                  <option value="all" style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>All Original Queues</option>
+                  {Array.from(new Set(myQueueCases.map(t => t.queue_name || t.original_queue_name || t.queue_id).filter(Boolean))).map(qName => (
+                    <option key={qName as string} value={qName as string} style={{ backgroundColor: "#0F172A", color: "#E8EDF4" }}>{qName as string}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
+          <div style={{ display: "flex", gap: "12px", alignItems: "center", whiteSpace: "nowrap" }}>
             {(dateFilter !== "" ||
               statusFilter !== "all" ||
               amountRangeFilter !== "" ||
+              scoreRangeFilter !== "" ||
+              riskSourceFilter !== "all" ||
+              channelFilter !== "all" ||
+              locationFilter !== "all" ||
+              origQueueFilter !== "all" ||
               searchQuery !== "") && (
               <button
                 onClick={() => {
                   setDateFilter("");
                   setStatusFilter("all");
                   setAmountRangeFilter("");
+                  setScoreRangeFilter("");
+                  setRiskSourceFilter("all");
+                  setChannelFilter("all");
+                  setLocationFilter("all");
+                  setOrigQueueFilter("all");
                   setSearchQuery("");
                 }}
                 style={{
-                  ...selectStyle,
-                  padding: "9px 14px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 14px",
+                  borderRadius: "6px",
+                  backgroundColor: "rgba(248,113,113,0.05)",
+                  border: "1px solid rgba(248,113,113,0.3)",
                   color: "#f87171",
-                  borderColor: "rgba(248,113,113,0.3)",
-                  background: "rgba(248,113,113,0.05)",
+                  fontSize: "0.8rem",
+                  fontWeight: 600,
                   cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  fontSize: "0.85rem",
+                  transition: "all 0.2s",
                 }}
               >
                 Clear Filters
               </button>
             )}
-          </div>
-
-          <div style={{ display: "flex", gap: "12px", alignItems: "center", whiteSpace: "nowrap" }}>
-            <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>
-              {filteredTransactions.length} {filteredTransactions.length === 1 ? "case" : "cases"} found
-            </span>
             <button
               title="Refresh Data"
               style={{
@@ -770,13 +863,17 @@ export default function ReviewerQueuePage() {
                 <th style={thStyle}>Timestamp</th>
                 <th style={thStyle}>Transaction ID</th>
                 <th style={thStyle}>Account</th>
-                <th style={thStyle}>Merchant</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
-                <th style={{ ...thStyle, textAlign: "center" }}>Score</th>
-                <th style={thStyle}>Risk Source</th>
-                <th style={thStyle}>Flag Reason</th>
                 <th style={thStyle}>SLA Timer</th>
                 <th style={thStyle}>Status</th>
+                <th style={{ ...thStyle, textAlign: "center" }}>Score</th>
+                <th style={thStyle}>Flag Reason</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
+                <th style={thStyle}>Risk Source</th>
+                <th style={thStyle}>Merchant</th>
+                <th style={thStyle}>Channel</th>
+                <th style={thStyle}>Location</th>
+                <th style={{ ...thStyle, textAlign: "center" }}>Rejects</th>
+                {myQueueName === "Default Fallback Queue" && <th style={thStyle}>Orig. Queue</th>}
                 <th style={{ ...thStyle, textAlign: "right" }}>Action</th>
               </tr>
             </thead>
@@ -784,7 +881,7 @@ export default function ReviewerQueuePage() {
               {loading ? (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={myQueueName === "Default Fallback Queue" ? 15 : 14}
                     style={{
                       padding: "60px",
                       textAlign: "center",
@@ -806,7 +903,7 @@ export default function ReviewerQueuePage() {
                 </tr>
               ) : filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ padding: "60px", textAlign: "center" }}>
+                  <td colSpan={myQueueName === "Default Fallback Queue" ? 15 : 14} style={{ padding: "60px", textAlign: "center" }}>
                     <EmptyState
                       icon={<ShieldAlert size={36} color="#64748B" />}
                       title="No cases match selected filters"
@@ -819,8 +916,7 @@ export default function ReviewerQueuePage() {
                   const isLast = idx === paginatedTransactions.length - 1;
                   const isClaimedByMe =
                     claimedIds.has(t.id) ||
-                    t.assignee === "You" ||
-                    t.assignee === user?.full_name;
+                    (t.assignee && (t.assignee === "You" || t.assignee === user?.full_name));
                   const score = t.fraud_score || 0;
                   const slaRem = getSlaRemaining(t);
                   const isSlaBreached = slaRem <= 0;
@@ -906,38 +1002,49 @@ export default function ReviewerQueuePage() {
                         {t.account_id || "ACCT-UNKNOWN"}
                       </td>
 
-                      {/* Merchant */}
-                      <td
-                        style={{
-                          padding: "16px 18px",
-                          color: "#CBD5E1",
-                          whiteSpace: "nowrap",
-                          fontSize: "0.85rem",
-                        }}
-                      >
-                        {t.merchant_name || "N/A"}
+                      {/* SLA Timer */}
+                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "6px",
+                            color: isSlaBreached
+                              ? "#EF4444"
+                              : isSlaWarning
+                              ? "#F59E0B"
+                              : "#10B981",
+                            fontWeight: 600,
+                            fontSize: "0.82rem",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          <Clock size={14} />
+                          {`${slaRem}m left`}
+                        </div>
                       </td>
 
-                      {/* Amount */}
-                      <td
-                        style={{
-                          padding: "16px 18px",
-                          textAlign: "right",
-                          fontFamily: "monospace",
-                          fontWeight: 700,
-                          fontSize: "0.9rem",
-                          color: "#F8FAFC",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {t.currency === "INR" || !t.currency ? "₹" : t.currency}{" "}
-                        {Number(t.amount || 0).toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
+                      {/* Status */}
+                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            padding: "4px 10px",
+                            borderRadius: "6px",
+                            fontSize: "0.75rem",
+                            fontWeight: 600,
+                            textTransform: "capitalize",
+                            backgroundColor: statusStyle.bg,
+                            color: statusStyle.color,
+                            border: `1px solid ${statusStyle.color}35`,
+                          }}
+                        >
+                          {(t.status || "scored").replace("_", " ")}
+                        </span>
                       </td>
 
-                      {/* Score (No horizontal progress bar) */}
+                      {/* Score */}
                       <td
                         style={{
                           padding: "16px 18px",
@@ -983,45 +1090,6 @@ export default function ReviewerQueuePage() {
                         </span>
                       </td>
 
-                      {/* Risk Source */}
-                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
-                        <span
-                          style={{
-                            display: "inline-block",
-                            padding: "3px 10px",
-                            borderRadius: "4px",
-                            fontSize: "0.72rem",
-                            fontWeight: 600,
-                            textTransform: "uppercase",
-                            letterSpacing: "0.04em",
-                            backgroundColor:
-                              t.risk_source === "hybrid"
-                                ? "rgba(139, 92, 246, 0.12)"
-                                : t.risk_source === "ml"
-                                ? "rgba(6, 182, 212, 0.12)"
-                                : "rgba(245, 158, 11, 0.12)",
-                            color:
-                              t.risk_source === "hybrid"
-                                ? "#A78BFA"
-                                : t.risk_source === "ml"
-                                ? "#22D3EE"
-                                : "#FBBF24",
-                            border:
-                              t.risk_source === "hybrid"
-                                ? "1px solid rgba(139, 92, 246, 0.25)"
-                                : t.risk_source === "ml"
-                                ? "1px solid rgba(6, 182, 212, 0.25)"
-                                : "1px solid rgba(245, 158, 11, 0.25)",
-                          }}
-                        >
-                          {t.risk_source === "hybrid"
-                            ? "Hybrid"
-                            : t.risk_source === "ml"
-                            ? "ML"
-                            : "Rule"}
-                        </span>
-                      </td>
-
                       {/* Flag Reason */}
                       <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
                         <span
@@ -1055,69 +1123,94 @@ export default function ReviewerQueuePage() {
                         </span>
                       </td>
 
-                      {/* SLA Timer */}
-                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            color: t.sla_paused_at
-                              ? "#60A5FA"
-                              : isSlaBreached
-                              ? "#EF4444"
-                              : isSlaWarning
-                              ? "#F59E0B"
-                              : "#10B981",
-                            fontWeight: 600,
-                            fontSize: "0.82rem",
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          <Clock size={14} />
-                          {t.sla_paused_at
-                            ? "Paused"
-                            : isSlaBreached
-                            ? "Breached"
-                            : `${slaRem}m left`}
-                          {isSlaWarning && !t.sla_paused_at && (
-                            <span
-                              style={{
-                                fontSize: "0.68rem",
-                                backgroundColor: "rgba(245, 158, 11, 0.12)",
-                                color: "#F59E0B",
-                                padding: "2px 6px",
-                                borderRadius: "4px",
-                                border: "1px solid rgba(245, 158, 11, 0.25)",
-                                fontWeight: 600,
-                                textTransform: "uppercase",
-                              }}
-                            >
-                              VIP SLA (≤15m)
-                            </span>
-                          )}
-                        </div>
+                      {/* Amount */}
+                      <td
+                        style={{
+                          padding: "16px 18px",
+                          textAlign: "right",
+                          fontFamily: "monospace",
+                          fontWeight: 700,
+                          fontSize: "0.9rem",
+                          color: "#F8FAFC",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {t.currency === "INR" || !t.currency ? "₹" : t.currency}{" "}
+                        {Number(t.amount || 0).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
                       </td>
 
-                      {/* Status */}
+                      {/* Risk Source */}
                       <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
-                        <span
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            padding: "4px 10px",
-                            borderRadius: "6px",
-                            fontSize: "0.75rem",
-                            fontWeight: 600,
-                            textTransform: "capitalize",
-                            backgroundColor: statusStyle.bg,
-                            color: statusStyle.color,
-                            border: `1px solid ${statusStyle.color}35`,
-                          }}
-                        >
-                          {(t.status || "scored").replace("_", " ")}
+                        {t.risk_source ? (
+                          <span style={{
+                            display: 'inline-block',
+                            fontSize: "0.72rem",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            padding: "3px 8px",
+                            borderRadius: "999px",
+                            backgroundColor: t.risk_source === "hybrid" ? "rgba(139, 92, 246, 0.15)" : t.risk_source === "ml" ? "rgba(6, 182, 212, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                            border: t.risk_source === "hybrid" ? "1px solid rgba(139,92,246,0.3)" : t.risk_source === "ml" ? "1px solid rgba(6,182,212,0.3)" : "1px solid rgba(245,158,11,0.3)",
+                            color: t.risk_source === "hybrid" ? "#A78BFA" : t.risk_source === "ml" ? "#22D3EE" : "#FBBF24",
+                          }}>
+                            {t.risk_source}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#475569', fontSize: '0.82rem' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Merchant */}
+                      <td
+                        style={{
+                          padding: "16px 18px",
+                          color: "#CBD5E1",
+                          whiteSpace: "nowrap",
+                          fontSize: "0.85rem",
+                        }}
+                      >
+                        {t.merchant_name || "N/A"}
+                      </td>
+                      
+                      {/* Channel */}
+                      <td style={{ padding: "16px 18px", color: "#94A3B8", fontSize: "0.85rem", whiteSpace: "nowrap" }}>
+                        <span style={{ textTransform: "capitalize" }}>
+                          {(t.channel || t.transaction_channel || "N/A").replace("_", " ")}
                         </span>
                       </td>
+
+                      {/* Location */}
+                      <td style={{ padding: "16px 18px", color: "#94A3B8", fontSize: "0.82rem", whiteSpace: "nowrap" }}>
+                        {t.country_code || t.location?.country ? (
+                          <span>
+                            {t.country_code || t.location?.country} 
+                            {(t.ip_address || t.location?.ip) && ` (${t.ip_address || t.location?.ip})`}
+                          </span>
+                        ) : (
+                          "N/A"
+                        )}
+                      </td>
+
+                      {/* Reject Count */}
+                      <td style={{ padding: "16px 18px", textAlign: "center", whiteSpace: "nowrap" }}>
+                        <span style={{
+                          color: (t.reject_count || 0) > 0 ? "#F59E0B" : "#64748B",
+                          fontWeight: (t.reject_count || 0) > 0 ? 600 : 400,
+                          fontSize: "0.85rem"
+                        }}>
+                          {t.reject_count || 0}
+                        </span>
+                      </td>
+
+                      {/* Original Queue */}
+                      {myQueueName === "Default Fallback Queue" && (
+                        <td style={{ padding: "16px 18px", color: "#94A3B8", fontSize: "0.82rem", whiteSpace: "nowrap" }}>
+                          {t.original_queue_name || "-"}
+                        </td>
+                      )}
 
                       {/* Action Column */}
                       <td

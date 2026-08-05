@@ -34,7 +34,6 @@ type Transaction struct {
 	RiskBand            *string    `json:"risk_band,omitempty" db:"risk_band"`     // low, medium, high
 	RiskSource          *string    `json:"risk_source,omitempty" db:"risk_source"` // rule, ml, hybrid
 	RejectCount         int        `json:"reject_count" db:"reject_count"`
-	StepUpResult        *string    `json:"step_up_result,omitempty" db:"step_up_result"`
 	SLABreachType       string     `json:"sla_breach_type" db:"sla_breach_type"`
 	RequiresAdminReview bool       `json:"requires_admin_review" db:"requires_admin_review"`
 	RequeueCount        int        `json:"requeue_count" db:"requeue_count"`

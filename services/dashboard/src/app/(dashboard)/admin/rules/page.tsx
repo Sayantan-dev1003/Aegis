@@ -104,7 +104,6 @@ const IntModal = ({ isOpen, onClose, title, width = '460px', children }: {
 const ActionBadge = ({ action }: { action: string }) => {
   const map: Record<string, { color: string; bg: string }> = {
     block:   { color: '#F43F5E', bg: 'rgba(244,63,94,0.12)'  },
-    step_up: { color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
     flag:    { color: '#34D399', bg: 'rgba(52,211,153,0.12)' },
   };
   const m = map[action] || { color: '#8D9AAB', bg: 'rgba(148,163,184,0.1)' };
@@ -395,7 +394,6 @@ export default function RulesPage() {
             <select value={filterAction} onChange={e => setFilterAction(e.target.value)} style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', color: '#E8EDF4', borderRadius: '8px', colorScheme: 'dark', fontSize: '0.875rem', outline: 'none', cursor: 'pointer' }}>
               <option value="All" style={{ background: '#1A202C' }}>All Actions</option>
               <option value="flag" style={{ background: '#1A202C' }}>Flag</option>
-              <option value="step_up" style={{ background: '#1A202C' }}>Step Up</option>
               <option value="block" style={{ background: '#1A202C' }}>Block</option>
             </select>
             {(search || filterEntity !== 'All' || filterAction !== 'All') && (
@@ -528,7 +526,6 @@ export default function RulesPage() {
           <FormField label="Action (Consequence)">
             <select style={selectStyle} value={newRule.action} onChange={e => setNewRule({ ...newRule, action: e.target.value })}>
               <option value="flag">Flag for Review (Low Friction)</option>
-              <option value="step_up">Step-up Auth (Medium Friction)</option>
               <option value="block">Block Transaction (High Friction)</option>
             </select>
           </FormField>
@@ -606,7 +603,6 @@ export default function RulesPage() {
           <FormField label="Action (Consequence)">
             <select style={selectStyle} value={editForm.action} onChange={e => setEditForm({ ...editForm, action: e.target.value })}>
               <option value="flag">Flag for Review (Low Friction)</option>
-              <option value="step_up">Step-up Auth (Medium Friction)</option>
               <option value="block">Block Transaction (High Friction)</option>
             </select>
           </FormField>
