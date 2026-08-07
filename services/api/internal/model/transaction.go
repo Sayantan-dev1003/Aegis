@@ -24,6 +24,7 @@ type Transaction struct {
 	IngestedAt       time.Time  `json:"ingested_at" db:"ingested_at"` // Defaults to NOW()
 	Status              string     `json:"status" db:"status"`           // pending, scored, auto_blocked, reviewed, scoring_failed
 	QueueID             *string    `json:"queue_id,omitempty" db:"queue_id"`
+	QueueName           *string    `json:"queue_name,omitempty" db:"-"`
 	ClaimedBy           *string    `json:"claimed_by,omitempty" db:"claimed_by"`
 	ClaimedAt           *time.Time `json:"claimed_at,omitempty" db:"claimed_at"`
 	SLAStartAt          *time.Time `json:"sla_start_at,omitempty" db:"sla_start_at"`
@@ -39,6 +40,10 @@ type Transaction struct {
 	RequeueCount        int        `json:"requeue_count" db:"requeue_count"`
 	LastRequeuedAt      *time.Time `json:"last_requeued_at,omitempty" db:"last_requeued_at"`
 	UpdatedAt           time.Time  `json:"updated_at" db:"updated_at"`
+	ClaimedByName       *string    `json:"claimed_by_name,omitempty" db:"claimed_by_name"`
+	BreachedAt          *time.Time `json:"breached_at,omitempty" db:"breached_at"`
+	EscalatedAt         *time.Time `json:"escalated_at,omitempty" db:"escalated_at"`
+	EscalatedTo         *string    `json:"escalated_to,omitempty" db:"escalated_to"`
 }
 
 // OutboxEvent represents an event to be processed asynchronously.

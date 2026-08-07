@@ -2,14 +2,16 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
 	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
+	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -20,16 +22,79 @@ type RulesEngine struct {
 	velocityStore *repository.VelocityStore
 	analyticsRepo *repository.RuleAnalyticsRepository
 	tracer        trace.Tracer
+
+	rdb    *redis.Client
+	logger *zerolog.Logger
+	mu     sync.RWMutex
+	rules  []model.Rule
 }
 
-func NewRulesEngine(ruleRepo *repository.RuleRepository, txRepo *repository.TransactionRepository, velocityStore *repository.VelocityStore, analyticsRepo *repository.RuleAnalyticsRepository) *RulesEngine {
-	return &RulesEngine{
+func NewRulesEngine(
+	ruleRepo *repository.RuleRepository,
+	txRepo *repository.TransactionRepository,
+	velocityStore *repository.VelocityStore,
+	analyticsRepo *repository.RuleAnalyticsRepository,
+	rdb *redis.Client,
+	logger *zerolog.Logger,
+) *RulesEngine {
+	engine := &RulesEngine{
 		ruleRepo:      ruleRepo,
 		txRepo:        txRepo,
 		velocityStore: velocityStore,
 		analyticsRepo: analyticsRepo,
 		tracer:        otel.Tracer("aegis/api/service"),
+		rdb:           rdb,
+		logger:        logger,
 	}
+
+	// Initial load
+	engine.ReloadRules(context.Background())
+
+	// Redis Pub/Sub for instant updates
+	pubsub := rdb.Subscribe(context.Background(), "rules_config_updates")
+	go func() {
+		ch := pubsub.Channel()
+		for msg := range ch {
+			engine.logger.Debug().Str("channel", msg.Channel).Msg("Received rules config update event")
+			engine.ReloadRules(context.Background())
+		}
+	}()
+
+	// Background sync as fallback
+	go func() {
+		ticker := time.NewTicker(1 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			engine.ReloadRules(context.Background())
+		}
+	}()
+
+	return engine
+}
+
+func (e *RulesEngine) ReloadRules(ctx context.Context) {
+	rules, err := e.ruleRepo.List(ctx)
+	if err != nil {
+		if e.logger != nil {
+			e.logger.Error().Err(err).Msg("Failed to reload rules")
+		}
+		return
+	}
+
+	var activeRules []model.Rule
+	for _, r := range rules {
+		if r.IsActive {
+			activeRules = append(activeRules, r)
+		}
+	}
+
+	sort.SliceStable(activeRules, func(i, j int) bool {
+		return getRulePriority(activeRules[i]) < getRulePriority(activeRules[j])
+	})
+
+	e.mu.Lock()
+	e.rules = activeRules
+	e.mu.Unlock()
 }
 
 func getRulePriority(rule model.Rule) int {
@@ -56,27 +121,13 @@ func (e *RulesEngine) Evaluate(ctx context.Context, t *model.Transaction) (strin
 	ctx, span := e.tracer.Start(ctx, "rules_engine.evaluate")
 	defer span.End()
 
-	rules, err := e.ruleRepo.List(ctx)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to fetch rules: %w", err)
-	}
-
-	// Filter active rules
-	var activeRules []model.Rule
-	for _, r := range rules {
-		if r.IsActive {
-			activeRules = append(activeRules, r)
-		}
-	}
+	e.mu.RLock()
+	activeRules := e.rules
+	e.mu.RUnlock()
 
 	if len(activeRules) == 0 {
 		return "", nil, nil // No rules present or active, passes cleanly
 	}
-
-	// Sort active rules by business priority hierarchy
-	sort.SliceStable(activeRules, func(i, j int) bool {
-		return getRulePriority(activeRules[i]) < getRulePriority(activeRules[j])
-	})
 
 	for _, rule := range activeRules {
 		matched, err := e.evaluateRule(ctx, rule, t)

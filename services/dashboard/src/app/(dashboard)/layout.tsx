@@ -25,7 +25,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const reviewerNav = [
     { name: "Case Queue", path: "/reviewer/queue" },
-    { name: "Investigation", path: "/reviewer/investigate" },
     { name: "Customer 360", path: "/reviewer/customer" },
     { name: "My Performance", path: "/reviewer/performance" },
     { name: "Alerts", path: "/reviewer/alerts" },
@@ -64,7 +63,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       "/reviewer/alerts": { title: "Alerts & Notifications", subtitle: "Real-time feed of new high-priority cases from your queues." },
     };
 
-    const match = Object.keys(metaMap).find(k => path.startsWith(k));
+    const match = Object.keys(metaMap)
+      .filter(k => path.startsWith(k))
+      .sort((a, b) => b.length - a.length)[0];
     if (match) return metaMap[match];
 
     const route = navLinks.find(l => path.startsWith(l.path));
@@ -86,7 +87,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <li key={link.path} className={styles.navItem}>
                <Link 
                 href={link.path} 
-                className={`${styles.navLink} ${pathname.startsWith(link.path) ? styles.navLinkActive : ""}`}
+                className={`${styles.navLink} ${
+                  pathname.startsWith(link.path) ||
+                  (link.path === "/reviewer/queue" && pathname.startsWith("/reviewer/investigate"))
+                    ? styles.navLinkActive
+                    : ""
+                }`}
               >
                 {link.name}
               </Link>

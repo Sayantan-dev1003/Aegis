@@ -91,6 +91,16 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 		return "", fmt.Errorf("validation error: %w", err)
 	}
 
+	// 1.5. Validate customer existence (identity gate)
+	var customerExists bool
+	err := s.db.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM customers WHERE account_id = $1)", t.AccountID).Scan(&customerExists)
+	if err != nil {
+		return "", fmt.Errorf("database error checking customer: %w", err)
+	}
+	if !customerExists {
+		return "", fmt.Errorf("unknown account_id: %s (customer does not exist)", t.AccountID)
+	}
+
 	// Set defaults if missing
 	if t.Currency == "" {
 		t.Currency = "INR"
@@ -110,6 +120,9 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 		t.Status = "auto_blocked"
 		source := "rule"
 		t.RiskSource = &source
+		if rule != nil && rule.QueueID != nil && *rule.QueueID != "" {
+			t.QueueID = rule.QueueID
+		}
 	} else if action == "flag" {
 		t.Status = "escalated"
 		source := "rule"
@@ -137,6 +150,12 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 	// 4. Insert into transactions table (this will populate t.ID and t.IngestedAt)
 	if err := s.txRepo.Create(ctx, tx, t); err != nil {
 		return "", fmt.Errorf("failed to insert transaction: %w", err)
+	}
+
+	// 4.5 Insert action log for ingestion
+	_, err = tx.Exec(ctx, "INSERT INTO action_logs (transaction_id, action_type) VALUES ($1, 'INGESTED')", t.ID)
+	if err != nil {
+		return "", fmt.Errorf("failed to insert INGESTED action log: %w", err)
 	}
 
 	// 5. Unconditionally insert into outbox_events table for ML scoring (skipML removed)

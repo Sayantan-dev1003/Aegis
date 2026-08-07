@@ -80,6 +80,11 @@ func (s *ReviewService) ClaimTransaction(ctx context.Context, txID string, analy
 		return fmt.Errorf("transaction is already claimed by another reviewer or not escalated")
 	}
 
+	_, err = s.db.Exec(ctx, "INSERT INTO action_logs (transaction_id, reviewer_id, action_type, action_payload) VALUES ($1, $2, 'CLAIMED', '{}')", txID, analystID)
+	if err != nil {
+		return fmt.Errorf("failed to insert action log: %w", err)
+	}
+
 	if s.hub != nil {
 		event := map[string]any{
 			"event_type":     "transaction.claimed",
@@ -208,7 +213,8 @@ func (s *ReviewService) SubmitReview(
 
 	// Step 1: Validate transaction (with FOR UPDATE)
 	var status string
-	err = dbTx.QueryRow(ctx, "SELECT status FROM transactions WHERE id = $1 FOR UPDATE", txID).Scan(&status)
+	var queueID *string
+	err = dbTx.QueryRow(ctx, "SELECT status, queue_id FROM transactions WHERE id = $1 FOR UPDATE", txID).Scan(&status, &queueID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("transaction not found")
@@ -227,6 +233,7 @@ func (s *ReviewService) SubmitReview(
 		Decision:      req.Decision,
 		Notes:         req.Notes,
 		ReviewedAt:    time.Now().UTC(),
+		QueueID:       queueID,
 	}
 
 	if err := s.reviewRepo.Create(ctx, dbTx, review); err != nil {
@@ -239,19 +246,69 @@ func (s *ReviewService) SubmitReview(
 		newStatus = "escalated"
 	}
 
-	if status == "breached" {
-		_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $1", txID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update transaction claimed fields: %w", err)
-		}
-		_, err = dbTx.Exec(ctx, "UPDATE sla_breaches SET status = $1 WHERE transaction_id = $2 AND tier = 1", newStatus, txID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to update sla_breaches status: %w", err)
+	if newStatus == "escalated" {
+		// If escalated, unclaim it so someone else can pick it up
+		if status == "breached" {
+			_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $1", txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update transaction claimed fields: %w", err)
+			}
+			_, err = dbTx.Exec(ctx, "UPDATE sla_breaches SET status = $1 WHERE transaction_id = $2 AND tier = 1", newStatus, txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update sla_breaches status: %w", err)
+			}
+		} else {
+			_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", newStatus, txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update transaction status: %w", err)
+			}
 		}
 	} else {
-		_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", newStatus, txID)
+		// Terminal review: stamp the reviewer
+		if status == "breached" {
+			_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = $1, claimed_at = COALESCE(claimed_at, NOW()), sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", analystID, txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update transaction claimed fields: %w", err)
+			}
+			_, err = dbTx.Exec(ctx, "UPDATE sla_breaches SET status = $1 WHERE transaction_id = $2 AND tier = 1", newStatus, txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update sla_breaches status: %w", err)
+			}
+		} else {
+			_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = $2, claimed_at = COALESCE(claimed_at, NOW()), sla_paused_at = NULL, updated_at = NOW() WHERE id = $3", newStatus, analystID, txID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to update transaction status: %w", err)
+			}
+		}
+	}
+
+	// Step 4: Write escalations and action_logs
+	if newStatus == "escalated" {
+		var payloadJSON string
+		if req.TargetQueueID != nil && *req.TargetQueueID != "" {
+			_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_queue_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6)", txID, analystID, queueID, *req.TargetQueueID, req.Decision, req.Notes)
+			payloadJSON = fmt.Sprintf(`{"target_queue_id":"%s","reason":"%s","notes":"%s"}`, *req.TargetQueueID, req.Decision, req.Notes)
+		} else if req.TargetAnalystID != nil && *req.TargetAnalystID != "" {
+			_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_analyst_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6)", txID, analystID, queueID, *req.TargetAnalystID, req.Decision, req.Notes)
+			payloadJSON = fmt.Sprintf(`{"target_analyst_id":"%s","reason":"%s","notes":"%s"}`, *req.TargetAnalystID, req.Decision, req.Notes)
+		} else {
+			// default escalate without specific target
+			_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5)", txID, analystID, queueID, req.Decision, req.Notes)
+			payloadJSON = fmt.Sprintf(`{"reason":"%s","notes":"%s"}`, req.Decision, req.Notes)
+		}
 		if err != nil {
-			return nil, fmt.Errorf("failed to update transaction status: %w", err)
+			return nil, fmt.Errorf("failed to insert escalation record: %w", err)
+		}
+		
+		_, err = dbTx.Exec(ctx, "INSERT INTO action_logs (transaction_id, reviewer_id, action_type, action_payload) VALUES ($1, $2, 'ESCALATED', $3)", txID, analystID, payloadJSON)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert action log: %w", err)
+		}
+	} else {
+		payloadJSON := fmt.Sprintf(`{"decision":"%s","notes":"%s"}`, req.Decision, req.Notes)
+		_, err = dbTx.Exec(ctx, "INSERT INTO action_logs (transaction_id, reviewer_id, action_type, action_payload) VALUES ($1, $2, 'REVIEWED', $3)", txID, analystID, payloadJSON)
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert action log: %w", err)
 		}
 	}
 

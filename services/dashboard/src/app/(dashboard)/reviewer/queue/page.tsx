@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "../../../contexts/AuthContext";
 import { RadialRiskGauge } from "@/components/RadialRiskGauge";
 import { EmptyState } from "@/components/EmptyState";
@@ -13,6 +13,7 @@ import {
   Search,
   RefreshCw,
   UserCheck,
+  PauseCircle,
 } from "lucide-react";
 
 // ─── Filter Sub-Components (Admin Image 3 Style - No Box Container) ───────────
@@ -131,8 +132,9 @@ const KpiCard = ({
 );
 
 // ─── Main Reviewer Queue Page ─────────────────────────────────────────────────
-export default function ReviewerQueuePage() {
+function ReviewerQueuePageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, token } = useAuth();
 
   // Dynamic real-time data state from APIs (No static/dummy data)
@@ -159,9 +161,18 @@ export default function ReviewerQueuePage() {
   // Claimed state in-memory during session
   const [claimedIds, setClaimedIds] = useState<Set<string>>(new Set());
 
-  // Pagination state
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  // Pagination state — init from URL so "Back" returns to the correct page
+  const [currentPage, setCurrentPage] = useState<number>(() => {
+    const p = parseInt(searchParams.get("page") || "1", 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  });
   const [pageSize, setPageSize] = useState<number>(10);
+
+  // Mirror page changes into URL so the browser back-button and returnPage param work
+  const navigateToPage = useCallback((n: number) => {
+    setCurrentPage(n);
+    router.replace(`/reviewer/queue?page=${n}`);
+  }, [router]);
 
   // Determine reviewer's assigned queue
   const myQueueId = analystProfile?.queue_id || (user as any)?.queue_id;
@@ -228,8 +239,8 @@ export default function ReviewerQueuePage() {
             const rawList: any[] = Array.isArray(txData)
               ? txData
               : Array.isArray(txData?.data)
-              ? txData.data
-              : [];
+                ? txData.data
+                : [];
             setTransactions(rawList);
           }
         } catch {
@@ -259,7 +270,7 @@ export default function ReviewerQueuePage() {
   // ─── Helper: Determine if a transaction belongs to this Reviewer's queue ───
   const isAssignedToMe = useCallback(
     (t: any) => {
-      const validStatuses = ["escalated", "breached", "pending", "scored", "auto_blocked", "reviewed"];
+      const validStatuses = ["escalated", "breached", "pending", "scored", "auto_blocked", "reviewed", "rejected"];
       if (!t.status || !validStatuses.includes(t.status.toLowerCase())) {
         return false;
       }
@@ -280,11 +291,14 @@ export default function ReviewerQueuePage() {
   const getSlaRemaining = useCallback(
     (t: any) => {
       if (t.status === "breached") return 0;
+      
       const slaTarget = t.queue_id ? queues.find((q: any) => q.id === t.queue_id)?.sla_target_minutes || myQueueSla : myQueueSla;
       const start = new Date(
         t.sla_start_at || t.created_at || t.timestamp || Date.now()
       ).getTime();
-      const elapsedMinutes = Math.floor((Date.now() - start) / 60000);
+      
+      const end = t.sla_paused_at ? new Date(t.sla_paused_at).getTime() : Date.now();
+      const elapsedMinutes = Math.floor((end - start) / 60000);
       return Math.max(-99, slaTarget - elapsedMinutes);
     },
     [myQueueSla, queues, tick]
@@ -331,6 +345,8 @@ export default function ReviewerQueuePage() {
         return { color: "#a78bfa", bg: "rgba(167, 139, 250, 0.15)" };
       case "reviewed":
         return { color: "#38bdf8", bg: "rgba(56, 189, 248, 0.15)" };
+      case "rejected":
+        return { color: "#f43f5e", bg: "rgba(244, 63, 94, 0.15)" };
       default:
         return { color: "#94a3b8", bg: "rgba(148, 163, 184, 0.15)" };
     }
@@ -382,13 +398,13 @@ export default function ReviewerQueuePage() {
 
       // Channel filter
       if (channelFilter !== "all" && (t.channel || t.transaction_channel || "").toLowerCase() !== channelFilter.toLowerCase()) return false;
-      
+
       // Location filter (exact match on country code, ignoring case)
       if (locationFilter !== "all") {
         const loc = (t.country_code || t.location?.country || "").toLowerCase();
         if (loc !== locationFilter.toLowerCase()) return false;
       }
-      
+
       // Original Queue filter
       if (origQueueFilter !== "all") {
         const qName = (t.queue_name || t.original_queue_name || t.queue_id || "").toLowerCase();
@@ -521,7 +537,7 @@ export default function ReviewerQueuePage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px", paddingBottom: "32px" }}>
-      
+
       {/* ── 1. Top Capsule Header (ONLY capsule tag + Refresh button) ──────── */}
       <div
         style={{
@@ -783,36 +799,36 @@ export default function ReviewerQueuePage() {
               locationFilter !== "all" ||
               origQueueFilter !== "all" ||
               searchQuery !== "") && (
-              <button
-                onClick={() => {
-                  setDateFilter("");
-                  setStatusFilter("all");
-                  setAmountRangeFilter("");
-                  setScoreRangeFilter("");
-                  setRiskSourceFilter("all");
-                  setChannelFilter("all");
-                  setLocationFilter("all");
-                  setOrigQueueFilter("all");
-                  setSearchQuery("");
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 14px",
-                  borderRadius: "6px",
-                  backgroundColor: "rgba(248,113,113,0.05)",
-                  border: "1px solid rgba(248,113,113,0.3)",
-                  color: "#f87171",
-                  fontSize: "0.8rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                }}
-              >
-                Clear Filters
-              </button>
-            )}
+                <button
+                  onClick={() => {
+                    setDateFilter("");
+                    setStatusFilter("all");
+                    setAmountRangeFilter("");
+                    setScoreRangeFilter("");
+                    setRiskSourceFilter("all");
+                    setChannelFilter("all");
+                    setLocationFilter("all");
+                    setOrigQueueFilter("all");
+                    setSearchQuery("");
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 14px",
+                    borderRadius: "6px",
+                    backgroundColor: "rgba(248,113,113,0.05)",
+                    border: "1px solid rgba(248,113,113,0.3)",
+                    color: "#f87171",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    transition: "all 0.2s",
+                  }}
+                >
+                  Clear Filters
+                </button>
+              )}
             <button
               title="Refresh Data"
               style={{
@@ -868,7 +884,7 @@ export default function ReviewerQueuePage() {
                 <th style={thStyle}>SLA Timer</th>
                 <th style={thStyle}>Status</th>
                 <th style={{ ...thStyle, textAlign: "center" }}>Score</th>
-                <th style={thStyle}>Flag Reason</th>
+                <th style={thStyle}>Risk Band</th>
                 <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
                 <th style={thStyle}>Risk Source</th>
                 <th style={thStyle}>Merchant</th>
@@ -930,7 +946,7 @@ export default function ReviewerQueuePage() {
                     <tr
                       key={t.id}
                       onClick={() => {
-                        router.push(`/reviewer/investigate?id=${t.id}`);
+                        router.push(`/reviewer/investigate?id=${t.id}&returnPage=${currentPage}`);
                       }}
                       style={{
                         borderBottom: isLast
@@ -1005,24 +1021,32 @@ export default function ReviewerQueuePage() {
                       </td>
 
                       {/* SLA Timer */}
-                      <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
+                          <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
                         <div
                           style={{
                             display: "flex",
                             alignItems: "center",
                             gap: "6px",
-                            color: isSlaBreached
+                            color: t.status === "reviewed"
+                              ? "#94A3B8"
+                              : isSlaBreached
                               ? "#EF4444"
                               : isSlaWarning
-                              ? "#F59E0B"
-                              : "#10B981",
+                                ? "#F59E0B"
+                                : "#10B981",
                             fontWeight: 600,
                             fontSize: "0.82rem",
                             fontFamily: "monospace",
                           }}
                         >
-                          <Clock size={14} />
-                          {`${slaRem}m left`}
+                          {(t.assignee || claimedIds.has(t.id)) ? (
+                            <div title="Claimed" style={{ display: 'flex', alignItems: 'center' }}>
+                              <PauseCircle size={14} style={(t.status === "reviewed" || t.review_decision === "escalate") ? { opacity: 0.5 } : {}} />
+                            </div>
+                          ) : (
+                            <Clock size={14} style={(t.status === "reviewed" || t.review_decision === "escalate") ? { opacity: 0.5 } : {}} />
+                          )}
+                          {(t.status === "reviewed" || t.review_decision === "escalate") ? "—" : `${slaRem}m left`}
                         </div>
                       </td>
 
@@ -1037,12 +1061,12 @@ export default function ReviewerQueuePage() {
                             fontSize: "0.75rem",
                             fontWeight: 600,
                             textTransform: "capitalize",
-                            backgroundColor: statusStyle.bg,
-                            color: statusStyle.color,
-                            border: `1px solid ${statusStyle.color}35`,
+                            backgroundColor: t.review_decision === "escalate" ? getStatusStyle("reviewed").bg : statusStyle.bg,
+                            color: t.review_decision === "escalate" ? getStatusStyle("reviewed").color : statusStyle.color,
+                            border: `1px solid ${t.review_decision === "escalate" ? getStatusStyle("reviewed").color : statusStyle.color}35`,
                           }}
                         >
-                          {(t.status || "scored").replace("_", " ")}
+                          {t.review_decision === "escalate" ? "Reviewed" : (t.status || "scored").replace("_", " ")}
                         </span>
                       </td>
 
@@ -1063,36 +1087,42 @@ export default function ReviewerQueuePage() {
                             fontFamily: "monospace",
                             fontWeight: 700,
                             backgroundColor:
-                              score >= 0.85
-                                ? "rgba(239, 68, 68, 0.15)"
-                                : score >= 0.7
-                                ? "rgba(249, 115, 22, 0.15)"
-                                : score >= 0.45
-                                ? "rgba(250, 204, 21, 0.15)"
-                                : "rgba(16, 185, 129, 0.15)",
+                              t.fraud_score == null
+                                ? "rgba(255, 255, 255, 0.05)"
+                                : score >= 0.85
+                                  ? "rgba(239, 68, 68, 0.15)"
+                                  : score >= 0.7
+                                    ? "rgba(249, 115, 22, 0.15)"
+                                    : score >= 0.45
+                                      ? "rgba(250, 204, 21, 0.15)"
+                                      : "rgba(16, 185, 129, 0.15)",
                             color:
-                              score >= 0.85
-                                ? "#EF4444"
-                                : score >= 0.7
-                                ? "#FB923C"
-                                : score >= 0.45
-                                ? "#FACC15"
-                                : "#10B981",
+                              t.fraud_score == null
+                                ? "#94A3B8"
+                                : score >= 0.85
+                                  ? "#EF4444"
+                                  : score >= 0.7
+                                    ? "#FB923C"
+                                    : score >= 0.45
+                                      ? "#FACC15"
+                                      : "#10B981",
                             border:
-                              score >= 0.85
-                                ? "1px solid rgba(239, 68, 68, 0.3)"
-                                : score >= 0.7
-                                ? "1px solid rgba(249, 115, 22, 0.3)"
-                                : score >= 0.45
-                                ? "1px solid rgba(250, 204, 21, 0.3)"
-                                : "1px solid rgba(16, 185, 129, 0.3)",
+                              t.fraud_score == null
+                                ? "1px solid rgba(255, 255, 255, 0.1)"
+                                : score >= 0.85
+                                  ? "1px solid rgba(239, 68, 68, 0.3)"
+                                  : score >= 0.7
+                                    ? "1px solid rgba(249, 115, 22, 0.3)"
+                                    : score >= 0.45
+                                      ? "1px solid rgba(250, 204, 21, 0.3)"
+                                      : "1px solid rgba(16, 185, 129, 0.3)",
                           }}
                         >
-                          {(score * 100).toFixed(0)}%
+                          {t.fraud_score == null ? "-" : `${(score * 100).toFixed(0)}%`}
                         </span>
                       </td>
 
-                      {/* Flag Reason */}
+                      {/* Risk Band */}
                       <td style={{ padding: "16px 18px", whiteSpace: "nowrap" }}>
                         <span
                           style={{
@@ -1102,26 +1132,27 @@ export default function ReviewerQueuePage() {
                               score >= 0.85
                                 ? "rgba(239, 68, 68, 0.1)"
                                 : score >= 0.7
-                                ? "rgba(249, 115, 22, 0.1)"
-                                : "rgba(255, 255, 255, 0.04)",
+                                  ? "rgba(249, 115, 22, 0.1)"
+                                  : "rgba(255, 255, 255, 0.04)",
                             color:
                               score >= 0.85
                                 ? "#EF4444"
                                 : score >= 0.7
-                                ? "#FB923C"
-                                : "#CBD5E1",
+                                  ? "#FB923C"
+                                  : "#CBD5E1",
                             border:
                               score >= 0.85
                                 ? "1px solid rgba(239, 68, 68, 0.25)"
                                 : score >= 0.7
-                                ? "1px solid rgba(249, 115, 22, 0.25)"
-                                : "1px solid rgba(255, 255, 255, 0.1)",
+                                  ? "1px solid rgba(249, 115, 22, 0.25)"
+                                  : "1px solid rgba(255, 255, 255, 0.1)",
                             fontSize: "0.78rem",
                             fontWeight: 500,
                             display: "inline-block",
+                            textTransform: "capitalize",
                           }}
                         >
-                          {getFlagReason(t)}
+                          {t.risk_band || "-"}
                         </span>
                       </td>
 
@@ -1176,7 +1207,7 @@ export default function ReviewerQueuePage() {
                       >
                         {t.merchant_name || "N/A"}
                       </td>
-                      
+
                       {/* Channel */}
                       <td style={{ padding: "16px 18px", color: "#94A3B8", fontSize: "0.85rem", whiteSpace: "nowrap" }}>
                         <span style={{ textTransform: "capitalize" }}>
@@ -1188,7 +1219,7 @@ export default function ReviewerQueuePage() {
                       <td style={{ padding: "16px 18px", color: "#94A3B8", fontSize: "0.82rem", whiteSpace: "nowrap" }}>
                         {t.country_code || t.location?.country ? (
                           <span>
-                            {t.country_code || t.location?.country} 
+                            {t.country_code || t.location?.country}
                             {(t.ip_address || t.location?.ip) && ` (${t.ip_address || t.location?.ip})`}
                           </span>
                         ) : (
@@ -1219,7 +1250,59 @@ export default function ReviewerQueuePage() {
                         style={{ padding: "16px 18px", textAlign: "right", whiteSpace: "nowrap" }}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {!isClaimedByMe && !t.review_decision ? (
+                        {t.status === "rejected" ? (
+                          <button
+                            disabled
+                            style={{
+                              padding: "6px 14px",
+                              borderRadius: "6px",
+                              backgroundColor: "rgba(244, 63, 94, 0.1)",
+                              color: "#F43F5E",
+                              border: "1px solid rgba(244, 63, 94, 0.2)",
+                              fontWeight: 600,
+                              fontSize: "0.78rem",
+                              cursor: "not-allowed",
+                            }}
+                          >
+                            Rejected
+                          </button>
+                        ) : t.status === "breached" && !t.assignee && !claimedIds.has(t.id) && !t.review_decision && t.status !== "escalated" && t.status !== "reviewed" ? (
+                          <button
+                            disabled
+                            style={{
+                              padding: "6px 14px",
+                              borderRadius: "6px",
+                              backgroundColor: "rgba(239, 68, 68, 0.1)",
+                              color: "#EF4444",
+                              border: "1px solid rgba(239, 68, 68, 0.2)",
+                              fontWeight: 600,
+                              fontSize: "0.78rem",
+                              cursor: "not-allowed",
+                            }}
+                          >
+                            Breached
+                          </button>
+                        ) : t.status === "reviewed" || t.status === "escalated" || t.review_decision ? (
+                          <button
+                            onClick={() => router.push(`/reviewer/investigate?id=${t.id}&returnPage=${currentPage}`)}
+                            style={{
+                              padding: "6px 14px",
+                              borderRadius: "6px",
+                              backgroundColor: "rgba(148, 163, 184, 0.15)",
+                              border: "1px solid rgba(148, 163, 184, 0.3)",
+                              color: "#CBD5E1",
+                              fontWeight: 600,
+                              fontSize: "0.78rem",
+                              cursor: "pointer",
+                              transition: "all 0.2s",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                            }}
+                          >
+                            View Case
+                          </button>
+                        ) : !isClaimedByMe ? (
                           <div style={{ display: "inline-flex", gap: "8px", alignItems: "center" }}>
                             <button
                               onClick={(e) => claimSingle(t.id, e)}
@@ -1273,7 +1356,7 @@ export default function ReviewerQueuePage() {
                           </div>
                         ) : (
                           <button
-                            onClick={() => router.push(`/reviewer/investigate?id=${t.id}`)}
+                            onClick={() => router.push(`/reviewer/investigate?id=${t.id}&returnPage=${currentPage}`)}
                             style={{
                               padding: "6px 14px",
                               borderRadius: "6px",
@@ -1384,7 +1467,7 @@ export default function ReviewerQueuePage() {
               }}
             >
               <button
-                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                onClick={() => navigateToPage(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
                 style={{
                   padding: "6px 12px",
@@ -1425,7 +1508,7 @@ export default function ReviewerQueuePage() {
                 return (
                   <button
                     key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
+                    onClick={() => navigateToPage(pageNum)}
                     style={{
                       minWidth: "32px",
                       height: "32px",
@@ -1450,9 +1533,7 @@ export default function ReviewerQueuePage() {
               })}
 
               <button
-                onClick={() =>
-                  setCurrentPage((p) => Math.min(totalPages, p + 1))
-                }
+                onClick={() => navigateToPage(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
                 style={{
                   padding: "6px 12px",
@@ -1477,5 +1558,13 @@ export default function ReviewerQueuePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ReviewerQueuePage() {
+  return (
+    <Suspense fallback={<div style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)" }}>Loading queue…</div>}>
+      <ReviewerQueuePageInner />
+    </Suspense>
   );
 }

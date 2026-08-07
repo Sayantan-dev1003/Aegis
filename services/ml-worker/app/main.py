@@ -6,6 +6,7 @@ import threading
 import uvicorn
 import redis
 import atexit
+import os
 
 from opentelemetry import trace
 
@@ -76,16 +77,16 @@ def bootstrap() -> None:
         logger.info("bootstrap_complete", is_ready=container.is_ready)
     except ArtifactLoadError as e:
         logger.critical("bootstrap_failed_artifact_load", error=str(e))
-        sys.exit(1)
+        os._exit(1)
     except (redis.RedisError, RedisStateError) as e:
         logger.critical("bootstrap_failed_redis", error=str(e))
-        sys.exit(1)
+        os._exit(1)
     except (KafkaProducerError, KafkaConsumerError, KafkaException) as e:
         logger.critical("bootstrap_failed_kafka", error=str(e))
-        sys.exit(1)
+        os._exit(1)
     except Exception as e:
         logger.critical("bootstrap_failed_unknown", error=str(e))
-        sys.exit(1)
+        os._exit(1)
 
 def init_background():
     bootstrap()

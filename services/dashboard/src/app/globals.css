@@ -1,4 +1,5 @@
 /* Minimalist Yellow Theme - Professional & Sober */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
 
 :root {
   /* Colors - Aegis Deep Dark Mode */
@@ -187,3 +188,78 @@ button, input, select, textarea {
   letter-spacing: 0.06em;
 }
 
+/* ── Investigation Page — animations & utility classes ─────────────────────── */
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes barGrow {
+  from { width: 0%; }
+  to   { width: var(--bar-target); }
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4); }
+  50%       { box-shadow: 0 0 0 8px rgba(244, 63, 94, 0); }
+}
+@keyframes successPop {
+  0%   { transform: scale(0.8); opacity: 0; }
+  60%  { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.invest-card {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.invest-card:hover { border-color: rgba(6, 182, 212, 0.15); }
+
+.invest-section-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(6, 182, 212, 0.03);
+}
+
+.invest-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.invest-row:last-child { border-bottom: none; }
+
+.shap-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  animation: barGrow 0.7s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.decision-btn {
+  padding: 11px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.18s;
+  letter-spacing: 0.01em;
+}
+.decision-btn:hover { transform: translateY(-1px); }
+
+.vel-tab {
+  padding: 5px 16px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.18s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.history-row:hover { background: rgba(255, 255, 255, 0.02); }

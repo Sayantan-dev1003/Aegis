@@ -11,16 +11,18 @@ import (
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
 	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
 	"github.com/go-chi/chi/v5"
+	"github.com/redis/go-redis/v9"
 )
 
 type RuleHandler struct {
 	ruleRepo      *repository.RuleRepository
 	auditRepo     *repository.AuditRepository
 	analyticsRepo *repository.RuleAnalyticsRepository
+	rdb           *redis.Client
 }
 
-func NewRuleHandler(ruleRepo *repository.RuleRepository, auditRepo *repository.AuditRepository, analyticsRepo *repository.RuleAnalyticsRepository) *RuleHandler {
-	return &RuleHandler{ruleRepo: ruleRepo, auditRepo: auditRepo, analyticsRepo: analyticsRepo}
+func NewRuleHandler(ruleRepo *repository.RuleRepository, auditRepo *repository.AuditRepository, analyticsRepo *repository.RuleAnalyticsRepository, rdb *redis.Client) *RuleHandler {
+	return &RuleHandler{ruleRepo: ruleRepo, auditRepo: auditRepo, analyticsRepo: analyticsRepo, rdb: rdb}
 }
 
 func (h *RuleHandler) respondError(w http.ResponseWriter, msg string, code int) {
@@ -71,6 +73,8 @@ func (h *RuleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.rdb.Publish(r.Context(), "rules_config_updates", "created")
+
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
 	ctxWithInfo := auditContext(r)
 	go func() {
@@ -108,6 +112,8 @@ func (h *RuleHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.rdb.Publish(r.Context(), "rules_config_updates", "updated")
+
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
 	ctxWithInfo := auditContext(r)
 	go func() {
@@ -144,6 +150,8 @@ func (h *RuleHandler) ToggleActive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.rdb.Publish(r.Context(), "rules_config_updates", "toggled")
+
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
 	ctxWithInfo := auditContext(r)
 	go func() {
@@ -171,6 +179,8 @@ func (h *RuleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		h.respondError(w, "failed to delete rule", http.StatusInternalServerError)
 		return
 	}
+
+	h.rdb.Publish(r.Context(), "rules_config_updates", "deleted")
 
 	info, _ := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
 	ctxWithInfo := auditContext(r)

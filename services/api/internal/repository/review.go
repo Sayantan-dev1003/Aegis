@@ -23,8 +23,8 @@ func NewReviewRepository(db *pgxpool.Pool) *ReviewRepository {
 // Create inserts a new review.
 func (r *ReviewRepository) Create(ctx context.Context, tx pgx.Tx, review *model.Review) error {
 	query := `
-		INSERT INTO reviews (transaction_id, reviewer_id, decision, notes, reviewed_at)
-		VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5, '0001-01-01 00:00:00+00'::timestamptz), NOW()))
+		INSERT INTO reviews (transaction_id, reviewer_id, decision, notes, reviewed_at, queue_id)
+		VALUES ($1, $2, $3, $4, COALESCE(NULLIF($5, '0001-01-01 00:00:00+00'::timestamptz), NOW()), $6)
 		RETURNING id, reviewed_at
 	`
 	
@@ -34,6 +34,7 @@ func (r *ReviewRepository) Create(ctx context.Context, tx pgx.Tx, review *model.
 		review.Decision,
 		review.Notes,
 		review.ReviewedAt,
+		review.QueueID,
 	).Scan(&review.ID, &review.ReviewedAt)
 
 	if err != nil {
@@ -45,7 +46,7 @@ func (r *ReviewRepository) Create(ctx context.Context, tx pgx.Tx, review *model.
 // GetByTransactionID retrieves a review by transaction ID.
 func (r *ReviewRepository) GetByTransactionID(ctx context.Context, txID string) (*model.Review, error) {
 	query := `
-		SELECT id, transaction_id, reviewer_id, decision, notes, reviewed_at
+		SELECT id, transaction_id, reviewer_id, decision, notes, reviewed_at, queue_id
 		FROM reviews
 		WHERE transaction_id = $1
 	`
@@ -57,6 +58,7 @@ func (r *ReviewRepository) GetByTransactionID(ctx context.Context, txID string) 
 		&result.Decision,
 		&result.Notes,
 		&result.ReviewedAt,
+		&result.QueueID,
 	)
 
 	if err != nil {

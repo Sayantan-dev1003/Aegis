@@ -108,7 +108,7 @@ func main() {
 	velocityStore := repository.NewVelocityStore(redisClient, velocityConfigRepo, &log.Logger)
 	ruleAnalyticsRepo := repository.NewRuleAnalyticsRepository(redisClient)
 
-	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo, velocityStore, ruleAnalyticsRepo)
+	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo, velocityStore, ruleAnalyticsRepo, redisClient, &log.Logger)
 	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo, rulesEngine, queueRepo)
 	ingestHandler := handler.NewIngestHandler(ingestService, velocityStore)
 
@@ -157,6 +157,7 @@ func main() {
 	intRepo := repository.NewIntegrationRepository(pgPool)
 	modelRepo := repository.NewModelRepository(pgPool)
 	retrainRepo := repository.NewRetrainRepository(pgPool)
+	customerRepo := repository.NewCustomerRepository(pgPool)
 
 	// Cleanup any zombie retrain jobs left over from a previous crash
 	if err := retrainRepo.CleanupZombieJobs(ctx); err != nil {
@@ -178,12 +179,13 @@ func main() {
 	analystHandler := handler.NewAnalystHandler(analystRepo, auditRepo, authService)
 	
 	// Phase 2 Handlers
-	ruleHandler := handler.NewRuleHandler(ruleRepo, auditRepo, ruleAnalyticsRepo)
+	ruleHandler := handler.NewRuleHandler(ruleRepo, auditRepo, ruleAnalyticsRepo, redisClient)
 	queueHandler := handler.NewQueueHandler(queueRepo, auditRepo)
 	intHandler := handler.NewIntegrationHandler(intRepo, auditRepo)
 	modelHandler := handler.NewModelHandler(modelRepo, auditRepo)
 	retrainHandler := handler.NewRetrainHandler(retrainRepo, modelRepo, incidentRepo)
 	velocityConfigHandler := handler.NewVelocityConfigHandler(velocityConfigRepo, redisClient)
+	customerHandler := handler.NewCustomerHandler(customerRepo, txRepo)
 
 	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, fraudService)
 	wg.Add(1)
@@ -343,6 +345,8 @@ func main() {
 		r.Get("/api/v1/stats/outcomes", statsHandler.OutcomeDistribution)
 		r.Get("/api/v1/reports/export", statsHandler.ExportReportPDF)
 		r.Get("/api/v1/incidents", incidentHandler.GetActiveIncidents)
+		r.Get("/api/v1/customers/{account_id}", customerHandler.GetCustomer)
+		r.Get("/api/v1/customers/{account_id}/transactions", customerHandler.GetCustomerTransactions)
 	})
 
 	// Start server on configured API port

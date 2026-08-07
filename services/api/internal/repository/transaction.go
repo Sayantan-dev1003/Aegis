@@ -134,14 +134,37 @@ func (r *TransactionRepository) UpdateStatusAndRisk(ctx context.Context, id stri
 func (r *TransactionRepository) FindByID(ctx context.Context, id string) (*model.Transaction, error) {
 	query := `
 		SELECT 
-			id, external_id, account_id, merchant_id, merchant_name, merchant_category,
-			amount, currency, country_code, transaction_type, channel, device_id,
-			ip_address::text, timestamp, ingested_at, status, queue_id,
-			claimed_by, claimed_at, sla_start_at, sla_remaining_seconds, COALESCE(priority_level, 'normal'),
-			risk_score, risk_band, risk_source, COALESCE(reject_count, 0),
-			COALESCE(sla_breach_type, 'none'), COALESCE(requires_admin_review, FALSE), sla_paused_at
-		FROM transactions
-		WHERE id = $1
+			t.id, t.external_id, t.account_id, t.merchant_id, t.merchant_name, t.merchant_category,
+			t.amount, t.currency, t.country_code, t.transaction_type, t.channel, t.device_id,
+			t.ip_address::text, t.timestamp, t.ingested_at, t.updated_at, t.status, t.queue_id,
+			COALESCE(t.claimed_by, al.first_claimed_by), COALESCE(t.claimed_at, al.first_claimed_at), t.sla_start_at, t.sla_remaining_seconds, COALESCE(t.priority_level, 'normal'),
+			t.risk_score, t.risk_band, t.risk_source, COALESCE(t.reject_count, 0),
+			COALESCE(t.sla_breach_type, 'none'), COALESCE(t.requires_admin_review, FALSE), t.sla_paused_at,
+			q.name as queue_name,
+			COALESCE(a.full_name, aa.full_name) as claimed_by_name,
+			sb.breached_at,
+			e.escalated_at,
+			COALESCE(eq.name, ea.full_name) as escalated_to
+		FROM transactions t
+		LEFT JOIN queues q ON t.queue_id = q.id
+		LEFT JOIN analysts a ON t.claimed_by = a.id
+		LEFT JOIN (
+			SELECT DISTINCT ON (transaction_id) transaction_id, created_at as first_claimed_at, reviewer_id as first_claimed_by
+			FROM action_logs WHERE action_type = 'CLAIMED' 
+			ORDER BY transaction_id, created_at ASC
+		) al ON t.id = al.transaction_id
+		LEFT JOIN analysts aa ON al.first_claimed_by = aa.id
+		LEFT JOIN (
+			SELECT transaction_id, MAX(breached_at) as breached_at 
+			FROM sla_breaches GROUP BY transaction_id
+		) sb ON t.id = sb.transaction_id
+		LEFT JOIN (
+			SELECT transaction_id, target_queue_id, target_analyst_id, MAX(created_at) as escalated_at 
+			FROM escalations GROUP BY transaction_id, target_queue_id, target_analyst_id
+		) e ON t.id = e.transaction_id
+		LEFT JOIN queues eq ON e.target_queue_id = eq.id
+		LEFT JOIN analysts ea ON e.target_analyst_id = ea.id
+		WHERE t.id = $1
 	`
 
 	var t model.Transaction
@@ -161,6 +184,7 @@ func (r *TransactionRepository) FindByID(ctx context.Context, id string) (*model
 		&t.IPAddress,
 		&t.Timestamp,
 		&t.IngestedAt,
+		&t.UpdatedAt,
 		&t.Status,
 		&t.QueueID,
 		&t.ClaimedBy,
@@ -175,6 +199,11 @@ func (r *TransactionRepository) FindByID(ctx context.Context, id string) (*model
 		&t.SLABreachType,
 		&t.RequiresAdminReview,
 		&t.SLAPausedAt,
+		&t.QueueName,
+		&t.ClaimedByName,
+		&t.BreachedAt,
+		&t.EscalatedAt,
+		&t.EscalatedTo,
 	)
 
 	if err != nil {
@@ -434,6 +463,68 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 	// The total count was computed above via the COUNT query.
 
 	return results, total, nil
+}
+
+// ListByAccountID retrieves transactions for a specific account with offset pagination.
+func (r *TransactionRepository) ListByAccountID(ctx context.Context, accountID string, limit int, offset int) ([]model.TransactionSummary, int, error) {
+	query := `
+		SELECT 
+			t.id, t.account_id, t.merchant_id, t.merchant_name,
+			t.amount, t.currency, t.timestamp, t.status, t.queue_id,
+			t.claimed_by, t.claimed_at, COALESCE(t.priority_level, 'normal'),
+			t.risk_score, t.risk_band, COALESCE(t.reject_count, 0), q.name as queue_name
+		FROM transactions t
+		LEFT JOIN queues q ON t.queue_id = q.id
+		WHERE t.account_id = $1
+		ORDER BY t.timestamp DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.db.Query(ctx, query, accountID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("TransactionRepository.ListByAccountID query error: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []model.TransactionSummary
+	for rows.Next() {
+		var s model.TransactionSummary
+		err := rows.Scan(
+			&s.ID,
+			&s.AccountID,
+			&s.MerchantID,
+			&s.MerchantName,
+			&s.Amount,
+			&s.Currency,
+			&s.Timestamp,
+			&s.Status,
+			&s.QueueID,
+			&s.Assignee,
+			&s.ClaimedAt,
+			&s.PriorityLevel,
+			&s.RiskScore,
+			&s.RiskBand,
+			&s.RejectCount,
+			&s.QueueName,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("TransactionRepository.ListByAccountID scan error: %w", err)
+		}
+		summaries = append(summaries, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("TransactionRepository.ListByAccountID rows error: %w", err)
+	}
+
+	var totalCount int
+	countQuery := `SELECT COUNT(*) FROM transactions WHERE account_id = $1`
+	err = r.db.QueryRow(ctx, countQuery, accountID).Scan(&totalCount)
+	if err != nil {
+		return nil, 0, fmt.Errorf("TransactionRepository.ListByAccountID count error: %w", err)
+	}
+
+	return summaries, totalCount, nil
 }
 
 // ListDLQ lists scoring failed transactions for DLQ with keyset pagination.

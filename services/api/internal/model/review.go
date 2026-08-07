@@ -11,6 +11,7 @@ type Review struct {
 	Notes         string    `json:"notes" db:"notes"`
 	ReviewedAt    time.Time `json:"reviewed_at" db:"reviewed_at"`
 	CreatedAt     time.Time `json:"created_at" db:"created_at"`
+	QueueID       *string   `json:"queue_id,omitempty" db:"queue_id"`
 }
 
 // TransactionReviewedEvent represents the event payload broadcasted when a transaction is reviewed.

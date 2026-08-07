@@ -108,7 +108,11 @@ type TransactionDetail struct {
 	SLABreachType       string     `json:"sla_breach_type,omitempty"`
 	RequiresAdminReview bool       `json:"requires_admin_review"`
 	ClaimedAt           *time.Time `json:"claimed_at,omitempty"`
+	ClaimedByName       *string    `json:"claimed_by_name,omitempty"`
 	SLAPausedAt         *time.Time `json:"sla_paused_at,omitempty"`
+	BreachedAt          *time.Time `json:"breached_at,omitempty"`
+	EscalatedAt         *time.Time `json:"escalated_at,omitempty"`
+	EscalatedTo         *string    `json:"escalated_to,omitempty"`
 }
 
 // FeatureWeight represents the impact of a specific feature on the fraud score.
@@ -137,8 +141,10 @@ type ReviewDetail struct {
 
 // SubmitReviewRequest represents the payload for submitting a review.
 type SubmitReviewRequest struct {
-	Decision string `json:"decision"`
-	Notes    string `json:"notes"`
+	Decision        string  `json:"decision"`
+	Notes           string  `json:"notes"`
+	TargetQueueID   *string `json:"target_queue_id,omitempty"`
+	TargetAnalystID *string `json:"target_analyst_id,omitempty"`
 }
 
 // StatsSummaryResponse represents the high-level statistics summary.

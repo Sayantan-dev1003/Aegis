@@ -172,10 +172,11 @@ export default function SystemHealthPage() {
     return () => { mounted = false; clearInterval(interval); };
   }, []);
 
-  const formatTime = (time: number) => {
-    if (isNaN(time)) return '';
+  const formatTime = (time: any) => {
+    const numTime = Number(time);
+    if (time == null || isNaN(numTime)) return '';
     // Round to nearest second purely for cleaner display
-    const d = new Date(Math.round(time / 1000) * 1000);
+    const d = new Date(Math.round(numTime / 1000) * 1000);
     
     if (timeRange === '720h') {
       return `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`;
@@ -335,7 +336,7 @@ export default function SystemHealthPage() {
                 tickMargin={8} 
               />
               <YAxis stroke="#4E5A6B" fontSize={11} tickLine={false} axisLine={false} />
-              <Tooltip {...tooltipStyle} />
+              <Tooltip {...tooltipStyle} labelFormatter={(label: any) => formatTime(label)} />
               <Line type="monotone" dataKey="topicA" name="txns-raw" stroke="#5C6EF8" strokeWidth={2} dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="topicB" name="txns-scored" stroke="#22D3EE" strokeWidth={2} dot={false} isAnimationActive={false} />
             </LineChart>
@@ -369,7 +370,7 @@ export default function SystemHealthPage() {
                 tickMargin={8} 
               />
               <YAxis stroke="#4E5A6B" fontSize={11} tickLine={false} axisLine={false} />
-              <Tooltip {...tooltipStyle} />
+              <Tooltip {...tooltipStyle} labelFormatter={(label: any) => formatTime(label)} />
               <Line type="monotone" dataKey="p50" name="p50" stroke="#34D399" strokeWidth={2} dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="p95" name="p95" stroke="#F59E0B" strokeWidth={2} dot={false} isAnimationActive={false} />
               <Line type="monotone" dataKey="p99" name="p99" stroke="#F43F5E" strokeWidth={2} dot={false} isAnimationActive={false} />

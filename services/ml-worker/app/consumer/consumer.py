@@ -95,7 +95,7 @@ class AegisConsumer:
                             offset=msg.offset(),
                         )
                         # Commit to discard the un-parseable message permanently
-                        self.consumer.commit(asynchronous=False)
+                        self.consumer.commit(asynchronous=True)
                         del self.poison_tracker[tracker_key]
                     # Do NOT commit until we have retried 3 times
                     continue
@@ -109,7 +109,7 @@ class AegisConsumer:
                     self.processor_callback(payload, headers, key)
                     # Processor returned normally → success or DLQ-routed.
                     # Both cases are terminal for this message; commit.
-                    self.consumer.commit(asynchronous=False)
+                    self.consumer.commit(asynchronous=True)
                 except Exception as e:
                     # Processor raised unexpectedly (e.g. container not ready).
                     # Do NOT commit — allow redelivery.

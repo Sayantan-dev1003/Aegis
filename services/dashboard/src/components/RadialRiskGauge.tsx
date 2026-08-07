@@ -38,7 +38,7 @@ export const RadialRiskGauge: React.FC<RadialRiskGaugeProps> = ({ score, size = 
   const circumference = 2 * Math.PI * radius;
   // We want a 270 degree arc (3/4 of a circle)
   const arcLength = circumference * 0.75;
-  const offset = circumference - (clampedScore / 100) * arcLength;
+  const offset = arcLength - (clampedScore / 100) * arcLength;
 
   return (
     <div style={{ 
@@ -81,7 +81,7 @@ export const RadialRiskGauge: React.FC<RadialRiskGaugeProps> = ({ score, size = 
       </svg>
       <div style={{ color, display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, transform: 'translateY(-2px)' }}>
         <span style={{ fontSize: size * 0.28, fontWeight: 700, lineHeight: 1, fontFamily: 'var(--font-jetbrains-mono)' }}>
-          {clampedScore}
+          {clampedScore}%
         </span>
         <svg viewBox="0 0 24 24" width={size * 0.25} height={size * 0.25} style={{ marginTop: 2 }}>
           {icon}
