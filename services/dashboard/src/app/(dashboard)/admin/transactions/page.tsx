@@ -44,6 +44,13 @@ const StatusBadge = ({ status, decision }: { status: string, decision?: string }
           <span style={{ backgroundColor: '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem' }}>Legit</span>
         </span>
       );
+    } else if (decision === 'escalated' || decision === 'escalate') {
+      return (
+        <span style={{ display: 'inline-flex', gap: '6px', alignItems: 'center', padding: '3px 8px', borderRadius: '6px', backgroundColor: 'rgba(250, 204, 21, 0.15)', color: '#facc15', fontSize: '0.75rem', fontWeight: 600, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
+          Reviewed 
+          <span style={{ backgroundColor: '#facc15', color: '#111827', padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem' }}>Escalated</span>
+        </span>
+      );
     }
     color = '#60a5fa'; bg = 'rgba(96, 165, 250, 0.15)';
   } else {

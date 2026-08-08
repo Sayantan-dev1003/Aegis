@@ -142,6 +142,7 @@ type ReviewDetail struct {
 // SubmitReviewRequest represents the payload for submitting a review.
 type SubmitReviewRequest struct {
 	Decision        string  `json:"decision"`
+	ReasonCode      string  `json:"reason_code"`
 	Notes           string  `json:"notes"`
 	TargetQueueID   *string `json:"target_queue_id,omitempty"`
 	TargetAnalystID *string `json:"target_analyst_id,omitempty"`

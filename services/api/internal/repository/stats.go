@@ -64,8 +64,8 @@ func (r *StatsRepository) PendingReview(ctx context.Context) (int, error) {
 	query := `
 		SELECT COUNT(*) FROM transactions t
 		LEFT JOIN reviews r ON r.transaction_id = t.id
-		WHERE t.status IN ('scored', 'auto_blocked')
-		AND r.id IS NULL
+		WHERE (t.status IN ('scored', 'auto_blocked', 'breached') AND r.id IS NULL)
+		   OR r.decision = 'escalated'
 	`
 	var count int
 	err := r.db.QueryRow(ctx, query).Scan(&count)

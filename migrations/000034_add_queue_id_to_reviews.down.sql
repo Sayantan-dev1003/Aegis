@@ -1,0 +1,2 @@
+ALTER TABLE reviews
+DROP COLUMN IF EXISTS queue_id;

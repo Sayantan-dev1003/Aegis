@@ -467,8 +467,12 @@ function ReviewerQueuePageInner() {
   const queueDepthCount = useMemo(() => myQueueCases.length, [myQueueCases]);
 
   const myOpenCount = useMemo(
-    () => myQueueCases.filter((t) => !t.review_decision).length,
-    [myQueueCases]
+    () => myQueueCases.filter((t) => {
+      const currentlyMine = (myQueueId && t.queue_id === myQueueId) || (myQueueName && t.queue_name === myQueueName);
+      if (!currentlyMine) return false;
+      return !t.review_decision || t.review_decision === "escalated" || t.review_decision === "escalate";
+    }).length,
+    [myQueueCases, myQueueId, myQueueName]
   );
 
   const slaAtRiskCount = useMemo(
@@ -1282,7 +1286,7 @@ function ReviewerQueuePageInner() {
                           >
                             Breached
                           </button>
-                        ) : t.status === "reviewed" || t.status === "escalated" || t.review_decision ? (
+                        ) : (t.status === "reviewed" || (t.review_decision && t.review_decision !== "escalate" && t.review_decision !== "escalated")) ? (
                           <button
                             onClick={() => router.push(`/reviewer/investigate?id=${t.id}&returnPage=${currentPage}`)}
                             style={{

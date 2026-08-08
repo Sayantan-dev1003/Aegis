@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -227,10 +228,14 @@ func (s *ReviewService) SubmitReview(
 	}
 
 	// Step 2: Insert into reviews
+	mappedDecision := req.Decision
+	if mappedDecision == "escalate" {
+		mappedDecision = "escalated"
+	}
 	review := &model.Review{
 		TransactionID: txID,
 		ReviewerID:    analystID,
-		Decision:      req.Decision,
+		Decision:      mappedDecision,
 		Notes:         req.Notes,
 		ReviewedAt:    time.Now().UTC(),
 		QueueID:       queueID,
@@ -242,14 +247,21 @@ func (s *ReviewService) SubmitReview(
 
 	// Step 3: Update transaction status
 	newStatus := "reviewed"
-	if req.Decision == "escalate" {
-		newStatus = "escalated"
-	}
+	isEscalate := req.Decision == "escalate"
 
-	if newStatus == "escalated" {
-		// If escalated, unclaim it so someone else can pick it up
+	if isEscalate {
+		// If escalated, we keep status as reviewed but update queue if necessary, and unclaim
+		var targetQueueID *string
+		if req.TargetQueueID != nil && *req.TargetQueueID != "" {
+			targetQueueID = req.TargetQueueID
+		}
+		
 		if status == "breached" {
-			_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $1", txID)
+			if targetQueueID != nil {
+				_, err = dbTx.Exec(ctx, "UPDATE transactions SET queue_id = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", *targetQueueID, txID)
+			} else {
+				_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $1", txID)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to update transaction claimed fields: %w", err)
 			}
@@ -258,7 +270,11 @@ func (s *ReviewService) SubmitReview(
 				return nil, fmt.Errorf("failed to update sla_breaches status: %w", err)
 			}
 		} else {
-			_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", newStatus, txID)
+			if targetQueueID != nil {
+				_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, queue_id = $2, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $3", newStatus, *targetQueueID, txID)
+			} else {
+				_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", newStatus, txID)
+			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to update transaction status: %w", err)
 			}
@@ -283,19 +299,33 @@ func (s *ReviewService) SubmitReview(
 	}
 
 	// Step 4: Write escalations and action_logs
-	if newStatus == "escalated" {
-		var payloadJSON string
-		if req.TargetQueueID != nil && *req.TargetQueueID != "" {
-			_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_queue_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6)", txID, analystID, queueID, *req.TargetQueueID, req.Decision, req.Notes)
-			payloadJSON = fmt.Sprintf(`{"target_queue_id":"%s","reason":"%s","notes":"%s"}`, *req.TargetQueueID, req.Decision, req.Notes)
-		} else if req.TargetAnalystID != nil && *req.TargetAnalystID != "" {
-			_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_analyst_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6)", txID, analystID, queueID, *req.TargetAnalystID, req.Decision, req.Notes)
-			payloadJSON = fmt.Sprintf(`{"target_analyst_id":"%s","reason":"%s","notes":"%s"}`, *req.TargetAnalystID, req.Decision, req.Notes)
-		} else {
-			// default escalate without specific target
-			_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5)", txID, analystID, queueID, req.Decision, req.Notes)
-			payloadJSON = fmt.Sprintf(`{"reason":"%s","notes":"%s"}`, req.Decision, req.Notes)
+	if isEscalate {
+		var targetAnalystId *string
+		if req.TargetAnalystID != nil && *req.TargetAnalystID != "" {
+			targetAnalystId = req.TargetAnalystID
 		}
+			payloadMap := map[string]string{
+				"reason": req.ReasonCode,
+				"notes":  req.Notes,
+			}
+			if req.TargetQueueID != nil && *req.TargetQueueID != "" {
+				payloadMap["target_queue_id"] = *req.TargetQueueID
+			}
+			if targetAnalystId != nil {
+				payloadMap["target_analyst_id"] = *targetAnalystId
+			}
+			payloadBytes, _ := json.Marshal(payloadMap)
+			payloadJSON := string(payloadBytes)
+
+			if targetAnalystId != nil {
+				_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_queue_id, target_analyst_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)", txID, analystID, queueID, *req.TargetQueueID, *targetAnalystId, req.ReasonCode, req.Notes)
+			} else {
+				if req.TargetQueueID != nil && *req.TargetQueueID != "" {
+					_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_queue_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6)", txID, analystID, queueID, *req.TargetQueueID, req.ReasonCode, req.Notes)
+				} else {
+					_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5)", txID, analystID, queueID, req.ReasonCode, req.Notes)
+				}
+			}
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert escalation record: %w", err)
 		}
