@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { fetchApi } from "../../../lib/api";
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useWebSocket } from "../../../contexts/WebSocketContext";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +107,7 @@ export default function QueuePage() {
   const [configuringQueue, setConfiguringQueue] = useState<any>(null);
   const [isDeleting, setIsDeleting]       = useState(false);
   const [formData, setFormData]           = useState<any>({});
+  const { latestEvent } = useWebSocket();
 
   const loadQueues = async () => {
     try {
@@ -116,6 +118,23 @@ export default function QueuePage() {
   };
 
   useEffect(() => { loadQueues(); }, []);
+
+  useEffect(() => {
+    if (latestEvent?.event_type === 'queue.stats_updated') {
+      setQueues(prev => prev.map(q => {
+        if (q.id === latestEvent.queue_id) {
+          return {
+            ...q,
+            cases_breached: latestEvent.cases_breached,
+            breach_rate: latestEvent.breach_rate,
+            total_cases: latestEvent.total_cases,
+            open_cases: latestEvent.open_cases
+          };
+        }
+        return q;
+      }));
+    }
+  }, [latestEvent]);
 
   const openConfig = (q: any) => {
     setConfiguringQueue(q);

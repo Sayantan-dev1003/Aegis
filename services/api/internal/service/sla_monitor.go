@@ -146,6 +146,29 @@ func (m *SLAMonitor) processTier1Breaches(ctx context.Context) error {
 			}
 		}
 	}
+
+	// Broadcast updated queue stats for affected queues
+	queueUpdates := make(map[string]bool)
+	for _, item := range items {
+		queueUpdates[item.queueID] = true
+	}
+
+	for qID := range queueUpdates {
+		q, err := m.queueRepo.GetByID(ctx, qID)
+		if err == nil && m.hub != nil {
+			event := map[string]any{
+				"event_type":     "queue.stats_updated",
+				"queue_id":       q.ID,
+				"cases_breached": *q.CasesBreached,
+				"breach_rate":    *q.BreachRate,
+				"total_cases":    *q.TotalCases,
+				"open_cases":     *q.OpenCases,
+				"timestamp":      time.Now().UTC(),
+			}
+			m.hub.Broadcast(q.ID, event)
+		}
+	}
+
 	return nil
 }
 
@@ -285,6 +308,24 @@ func (m *SLAMonitor) processTier2Breaches(ctx context.Context) error {
 			}
 		}
 	}
+
+	// Broadcast updated queue stats for fallback queue if any items were processed
+	if len(items) > 0 {
+		q, err := m.queueRepo.GetByID(ctx, fallbackQ.ID)
+		if err == nil && m.hub != nil {
+			event := map[string]any{
+				"event_type":     "queue.stats_updated",
+				"queue_id":       q.ID,
+				"cases_breached": *q.CasesBreached,
+				"breach_rate":    *q.BreachRate,
+				"total_cases":    *q.TotalCases,
+				"open_cases":     *q.OpenCases,
+				"timestamp":      time.Now().UTC(),
+			}
+			m.hub.Broadcast(q.ID, event)
+		}
+	}
+
 	return nil
 }
 

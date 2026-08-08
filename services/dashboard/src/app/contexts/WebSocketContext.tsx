@@ -12,6 +12,7 @@ export interface TransactionEvent {
   status: string;
   fraud_score: number;
   is_fraud: boolean;
+  [key: string]: any;
 }
 
 interface WebSocketContextType {
