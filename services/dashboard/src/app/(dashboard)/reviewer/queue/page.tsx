@@ -1065,12 +1065,12 @@ function ReviewerQueuePageInner() {
                             fontSize: "0.75rem",
                             fontWeight: 600,
                             textTransform: "capitalize",
-                            backgroundColor: t.review_decision === "escalate" ? getStatusStyle("reviewed").bg : statusStyle.bg,
-                            color: t.review_decision === "escalate" ? getStatusStyle("reviewed").color : statusStyle.color,
-                            border: `1px solid ${t.review_decision === "escalate" ? getStatusStyle("reviewed").color : statusStyle.color}35`,
+                            backgroundColor: t.review_decision === "escalate" ? "rgba(245, 158, 11, 0.12)" : statusStyle.bg,
+                            color: t.review_decision === "escalate" ? "#F59E0B" : statusStyle.color,
+                            border: `1px solid ${t.review_decision === "escalate" ? "#F59E0B" : statusStyle.color}35`,
                           }}
                         >
-                          {t.review_decision === "escalate" ? "Reviewed" : (t.status || "scored").replace("_", " ")}
+                          {t.review_decision === "escalate" ? "Escalated" : (t.status || "scored").replace("_", " ")}
                         </span>
                       </td>
 
@@ -1286,7 +1286,7 @@ function ReviewerQueuePageInner() {
                           >
                             Breached
                           </button>
-                        ) : (t.status === "reviewed" || (t.review_decision && t.review_decision !== "escalate" && t.review_decision !== "escalated")) ? (
+                        ) : (t.status === "reviewed" && t.review_decision !== "escalate") ? (
                           <button
                             onClick={() => router.push(`/reviewer/investigate?id=${t.id}&returnPage=${currentPage}`)}
                             style={{

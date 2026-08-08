@@ -49,6 +49,7 @@ func (r *ReviewRepository) GetByTransactionID(ctx context.Context, txID string) 
 		SELECT id, transaction_id, reviewer_id, decision, notes, reviewed_at, queue_id
 		FROM reviews
 		WHERE transaction_id = $1
+		ORDER BY reviewed_at DESC LIMIT 1
 	`
 	var result model.Review
 	err := r.db.QueryRow(ctx, query, txID).Scan(

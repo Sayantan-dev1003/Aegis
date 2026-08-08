@@ -71,7 +71,12 @@ func (s *ReviewService) ClaimTransaction(ctx context.Context, txID string, analy
 	query := `
 		UPDATE transactions 
 		SET claimed_by = $1, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW()
-		WHERE id = $2 AND status IN ('escalated', 'breached') AND (claimed_by IS NULL OR claimed_by = $1)
+		WHERE id = $2 
+		  AND (
+		      status IN ('escalated', 'breached') 
+		      OR (status = 'reviewed' AND EXISTS (SELECT 1 FROM reviews WHERE transaction_id = transactions.id ORDER BY reviewed_at DESC LIMIT 1) AND (SELECT decision FROM reviews WHERE transaction_id = transactions.id ORDER BY reviewed_at DESC LIMIT 1) = 'escalate')
+		  )
+		  AND (claimed_by IS NULL OR claimed_by = $1)
 	`
 	res, err := s.db.Exec(ctx, query, analystID, txID)
 	if err != nil {
@@ -104,8 +109,13 @@ func (s *ReviewService) RejectTransaction(ctx context.Context, txID string, anal
 	var slaRemaining *int
 	var currentQueueID *string
 	var rejectCount *int
-	err := s.db.QueryRow(ctx, "SELECT sla_start_at, sla_remaining_seconds, queue_id, COALESCE(reject_count, 0) FROM transactions WHERE id = $1 AND status IN ('escalated', 'breached')", txID).
-		Scan(&slaStart, &slaRemaining, &currentQueueID, &rejectCount)
+	err := s.db.QueryRow(ctx, `
+		SELECT sla_start_at, sla_remaining_seconds, queue_id, COALESCE(reject_count, 0) 
+		FROM transactions 
+		WHERE id = $1 AND (
+			status IN ('escalated', 'breached') 
+			OR (status = 'reviewed' AND EXISTS (SELECT 1 FROM reviews WHERE transaction_id = transactions.id ORDER BY reviewed_at DESC LIMIT 1) AND (SELECT decision FROM reviews WHERE transaction_id = transactions.id ORDER BY reviewed_at DESC LIMIT 1) = 'escalate')
+		)`, txID).Scan(&slaStart, &slaRemaining, &currentQueueID, &rejectCount)
 	if err != nil {
 		return fmt.Errorf("transaction not found or not in escalated status: %w", err)
 	}
@@ -223,7 +233,13 @@ func (s *ReviewService) SubmitReview(
 		return nil, fmt.Errorf("failed to lock transaction: %w", err)
 	}
 
-	if status != "scored" && status != "auto_blocked" && status != "escalated" && status != "breached" {
+	if status == "reviewed" {
+		var lastDecision string
+		err := dbTx.QueryRow(ctx, "SELECT decision FROM reviews WHERE transaction_id = $1 ORDER BY reviewed_at DESC LIMIT 1", txID).Scan(&lastDecision)
+		if err != nil || lastDecision != "escalate" {
+			return nil, fmt.Errorf("transaction is already fully reviewed")
+		}
+	} else if status != "scored" && status != "auto_blocked" && status != "escalated" && status != "breached" {
 		return nil, fmt.Errorf("transaction is not in a reviewable state: %s", status)
 	}
 
@@ -246,17 +262,29 @@ func (s *ReviewService) SubmitReview(
 	isEscalate := req.Decision == "escalate"
 
 	if isEscalate {
-		// If escalated, we keep status as reviewed but update queue if necessary, and unclaim
+		// If escalated, we keep status as reviewed but update queue if necessary, and unclaim (unless auto-claimed)
 		var targetQueueID *string
 		if req.TargetQueueID != nil && *req.TargetQueueID != "" {
 			targetQueueID = req.TargetQueueID
 		}
+		var targetAnalystId *string
+		if req.TargetAnalystID != nil && *req.TargetAnalystID != "" {
+			targetAnalystId = req.TargetAnalystID
+		}
 		
 		if status == "breached" {
 			if targetQueueID != nil {
-				_, err = dbTx.Exec(ctx, "UPDATE transactions SET queue_id = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", *targetQueueID, txID)
+				if targetAnalystId != nil {
+					_, err = dbTx.Exec(ctx, "UPDATE transactions SET queue_id = $1, claimed_by = $2, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $3", *targetQueueID, *targetAnalystId, txID)
+				} else {
+					_, err = dbTx.Exec(ctx, "UPDATE transactions SET queue_id = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", *targetQueueID, txID)
+				}
 			} else {
-				_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $1", txID)
+				if targetAnalystId != nil {
+					_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = $1, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $2", *targetAnalystId, txID)
+				} else {
+					_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $1", txID)
+				}
 			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to update transaction claimed fields: %w", err)
@@ -267,9 +295,17 @@ func (s *ReviewService) SubmitReview(
 			}
 		} else {
 			if targetQueueID != nil {
-				_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, queue_id = $2, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $3", newStatus, *targetQueueID, txID)
+				if targetAnalystId != nil {
+					_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, queue_id = $2, claimed_by = $3, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $4", newStatus, *targetQueueID, *targetAnalystId, txID)
+				} else {
+					_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, queue_id = $2, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $3", newStatus, *targetQueueID, txID)
+				}
 			} else {
-				_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", newStatus, txID)
+				if targetAnalystId != nil {
+					_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = $2, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $3", newStatus, *targetAnalystId, txID)
+				} else {
+					_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", newStatus, txID)
+				}
 			}
 			if err != nil {
 				return nil, fmt.Errorf("failed to update transaction status: %w", err)

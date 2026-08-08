@@ -341,7 +341,6 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 		SELECT COUNT(*)
 		FROM transactions t
 		LEFT JOIN fraud_results fr ON fr.transaction_id = t.id
-		LEFT JOIN reviews r ON r.transaction_id = t.id
 		LEFT JOIN queues q ON t.queue_id = q.id
 		` + where
 
@@ -422,7 +421,7 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 			t.claimed_at
 		FROM transactions t
 		LEFT JOIN fraud_results fr ON fr.transaction_id = t.id
-		LEFT JOIN reviews r ON r.transaction_id = t.id
+		LEFT JOIN LATERAL (SELECT decision FROM reviews r2 WHERE r2.transaction_id = t.id ORDER BY reviewed_at DESC LIMIT 1) r ON true
 		LEFT JOIN queues q ON t.queue_id = q.id
 		` + where + `
 		ORDER BY t.ingested_at DESC, t.id DESC

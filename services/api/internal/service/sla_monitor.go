@@ -84,7 +84,7 @@ func (m *SLAMonitor) processTier1Breaches(ctx context.Context) error {
 		SELECT t.id, q.id, q.sla_target_minutes
 		FROM transactions t
 		JOIN queues q ON t.queue_id = q.id
-		WHERE t.status = 'escalated' 
+		WHERE (t.status = 'escalated' OR (t.status = 'reviewed' AND EXISTS (SELECT 1 FROM reviews WHERE transaction_id = t.id ORDER BY reviewed_at DESC LIMIT 1) AND (SELECT decision FROM reviews WHERE transaction_id = t.id ORDER BY reviewed_at DESC LIMIT 1) = 'escalate'))
 		  AND t.claimed_by IS NULL
 		  AND q.id != $1
 		  AND NOT EXISTS (SELECT 1 FROM sla_breaches sb WHERE sb.transaction_id = t.id AND sb.tier = 1)
@@ -121,7 +121,9 @@ func (m *SLAMonitor) processTier1Breaches(ctx context.Context) error {
 				$1, $2, $3, 1, $4, 0, 'breached', NOW()
 			)
 		`
-		_, _ = m.db.Exec(ctx, insertBreachQ, item.txID, item.queueID, fallbackQ.ID, item.slaTargetMins)
+		if _, err := m.db.Exec(ctx, insertBreachQ, item.txID, item.queueID, fallbackQ.ID, int(item.slaTargetMins)); err != nil {
+			log.Error().Err(err).Msg("failed to insert into sla_breaches")
+		}
 
 		// 2. 50% reduced SLA for auto breach (Symmetric SLA)
 		reducedSec := (fallbackQ.SlaTargetMinutes * 60) / 2
@@ -230,7 +232,9 @@ func (m *SLAMonitor) processTier2Breaches(ctx context.Context) error {
 						$1, $2, NULL, 2, $3, 0, 'breached_tier2_cached', NOW()
 					)
 				`
-				_, _ = m.db.Exec(ctx, insertBreachQ, item.txID, fallbackQ.ID, fallbackQ.SlaTargetMinutes)
+				if _, err := m.db.Exec(ctx, insertBreachQ, item.txID, fallbackQ.ID, int(fallbackQ.SlaTargetMinutes)); err != nil {
+					log.Error().Err(err).Msg("failed to insert into sla_breaches (Tier 2)")
+				}
 				if m.incidentRepo != nil {
 					_ = m.incidentRepo.Create(ctx, &model.Incident{
 						TransactionID: strPtr(item.txID),
@@ -272,7 +276,9 @@ func (m *SLAMonitor) processTier2Breaches(ctx context.Context) error {
 				$1, $2, NULL, 2, $3, 0, 'breached_tier2', NOW()
 			)
 		`
-		_, _ = tx.Exec(ctx, insertBreachQ, item.txID, fallbackQ.ID, fallbackQ.SlaTargetMinutes)
+		if _, err := tx.Exec(ctx, insertBreachQ, item.txID, fallbackQ.ID, int(fallbackQ.SlaTargetMinutes)); err != nil {
+			log.Error().Err(err).Msg("failed to insert into sla_breaches (Tier 2 ML)")
+		}
 
 		updateQ := `
 			UPDATE transactions 

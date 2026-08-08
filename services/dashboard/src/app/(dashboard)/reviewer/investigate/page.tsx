@@ -67,6 +67,33 @@ function InvestigationContent() {
   const [historyPage, setHistoryPage] = useState(1);
   const historyLimit = 5;
 
+  const [myQueueId, setMyQueueId] = useState("");
+  const [myAnalystId, setMyAnalystId] = useState("");
+
+  React.useEffect(() => {
+    const token = document.cookie
+      .split("; ")
+      .find((row) => row.startsWith("aegis_token="))
+      ?.split("=")[1];
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        setMyAnalystId(payload.sub || "");
+        
+        fetch("http://localhost:8080/api/v1/analysts/me", {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+          .then(res => res.ok ? res.json() : null)
+          .then(data => {
+            if (data && data.queue_id) {
+              setMyQueueId(data.queue_id);
+            }
+          })
+          .catch(() => {});
+      } catch (e) {}
+    }
+  }, []);
+
   const getPageNumbers = React.useCallback((current: number, total: number) => {
     if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
     if (current <= 4) return [1, 2, 3, 4, 5, "...", total];
@@ -159,8 +186,10 @@ function InvestigationContent() {
         timestamp: new Date(t.timestamp || Date.now()).toLocaleString(),
         txnId: t.id,
         account: t.account_id || "—",
-        status: (t.status === "scored_approved" || t.status === "approved") ? "approved"
+        status: (t.status === "reviewed" && t.review_decision === "escalate") ? "escalated"
+          : (t.status === "scored_approved" || t.status === "approved") ? "approved"
           : t.status === "auto_blocked" ? "declined"
+          : t.status === "reviewed" ? "reviewed"
           : "flagged",
         score: t.risk_score != null ? `${Math.round(t.risk_score * 100)}%` : "—",
         flagReason: t.risk_band || "—",
@@ -376,7 +405,7 @@ function InvestigationContent() {
                     <span style={{ padding: "3px 10px", borderRadius: 20, background: "rgba(16, 185, 129, 0.12)", color: "#10B981", border: "1px solid rgba(16, 185, 129, 0.3)", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                       ✓ APPROVED
                     </span>
-                  ) : liveTx?.review?.decision === "escalate" ? (
+                  ) : (liveTx?.transaction?.status === "reviewed" && liveTx?.review?.decision === "escalate") ? (
                     <span style={{ padding: "3px 10px", borderRadius: 20, background: "rgba(245, 158, 11, 0.12)", color: "#F59E0B", border: "1px solid rgba(245, 158, 11, 0.3)", fontSize: "0.7rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                       ⟲ ESCALATED
                     </span>
@@ -720,7 +749,7 @@ function InvestigationContent() {
                   <div style={{ fontWeight: 800, color: "var(--risk-low)", fontSize: "1.05rem", fontFamily: "Inter, sans-serif" }}>Decision Submitted</div>
                   <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: 6 }}>Returning to queue…</div>
                 </div>
-              ) : liveTx?.review ? (
+              ) : (liveTx?.review && !(liveTx.transaction?.status === "reviewed" && liveTx.review.decision === "escalate" && (liveTx.transaction.queue_id === myQueueId || liveTx.transaction.claimed_by === myAnalystId))) ? (
                 <div style={{ textAlign: "center", padding: "var(--space-xl)" }}>
                   <div style={{ 
                     fontSize: "2.5rem", 
@@ -771,6 +800,7 @@ function InvestigationContent() {
                       </button>
                     ))}
                   </div>
+                  {!(liveTx?.review?.decision === "escalate") && (
                   <button
                     id="decision-btn-escalate"
                     onClick={() => setDecision("escalate")}
@@ -787,6 +817,7 @@ function InvestigationContent() {
                   >
                     ⬆ Escalate
                   </button>
+                  )}
 
                   {/* Target dropdowns for Escalate */}
                   {decision === "escalate" && (
