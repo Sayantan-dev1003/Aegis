@@ -233,7 +233,7 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 		} else if strings.EqualFold(req.Status, "escalated") {
 			where += " AND ((t.status = 'escalated' AND NOT EXISTS (SELECT 1 FROM sla_breaches sb WHERE sb.transaction_id = t.id AND sb.status = 'breached')) OR (t.status = 'breached' AND EXISTS (SELECT 1 FROM sla_breaches sb WHERE sb.transaction_id = t.id AND sb.status = 'breached' AND ($1 = '' OR sb.fallback_queue_id::text = $1))))"
 		} else if strings.EqualFold(req.Status, "reviewed") {
-			where += fmt.Sprintf(" AND (t.status = $%d OR EXISTS (SELECT 1 FROM sla_breaches sb WHERE sb.transaction_id = t.id AND sb.status = 'reviewed' AND ($1 = '' OR sb.fallback_queue_id::text = $1)))", argIdx)
+			where += fmt.Sprintf(" AND (t.status = $%d OR EXISTS (SELECT 1 FROM reviews r WHERE r.transaction_id = t.id AND ($1 = '' OR r.queue_id::text = $1)) OR EXISTS (SELECT 1 FROM sla_breaches sb WHERE sb.transaction_id = t.id AND sb.status = 'reviewed' AND ($1 = '' OR sb.fallback_queue_id::text = $1)))", argIdx)
 			args = append(args, req.Status)
 			argIdx++
 		} else {

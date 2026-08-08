@@ -228,14 +228,10 @@ func (s *ReviewService) SubmitReview(
 	}
 
 	// Step 2: Insert into reviews
-	mappedDecision := req.Decision
-	if mappedDecision == "escalate" {
-		mappedDecision = "escalated"
-	}
 	review := &model.Review{
 		TransactionID: txID,
 		ReviewerID:    analystID,
-		Decision:      mappedDecision,
+		Decision:      req.Decision,
 		Notes:         req.Notes,
 		ReviewedAt:    time.Now().UTC(),
 		QueueID:       queueID,
@@ -304,12 +300,16 @@ func (s *ReviewService) SubmitReview(
 		if req.TargetAnalystID != nil && *req.TargetAnalystID != "" {
 			targetAnalystId = req.TargetAnalystID
 		}
+		var targetQueueID *string
+		if req.TargetQueueID != nil && *req.TargetQueueID != "" {
+			targetQueueID = req.TargetQueueID
+		}
 			payloadMap := map[string]string{
 				"reason": req.ReasonCode,
 				"notes":  req.Notes,
 			}
-			if req.TargetQueueID != nil && *req.TargetQueueID != "" {
-				payloadMap["target_queue_id"] = *req.TargetQueueID
+			if targetQueueID != nil {
+				payloadMap["target_queue_id"] = *targetQueueID
 			}
 			if targetAnalystId != nil {
 				payloadMap["target_analyst_id"] = *targetAnalystId
@@ -317,15 +317,7 @@ func (s *ReviewService) SubmitReview(
 			payloadBytes, _ := json.Marshal(payloadMap)
 			payloadJSON := string(payloadBytes)
 
-			if targetAnalystId != nil {
-				_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_queue_id, target_analyst_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)", txID, analystID, queueID, *req.TargetQueueID, *targetAnalystId, req.ReasonCode, req.Notes)
-			} else {
-				if req.TargetQueueID != nil && *req.TargetQueueID != "" {
-					_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_queue_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6)", txID, analystID, queueID, *req.TargetQueueID, req.ReasonCode, req.Notes)
-				} else {
-					_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5)", txID, analystID, queueID, req.ReasonCode, req.Notes)
-				}
-			}
+			_, err = dbTx.Exec(ctx, "INSERT INTO escalations (transaction_id, escalated_by, original_queue_id, target_queue_id, target_analyst_id, reason_code, notes) VALUES ($1, $2, $3, $4, $5, $6, $7)", txID, analystID, queueID, targetQueueID, targetAnalystId, req.ReasonCode, req.Notes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to insert escalation record: %w", err)
 		}

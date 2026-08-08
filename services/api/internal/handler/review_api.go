@@ -82,13 +82,12 @@ func (h *ReviewHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if err.Error() == "transaction not found" {
 			w.WriteHeader(http.StatusNotFound)
-		} else if err.Error() == "transaction already reviewed" { // custom error matching
+		} else if err.Error() == "transaction already reviewed" {
 			w.WriteHeader(http.StatusConflict)
 		} else {
-			// e.g. "transaction is not in a reviewable state"
 			w.WriteHeader(http.StatusUnprocessableEntity)
 		}
-		fmt.Fprintf(w, `{"error": "%s"}`, err.Error())
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
