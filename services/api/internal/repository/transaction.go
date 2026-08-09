@@ -320,6 +320,19 @@ func (r *TransactionRepository) List(ctx context.Context, req model.ListTransact
 		}
 	}
 
+	if req.ReviewerID != "" {
+		where += fmt.Sprintf(" AND EXISTS (SELECT 1 FROM reviews r WHERE r.transaction_id = t.id AND r.reviewer_id = $%d)", argIdx)
+		args = append(args, req.ReviewerID)
+		argIdx++
+		
+		// If filtering by reviewer_id (e.g. "my history"), we don't want to scope by queue_id
+		// because the case might have been escalated to another queue.
+		if strings.EqualFold(req.Status, "reviewed") {
+			req.QueueID = ""
+			args[0] = "" // $1 is req.QueueID
+		}
+	}
+
 	// Note: QueueID filter is applied before the cursor clause so it's included in the COUNT.
 	if req.QueueID != "" {
 		if strings.EqualFold(req.Status, "breached") {

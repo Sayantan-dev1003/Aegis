@@ -9,6 +9,7 @@ type ListTransactionsRequest struct {
 	Limit           int       `json:"limit"`
 	Status          string    `json:"status"`
 	QueueID         string    `json:"queue_id"`
+	ReviewerID      string    `json:"reviewer_id"`
 	FromDate        time.Time `json:"from_date"`
 	ToDate          time.Time `json:"to_date"`
 	MinScore        float64   `json:"min_score"`

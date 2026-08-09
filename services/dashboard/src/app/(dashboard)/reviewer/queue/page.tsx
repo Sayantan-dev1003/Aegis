@@ -228,7 +228,9 @@ function ReviewerQueuePageInner() {
         // 3. Fetch real live transactions (for this queue including escalated and SLA breached cases)
         try {
           let url = "http://localhost:8080/api/v1/transactions?limit=200";
-          if (myQueueId) {
+          if (statusFilter === "reviewed") {
+            url += `&status=reviewed&reviewer_id=me`;
+          } else if (myQueueId) {
             url += `&queue_id=${encodeURIComponent(myQueueId)}`;
           }
           const resTx = await fetch(url, {
@@ -251,7 +253,7 @@ function ReviewerQueuePageInner() {
         setRefreshing(false);
       }
     },
-    [token, myQueueId]
+    [token, myQueueId, statusFilter]
   );
 
   useEffect(() => {
@@ -354,8 +356,11 @@ function ReviewerQueuePageInner() {
 
   // ─── Reviewer Queue Cases (Strictly their own queue only) ───────────────────
   const myQueueCases = useMemo(() => {
-    return transactions.filter((t) => isAssignedToMe(t));
-  }, [transactions, isAssignedToMe]);
+    return transactions.filter((t) => {
+      if (statusFilter === "reviewed") return true;
+      return isAssignedToMe(t);
+    });
+  }, [transactions, isAssignedToMe, statusFilter]);
 
   // ─── Filtered Cases for Table (00:00 to 23:59 of selected date & filters) ───
   const filteredTransactions = useMemo(() => {

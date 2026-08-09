@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Sayantan-dev1003/aegis/api/internal/middleware"
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
 	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
 	"github.com/go-chi/chi/v5"
@@ -141,6 +142,17 @@ func (h *TransactionHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	if qID := q.Get("queue_id"); qID != "" {
 		req.QueueID = qID
+	}
+
+	if reviewerID := q.Get("reviewer_id"); reviewerID != "" {
+		if reviewerID == "me" {
+			info, ok := r.Context().Value(middleware.AnalystInfoKey).(middleware.AnalystInfo)
+			if ok {
+				req.ReviewerID = info.ID
+			}
+		} else {
+			req.ReviewerID = reviewerID
+		}
 	}
 
 	span.SetAttributes(
