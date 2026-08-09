@@ -43,7 +43,7 @@ func (r *ReviewerPerformanceRepository) GetSummary(ctx context.Context, reviewer
 			FROM reviews r
 			JOIN transactions t ON t.id = r.transaction_id
 			LEFT JOIN queues q ON q.id = t.queue_id
-			WHERE r.analyst_id = $1
+			WHERE r.reviewer_id = $1
 			  AND r.reviewed_at >= date_trunc($2, NOW() AT TIME ZONE 'UTC')
 		)
 		SELECT 
@@ -81,8 +81,8 @@ func (r *ReviewerPerformanceRepository) GetSummary(ctx context.Context, reviewer
 		slaCompliancePct = (float64(slaCompliantCases) / float64(casesReviewed)) * 100.0
 	}
 
-	var throughputPerDay *float64
-	var avgAht *float64
+	var throughputPerDay float64
+	var avgAht float64 = avgHandlingTimeMinutes
 
 	if periodStr != "today" {
 		var elapsedDays float64
@@ -98,12 +98,11 @@ func (r *ReviewerPerformanceRepository) GetSummary(ctx context.Context, reviewer
 			elapsedDays = float64(now.Day())
 		}
 		
-		tp := 0.0
 		if elapsedDays > 0 {
-			tp = float64(casesReviewed) / elapsedDays
+			throughputPerDay = float64(casesReviewed) / elapsedDays
 		}
-		throughputPerDay = &tp
-		avgAht = &avgHandlingTimeMinutes
+	} else {
+		throughputPerDay = float64(casesReviewed)
 	}
 
 	return &model.ReviewerPerformanceSummary{
@@ -167,7 +166,7 @@ func (r *ReviewerPerformanceRepository) GetThroughputTrend(ctx context.Context, 
 			d.bucket,
 			COUNT(r.id) as value
 		FROM dates d
-		LEFT JOIN reviews r ON date_trunc($1, r.reviewed_at AT TIME ZONE 'UTC') = d.bucket AND r.analyst_id = $2
+		LEFT JOIN reviews r ON date_trunc($1, r.reviewed_at AT TIME ZONE 'UTC') = d.bucket AND r.reviewer_id = $2
 		GROUP BY d.bucket
 		ORDER BY d.bucket ASC
 	`
@@ -240,7 +239,7 @@ func (r *ReviewerPerformanceRepository) GetAHTTrend(ctx context.Context, reviewe
 			d.bucket,
 			COALESCE(AVG(EXTRACT(EPOCH FROM (r.reviewed_at - t.claimed_at)) / 60.0), 0) as value
 		FROM dates d
-		LEFT JOIN reviews r ON date_trunc($1, r.reviewed_at AT TIME ZONE 'UTC') = d.bucket AND r.analyst_id = $2
+		LEFT JOIN reviews r ON date_trunc($1, r.reviewed_at AT TIME ZONE 'UTC') = d.bucket AND r.reviewer_id = $2
 		LEFT JOIN transactions t ON t.id = r.transaction_id
 		GROUP BY d.bucket
 		ORDER BY d.bucket ASC
@@ -311,7 +310,7 @@ func (r *ReviewerPerformanceRepository) GetLeaderboard(ctx context.Context, peri
 				COUNT(r.id) FILTER (WHERE r.decision = 'escalated' OR r.decision = 'escalate') as escalated_cases
 			FROM analysts a
 			LEFT JOIN queues q ON q.id = a.queue_id
-			JOIN reviews r ON r.analyst_id = a.id
+			JOIN reviews r ON r.reviewer_id = a.id
 			JOIN transactions t ON t.id = r.transaction_id
 			WHERE r.reviewed_at >= date_trunc($1, NOW() AT TIME ZONE 'UTC')
 			GROUP BY a.id, a.full_name, q.name

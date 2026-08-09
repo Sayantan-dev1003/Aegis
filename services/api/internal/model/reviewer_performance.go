@@ -3,8 +3,8 @@ package model
 type ReviewerPerformanceSummary struct {
 	Period                  string            `json:"period"`
 	CasesReviewed           int               `json:"cases_reviewed"`
-	ThroughputPerDay        *float64          `json:"throughput_per_day"`
-	AvgHandlingTimeMinutes  *float64          `json:"avg_handling_time_minutes"`
+	ThroughputPerDay        float64           `json:"throughput_per_day"`
+	AvgHandlingTimeMinutes  float64           `json:"avg_handling_time_minutes"`
 	SLACompliancePct        float64           `json:"sla_compliance_pct"`
 	DecisionBreakdown       DecisionBreakdown `json:"decision_breakdown"`
 }
