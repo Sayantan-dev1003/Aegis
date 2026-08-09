@@ -272,62 +272,34 @@ func (s *ReviewService) SubmitReview(
 			targetAnalystId = req.TargetAnalystID
 		}
 		
-		if status == "breached" {
-			if targetQueueID != nil {
-				if targetAnalystId != nil {
-					_, err = dbTx.Exec(ctx, "UPDATE transactions SET queue_id = $1, claimed_by = $2, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $3", *targetQueueID, *targetAnalystId, txID)
-				} else {
-					_, err = dbTx.Exec(ctx, "UPDATE transactions SET queue_id = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", *targetQueueID, txID)
-				}
+		if targetQueueID != nil {
+			if targetAnalystId != nil {
+				_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, queue_id = $2, claimed_by = $3, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $4", newStatus, *targetQueueID, *targetAnalystId, txID)
 			} else {
-				if targetAnalystId != nil {
-					_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = $1, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $2", *targetAnalystId, txID)
-				} else {
-					_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $1", txID)
-				}
-			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to update transaction claimed fields: %w", err)
-			}
-			_, err = dbTx.Exec(ctx, "UPDATE sla_breaches SET status = $1 WHERE transaction_id = $2 AND tier = 1", newStatus, txID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update sla_breaches status: %w", err)
+				_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, queue_id = $2, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $3", newStatus, *targetQueueID, txID)
 			}
 		} else {
-			if targetQueueID != nil {
-				if targetAnalystId != nil {
-					_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, queue_id = $2, claimed_by = $3, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $4", newStatus, *targetQueueID, *targetAnalystId, txID)
-				} else {
-					_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, queue_id = $2, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $3", newStatus, *targetQueueID, txID)
-				}
+			if targetAnalystId != nil {
+				_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = $2, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $3", newStatus, *targetAnalystId, txID)
 			} else {
-				if targetAnalystId != nil {
-					_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = $2, claimed_at = NOW(), sla_paused_at = NOW(), updated_at = NOW() WHERE id = $3", newStatus, *targetAnalystId, txID)
-				} else {
-					_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", newStatus, txID)
-				}
+				_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = NULL, claimed_at = NULL, sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", newStatus, txID)
 			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to update transaction status: %w", err)
-			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to update transaction status: %w", err)
 		}
 	} else {
 		// Terminal review: stamp the reviewer
-		if status == "breached" {
-			_, err = dbTx.Exec(ctx, "UPDATE transactions SET claimed_by = $1, claimed_at = COALESCE(claimed_at, NOW()), sla_paused_at = NULL, updated_at = NOW() WHERE id = $2", analystID, txID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update transaction claimed fields: %w", err)
-			}
-			_, err = dbTx.Exec(ctx, "UPDATE sla_breaches SET status = $1 WHERE transaction_id = $2 AND tier = 1", newStatus, txID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update sla_breaches status: %w", err)
-			}
-		} else {
-			_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = $2, claimed_at = COALESCE(claimed_at, NOW()), sla_paused_at = NULL, updated_at = NOW() WHERE id = $3", newStatus, analystID, txID)
-			if err != nil {
-				return nil, fmt.Errorf("failed to update transaction status: %w", err)
-			}
+		_, err = dbTx.Exec(ctx, "UPDATE transactions SET status = $1, claimed_by = $2, claimed_at = COALESCE(claimed_at, NOW()), sla_paused_at = NULL, updated_at = NOW() WHERE id = $3", newStatus, analystID, txID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to update transaction status: %w", err)
 		}
+	}
+
+	// Always update sla_breaches status if there is an active tier 1 breach
+	_, err = dbTx.Exec(ctx, "UPDATE sla_breaches SET status = $1 WHERE transaction_id = $2 AND tier = 1", newStatus, txID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update sla_breaches status: %w", err)
 	}
 
 	// Step 4: Write escalations and action_logs

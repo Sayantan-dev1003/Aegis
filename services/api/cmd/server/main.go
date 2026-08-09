@@ -152,6 +152,7 @@ func main() {
 	reviewRepo := repository.NewReviewRepository(pgPool)
 	auditRepo := repository.NewAuditRepository(pgPool)
 	statsRepo := repository.NewStatsRepository(pgPool)
+	reviewerPerfRepo := repository.NewReviewerPerformanceRepository(pgPool)
 	
 	// Phase 2 Repositories
 	intRepo := repository.NewIntegrationRepository(pgPool)
@@ -174,6 +175,7 @@ func main() {
 	txHandler := handler.NewTransactionHandler(txRepo, fraudResultRepo, reviewRepo)
 	reviewHandler := handler.NewReviewHandler(reviewService)
 	statsHandler := handler.NewStatsHandler(statsRepo, redisClient)
+	reviewerPerfHandler := handler.NewReviewerPerformanceHandler(reviewerPerfRepo)
 	incidentHandler := handler.NewIncidentHandler(incidentService)
 	adminHandler := handler.NewAdminHandler(configRepo, txRepo, auditRepo, configService, kafkaProducer)
 	analystHandler := handler.NewAnalystHandler(analystRepo, auditRepo, authService)
@@ -347,6 +349,10 @@ func main() {
 		r.Get("/api/v1/incidents", incidentHandler.GetActiveIncidents)
 		r.Get("/api/v1/customers/{account_id}", customerHandler.GetCustomer)
 		r.Get("/api/v1/customers/{account_id}/transactions", customerHandler.GetCustomerTransactions)
+
+		r.Get("/api/v1/reviewer/performance/summary", reviewerPerfHandler.Summary)
+		r.Get("/api/v1/reviewer/performance/trend", reviewerPerfHandler.Trend)
+		r.Get("/api/v1/reviewer/performance/leaderboard", reviewerPerfHandler.Leaderboard)
 	})
 
 	// Start server on configured API port

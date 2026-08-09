@@ -800,7 +800,7 @@ function InvestigationContent() {
                       </button>
                     ))}
                   </div>
-                  {!(liveTx?.review?.decision === "escalate") && (
+                  {!(liveTx?.review?.decision === "escalate") && liveTx?.transaction?.queue_name !== "Default Fallback Queue" && (
                   <button
                     id="decision-btn-escalate"
                     onClick={() => setDecision("escalate")}

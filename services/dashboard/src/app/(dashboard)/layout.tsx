@@ -26,7 +26,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const reviewerNav = [
     { name: "Case Queue", path: "/reviewer/queue" },
     { name: "My Performance", path: "/reviewer/performance" },
-    { name: "Alerts", path: "/reviewer/alerts" },
   ];
 
   const viewerNav = [
@@ -58,7 +57,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       "/reviewer/queue": { title: "Case Queue", subtitle: "Your assigned worklist — claim and triage flagged transactions." },
       "/reviewer/investigate": { title: "Transaction Investigation", subtitle: "Full forensic view of a flagged case. Make your decision here." },
       "/reviewer/performance": { title: "My Performance", subtitle: "Personal scorecard — accuracy, throughput, and SLA compliance." },
-      "/reviewer/alerts": { title: "Alerts & Notifications", subtitle: "Real-time feed of new high-priority cases from your queues." },
     };
 
     const match = Object.keys(metaMap)

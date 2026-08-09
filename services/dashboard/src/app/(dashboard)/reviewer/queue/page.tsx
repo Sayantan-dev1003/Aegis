@@ -478,11 +478,14 @@ function ReviewerQueuePageInner() {
   const slaAtRiskCount = useMemo(
     () =>
       myQueueCases.filter((t) => {
+        const currentlyMine = (myQueueId && t.queue_id === myQueueId) || (myQueueName && t.queue_name === myQueueName);
+        if (!currentlyMine) return false;
         if (t.review_decision) return false;
+        if (t.status === "breached") return false;
         const rem = getSlaRemaining(t);
-        return rem <= 15;
+        return rem <= 15 && rem > 0;
       }).length,
-    [myQueueCases, getSlaRemaining]
+    [myQueueCases, myQueueId, myQueueName, getSlaRemaining]
   );
 
   const claimSingle = async (id: string, e: React.MouseEvent) => {
@@ -1043,7 +1046,7 @@ function ReviewerQueuePageInner() {
                             fontFamily: "monospace",
                           }}
                         >
-                          {(t.assignee || claimedIds.has(t.id)) ? (
+                          {( (t.assignee || claimedIds.has(t.id)) && t.status !== "breached" ) ? (
                             <div title="Claimed" style={{ display: 'flex', alignItems: 'center' }}>
                               <PauseCircle size={14} style={(t.status === "reviewed" || t.review_decision === "escalate") ? { opacity: 0.5 } : {}} />
                             </div>
@@ -1270,7 +1273,7 @@ function ReviewerQueuePageInner() {
                           >
                             Rejected
                           </button>
-                        ) : t.status === "breached" && !t.assignee && !claimedIds.has(t.id) && !t.review_decision && t.status !== "escalated" && t.status !== "reviewed" ? (
+                        ) : t.status === "breached" ? (
                           <button
                             disabled
                             style={{
