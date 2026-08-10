@@ -9,6 +9,7 @@ import styles from "./notification.module.css";
 
 export function NotificationToast() {
   const { latestEvent } = useWebSocket();
+  const { doNotDisturb } = useNotifications();
   const [activeToasts, setActiveToasts] = useState<Notification[]>([]);
   const router = useRouter();
 
@@ -17,6 +18,7 @@ export function NotificationToast() {
     if (latestEvent?.event_type === "notification" && latestEvent.notification) {
       const notif = latestEvent.notification as Notification;
       if (notif.priority === "critical") {
+        if (doNotDisturb && notif.target_role !== "admin") return;
         setActiveToasts(prev => {
           // Avoid duplicates if same event fires twice
           if (prev.find(t => t.id === notif.id)) return prev;

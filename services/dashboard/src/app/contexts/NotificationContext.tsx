@@ -11,6 +11,7 @@ export interface Notification {
   priority: "critical" | "warning" | "info";
   title: string;
   message: string;
+  target_role?: string;
   transaction_id?: string;
   created_at: string;
 }
@@ -19,6 +20,8 @@ interface NotificationContextType {
   items: Notification[];
   unreadCount: number;
   isLoading: boolean;
+  doNotDisturb: boolean;
+  toggleDoNotDisturb: () => void;
   markAllRead: () => Promise<void>;
 }
 
@@ -32,6 +35,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   const [items, setItems] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [doNotDisturb, setDoNotDisturb] = useState(false);
   const [lastReadTime, setLastReadTime] = useState<string | null>(null);
 
   // Hydrate on mount
@@ -64,7 +68,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // Check if this event is a notification (not raw transaction feed)
     if (latestEvent.event_type === "notification" && latestEvent.notification) {
       const notif: Notification = latestEvent.notification;
-      setItems((prev) => [notif, ...prev].slice(0, 50));
+      setItems((prev) => [notif, ...prev].slice(0, 100));
       setUnreadCount((prev) => prev + 1);
     }
   }, [latestEvent]);
@@ -76,15 +80,16 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         headers: { Authorization: `Bearer ${token}` },
       });
       setUnreadCount(0);
-      setItems([]);
       setLastReadTime(new Date().toISOString());
     } catch (err) {
       console.error("Failed to mark as read", err);
     }
   };
 
+  const toggleDoNotDisturb = () => setDoNotDisturb(!doNotDisturb);
+
   return (
-    <NotificationContext.Provider value={{ items, unreadCount, isLoading, markAllRead }}>
+    <NotificationContext.Provider value={{ items, unreadCount, isLoading, doNotDisturb, toggleDoNotDisturb, markAllRead }}>
       {children}
     </NotificationContext.Provider>
   );

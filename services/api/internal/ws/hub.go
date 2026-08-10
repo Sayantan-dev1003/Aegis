@@ -122,3 +122,37 @@ func (h *Hub) SendToUser(userID string, payload interface{}) {
 		}
 	}
 }
+
+// SendToRole sends a message to all connected users with a specific role
+func (h *Hub) SendToRole(role string, payload interface{}) {
+	tracer := otel.Tracer("aegis/api/ws")
+	_, span := tracer.Start(context.Background(), "ws_hub.send_to_role")
+	span.SetAttributes(attribute.String("role", role))
+	defer span.End()
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		logger.Get().Error().Err(err).Msg("failed to marshal role notification payload")
+		return
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients {
+		if client.Role == role {
+			select {
+			case client.Send <- data:
+				metrics.WSMessagesUserTargetedTotal.Inc() // Could create a new metric for role broadcasts
+			default:
+				client.once.Do(func() {
+					close(client.Send)
+				})
+				delete(h.clients, client)
+				metrics.WebSocketConnectionsActive.Dec()
+				metrics.WSSlowClientDisconnectedTotal.Inc()
+				logger.Get().Warn().Str("role", role).Str("user_id", client.UserID).Msg("slow client evicted during role send")
+			}
+		}
+	}
+}

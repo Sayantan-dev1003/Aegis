@@ -23,15 +23,17 @@ type Client struct {
 	Send        chan []byte
 	once        sync.Once
 	UserID      string
+	Role        string
 	connectedAt time.Time
 }
 
-func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
+func NewClient(hub *Hub, conn *websocket.Conn, userID string, role string) *Client {
 	return &Client{
 		hub:         hub,
 		Conn:        conn,
 		Send:        make(chan []byte, SendBufferSize),
 		UserID:      userID,
+		Role:        role,
 		connectedAt: time.Now(),
 	}
 }

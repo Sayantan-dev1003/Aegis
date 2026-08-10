@@ -36,9 +36,10 @@ func (h *NotificationHandler) GetNotifications(w http.ResponseWriter, r *http.Re
 		return
 	}
 	reviewerID := info.ID
-	span.SetAttributes(attribute.String("reviewer_id", reviewerID))
+	role := info.Role
+	span.SetAttributes(attribute.String("reviewer_id", reviewerID), attribute.String("role", role))
 
-	items, unreadCount, err := h.notifService.GetFeed(ctx, reviewerID)
+	items, unreadCount, err := h.notifService.GetFeed(ctx, reviewerID, role)
 	if err != nil {
 		h.respondError(w, fmt.Sprintf("failed to fetch notifications: %v", err), http.StatusInternalServerError)
 		return

@@ -54,6 +54,7 @@ func (h *WebSocketHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID, _ := claims["sub"].(string)
+	role, _ := claims["role"].(string)
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -62,7 +63,7 @@ func (h *WebSocketHandler) ServeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := ws.NewClient(h.hub, conn, userID)
+	client := ws.NewClient(h.hub, conn, userID, role)
 	h.hub.Register <- client
 
 	go client.WritePump()

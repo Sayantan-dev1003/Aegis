@@ -10,6 +10,7 @@ type Notification struct {
 	Priority      string     `json:"priority"`   // "critical" | "warning" | "info"
 	Title         string     `json:"title"`
 	Message       string     `json:"message"`
+	TargetRole    string     `json:"target_role,omitempty"` // "admin", "reviewer", "viewer", or empty for user-specific
 	TransactionID *string    `json:"transaction_id,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 }

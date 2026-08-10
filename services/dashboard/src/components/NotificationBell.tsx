@@ -3,13 +3,13 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useNotifications, Notification } from "@/app/contexts/NotificationContext";
-import { Bell, Check } from "lucide-react";
+import { Bell, BellOff, Check } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import styles from "./notification.module.css";
 
 export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
-  const { items, unreadCount, markAllRead } = useNotifications();
+  const { items, unreadCount, doNotDisturb, toggleDoNotDisturb, markAllRead } = useNotifications();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -48,9 +48,10 @@ export function NotificationBell() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={styles.bellButton}
+        title={doNotDisturb ? "Do Not Disturb is ON" : "Notifications"}
       >
-        <Bell size={20} />
-        {unreadCount > 0 && (
+        {doNotDisturb ? <BellOff size={20} className={styles.dndActiveIcon} /> : <Bell size={20} />}
+        {unreadCount > 0 && !doNotDisturb && (
           <span className={styles.badge}>
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
@@ -60,7 +61,16 @@ export function NotificationBell() {
       {isOpen && (
         <div className={styles.dropdownWrapper}>
           <div className={styles.dropdownHeader}>
-            <h3>Notifications</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <h3>Notifications</h3>
+              <button 
+                onClick={toggleDoNotDisturb}
+                className={`${styles.dndToggleBtn} ${doNotDisturb ? styles.dndActive : ""}`}
+                title="Toggle Do Not Disturb"
+              >
+                {doNotDisturb ? <BellOff size={14} /> : <Bell size={14} />}
+              </button>
+            </div>
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
@@ -87,7 +97,12 @@ export function NotificationBell() {
                   <div className={`${styles.priorityIndicator} ${getPriorityClass(notif.priority)}`} />
                   <div className={styles.itemContent}>
                     <div className={styles.itemHeader}>
-                      <h4 className={styles.itemTitle}>{notif.title}</h4>
+                      <h4 className={styles.itemTitle}>
+                        {notif.target_role === "admin" && <span className={`${styles.roleBadge} ${styles.roleBadgeAdmin}`}>System</span>}
+                        {notif.target_role === "reviewer" && <span className={`${styles.roleBadge} ${styles.roleBadgeReviewer}`}>Reviewers</span>}
+                        {notif.target_role === "viewer" && <span className={`${styles.roleBadge} ${styles.roleBadgeViewer}`}>Viewers</span>}
+                        {notif.title}
+                      </h4>
                       <span className={styles.itemTime}>
                         {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })}
                       </span>

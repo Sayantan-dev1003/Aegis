@@ -33,6 +33,7 @@ func getRiskBand(score float64) string {
 type WebSocketHub interface {
 	Broadcast(transactionID string, payload interface{})
 	SendToUser(userID string, payload interface{})
+	SendToRole(role string, payload interface{})
 }
 
 // FraudService handles the business logic for processing fraud results.
