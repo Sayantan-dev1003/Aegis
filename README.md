@@ -206,7 +206,7 @@ flowchart TD
     N -.->|Publish Failed Event| K
 
     J -->|12. Consume Scored Result| E
-    E -->|13. Update DB (Enrich with Score)| H
+    E -->|13. Update DB - Enrich with Score| H
     E -->|14. Push Live JSON Payload| F
     F ===>|15. Native WebSocket| O
     F -->|REST /api/v1/reviews| P
