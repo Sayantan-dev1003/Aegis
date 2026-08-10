@@ -257,20 +257,28 @@ func (s *NotificationService) GetFeed(ctx context.Context, reviewerID string, ro
 		items = items[:100]
 	}
 
-	// Fetch last_read timestamp
+	// Fetch last_read timestamp. This is the reviewer's own "cleared up to" boundary,
+	// set by MarkAllRead. It does not touch the underlying role-feed data in Redis,
+	// so other reviewers on the same role are unaffected until they clear it themselves.
 	lastReadStr, err := s.redis.Get(ctx, lastReadKey).Result()
 	var lastRead time.Time
 	if err == nil {
 		lastRead, _ = time.Parse(time.RFC3339Nano, lastReadStr)
 	}
 
-	// Compute unread count, keep items for persistent feed
-	unreadCount := 0
+	// Filter out anything at or before the last-read boundary so a Mark All Read
+	// stays cleared even after a refresh/re-login, instead of just hiding the
+	// unread badge on items that are still returned.
+	visible := make([]model.Notification, 0, len(items))
 	for _, item := range items {
 		if item.CreatedAt.After(lastRead) {
-			unreadCount++
+			visible = append(visible, item)
 		}
 	}
+	items = visible
+
+	// Everything left in the feed is, by definition, unread.
+	unreadCount := len(items)
 
 	return items, unreadCount, nil
 }
@@ -283,9 +291,9 @@ func (s *NotificationService) MarkAllRead(ctx context.Context, reviewerID string
 
 	lastReadKey := fmt.Sprintf("notif:%s:last_read", reviewerID)
 
-	// We no longer delete the feed because role-based feeds are shared and shouldn't be deleted.
-	// Relying entirely on last_read timestamp ensures feeds are persistent but badge counts are accurate.
-	_, err := s.redis.Set(ctx, lastReadKey, time.Now().UTC().Format(time.RFC3339Nano), 7*24*time.Hour).Result()
+	// No expiry: this boundary must outlive the 7-day feed TTL, otherwise cleared
+	// notifications would reappear once the last_read key itself expires.
+	_, err := s.redis.Set(ctx, lastReadKey, time.Now().UTC().Format(time.RFC3339Nano), 0).Result()
 	return err
 }
 

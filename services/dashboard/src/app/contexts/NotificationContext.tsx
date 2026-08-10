@@ -80,6 +80,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         headers: { Authorization: `Bearer ${token}` },
       });
       setUnreadCount(0);
+      setItems([]);
       setLastReadTime(new Date().toISOString());
     } catch (err) {
       console.error("Failed to mark as read", err);
