@@ -191,11 +191,11 @@ flowchart TD
     end
 
     A -->|1. Webhook Payload| B
-    B <-->|2. Check Rate Limit <1ms| C
+    B <-->|2. Check Rate Limit sub-1ms| C
     C <-->|3. Token Bucket| G
-    B -->|4. Sync Rule Eval (block/flag/pass)| RuleEngine
-    RuleEngine -->|5. Atomic ACID Commit (Unconditional Outbox) <3ms| H
-    RuleEngine -.-x|6. Return 202 Accepted <5ms| A
+    B -->|4. Sync Rule Eval: block, flag, pass| RuleEngine
+    RuleEngine -->|5. Atomic ACID Commit: Unconditional Outbox sub-3ms| H
+    RuleEngine -.-x|6. Return 202 Accepted sub-5ms| A
 
     D -->|7. Read Unpublished Rows| H
     D -->|8. Produce Event + OTel Header| I
