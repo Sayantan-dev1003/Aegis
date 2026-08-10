@@ -77,7 +77,8 @@ Aegis delivers a complete, production-grade feature set organized across five co
 | Feature | Description |
 |---|---|
 | **High-Throughput Webhook Ingestor** | REST webhook endpoint (`POST /api/v1/ingest/transactions`) simulating real-time bank core systems with a guaranteed **`<5ms` response SLA**. |
-| **Transactional Outbox Pattern** | Eliminates dual-write bugs: transaction database insert and Kafka event publication are committed atomically in a single PostgreSQL transaction. |
+| **Synchronous Rule Evaluation** | Immediately evaluates incoming transactions against deterministic rules for real-time routing (block, flag, or pass) within the same DB transaction. |
+| **Transactional Outbox & Parallel Relay** | Eliminates dual-write bugs by writing an outbox event atomically. Unconditionally relays *every* transaction to Kafka, ensuring rules and ML run in parallel. |
 | **Dead-Letter Queue (DLQ) Resilience** | Transactions failing ML scoring after 3 exponential backoff retries are published to `transactions.dlq` for admin inspection and replay. |
 | **Graceful Shutdown & Drain Window** | API server intercepts `SIGTERM` / `SIGINT` signals with a 30-second drain window, completing in-flight database transactions and closing connections cleanly. |
 
@@ -85,29 +86,31 @@ Aegis delivers a complete, production-grade feature set organized across five co
 
 | Feature | Description |
 |---|---|
+| **Parallel ML Risk Enrichment** | The ML worker scores every transaction (even rule-blocked ones) to eliminate selection-bias, enrich queued cases, and prioritize analyst worklists highest-risk-first. |
 | **Real-Time XGBoost Inference** | Sub-10ms classification inference utilizing engineered transaction velocity, frequency, and behavioral aggregations. |
 | **Continuous Confidence Scoring** | Fraud probability is displayed as a continuous probability (`0.00` to `1.00`) instead of a binary threshold flag. |
 | **SHAP (`TreeExplainer`) Explainability** | Every scored transaction computes exact Shapley Additive Explanations, showing analysts the precise positive and negative feature contribution weights. |
-| **Automated Threshold Actions** | Transactions scoring above `auto_block_threshold` (`0.92`) are automatically blocked, while scores above `fraud_threshold` (`0.65`) are flagged for review. |
 | **Model Artifact Versioning** | Each `fraud_result` record stores the exact model version ID, enabling rigorous A/B testing, model drift auditing, and reproducibility. |
 
 ### 🖥️ Real-Time Analyst Dashboard & Review Workflows
 
 | Feature | Description |
 |---|---|
+| **Smart Queuing & Borderline Escalation** | Routes cases via priority hierarchy (VIP, ATO). Pending transactions with borderline ML scores are dynamically escalated to a dedicated ML Borderline Review queue. |
+| **Symmetric SLAs & Incident Tracking** | Differentiates honest manual rejects (rewarded with a full fresh SLA) from negligent silent breaches (penalized with reduced SLA and an incident logged against the reviewer). |
+| **Reject Capping & Admin Escalation** | Prevents indefinite queue-bouncing by capping reviewer rejects at 2, force-escalating the case to an Admin for a mandatory claim. |
 | **Live WebSocket Flagged Feed** | Connected analyst browsers receive instant WebSocket push notifications whenever a transaction is flagged, eliminating page polling. |
 | **Interactive SHAP Visualizer** | Feature-weight bar charts in the UI clearly explain the mathematical driver behind every flagged transaction. |
 | **RBAC Manual Review Actions** | Authenticated analysts can mark transactions as `confirmed_fraud`, `false_positive`, or `escalated` with Role-Based Access Control. |
-| **Real-Time Fraud Spike Alerting** | Automatically broadcasts a high-priority WebSocket banner alert to all analysts if the global fraud rate exceeds 5% in a 15-minute rolling window. |
-| **Analytical Trend Charts** | Interactive Recharts visualizations displaying fraud rate over time, false-positive ratios, and top flagged merchant categories. |
 
 ### 🔒 Enterprise Security & Governance
 
 | Feature | Description |
 |---|---|
+| **Block Audit Sampling** | A continuous feedback loop that pushes a subset of auto-blocked transactions into an audit queue, allowing humans to catch false positives and tune aggressive rules. |
 | **Redis Token-Bucket Rate Limiting** | Per-API-key token-bucket limiter on the ingestor endpoint returning `429 Too Many Requests` with RFC-compliant `Retry-After` headers. |
-| **Runtime-Configurable Thresholds** | Admin UI to update `fraud_threshold` and `auto_block_threshold` live in PostgreSQL + Redis cache without service redeployments. |
-| **Immutable Audit Logging** | Every analyst review decision and system threshold modification is logged with timestamp, analyst UUID, and originating IP address. |
+| **Runtime-Configurable Thresholds** | Admin UI to update rule thresholds and configs live in PostgreSQL + Redis cache without service redeployments. |
+| **Immutable Audit Logging** | Every analyst review decision, SLA breach, and threshold modification is logged with timestamp, analyst UUID, and originating IP address. |
 | **Strict API Versioning** | All backend endpoints are structured under `/api/v1/`, ensuring seamless backward compatibility for future client integrations. |
 
 ### 📊 Full-Stack Observability & Telemetry
@@ -151,6 +154,7 @@ flowchart TD
     subgraph API_Layer[" Go API Server (Modular Monolith) "]
         B["Ingestor HTTP Handler"]
         C["Token-Bucket Rate Limiter"]
+        RuleEngine["Synchronous Rule Engine"]
         D["Outbox Poller Goroutine"]
         E["Kafka Results Consumer"]
         F["REST API Handlers & WebSocket Hub"]
@@ -189,21 +193,22 @@ flowchart TD
     A -->|1. Webhook Payload| B
     B <-->|2. Check Rate Limit <1ms| C
     C <-->|3. Token Bucket| G
-    B -->|4. Atomic ACID Commit <3ms| H
-    B -.-x|5. Return 202 Accepted <5ms| A
+    B -->|4. Sync Rule Eval (block/flag/pass)| RuleEngine
+    RuleEngine -->|5. Atomic ACID Commit (Unconditional Outbox) <3ms| H
+    RuleEngine -.-x|6. Return 202 Accepted <5ms| A
 
-    D -->|6. Read Unpublished Rows| H
-    D -->|7. Produce Event + OTel Header| I
-    I -->|8. Consume Event| L
-    L -->|9. Compute Score & SHAP| M
-    M -->|10a. Publish Scored Result| J
-    M -.->|10b. On 3x Failure| N
+    D -->|7. Read Unpublished Rows| H
+    D -->|8. Produce Event + OTel Header| I
+    I -->|9. Consume Event| L
+    L -->|10. Compute Score & SHAP| M
+    M -->|11a. Publish Scored Result| J
+    M -.->|11b. On 3x Failure| N
     N -.->|Publish Failed Event| K
 
-    J -->|11. Consume Scored Result| E
-    E -->|12. Update Status & Score| H
-    E -->|13. Push Live JSON Payload| F
-    F ===>|14. Native WebSocket| O
+    J -->|12. Consume Scored Result| E
+    E -->|13. Update DB (Enrich with Score)| H
+    E -->|14. Push Live JSON Payload| F
+    F ===>|15. Native WebSocket| O
     F -->|REST /api/v1/reviews| P
 
     B -.- Q & R
@@ -213,25 +218,26 @@ flowchart TD
 
 ### End-to-End Transaction Lifecycle
 
-#### Phase 1: Sub-Millisecond Ingestion & Atomic ACID Persistence (Sub-5ms Ingest SLA)
+#### Phase 1: Sub-Millisecond Ingestion, Rules & Atomic ACID Persistence (Sub-5ms Ingest SLA)
 1. **Webhook Reception:** Bank core payment systems push structured transaction JSON payloads to `POST /api/v1/ingest/transactions`.
 2. **Rate Limit & Velocity Validation:** The Go ingestor validates the API key against a Redis 7 token-bucket rate limiter in `<1ms`. If the bucket is exhausted, it returns `429 Too Many Requests` with an RFC-compliant `Retry-After` header.
-3. **Atomic Outbox Write:** Using a single ACID PostgreSQL transaction (`pgx/v5`), the server inserts the transaction row into the `transactions` table (status: `pending`) and simultaneously writes an event payload into `outbox_events` (status: `unpublished`).
-4. **Immediate Decoupled Response:** The server acknowledges the request with an HTTP `202 Accepted` status code in **under 5 milliseconds**, ensuring bank payment checkouts never block waiting for ML inference.
+3. **Synchronous Rule Evaluation:** The payload is evaluated against deterministic rules in-memory, immediately determining the base action (`block`, `flag`, or `pass`) and setting the initial transaction status (`auto_blocked`, `escalated`, or `pending`).
+4. **Atomic Outbox Write (Unconditional Relay):** Using a single ACID PostgreSQL transaction (`pgx/v5`), the server commits the transaction row with its rule-assigned status and *always* simultaneously writes an event payload into `outbox_events`. There is no `skipML` logic.
+5. **Immediate Decoupled Response:** The server acknowledges the request with an HTTP `202 Accepted` status code in **under 5 milliseconds**, ensuring bank payment checkouts never block waiting for ML inference.
 
 #### Phase 2: Event Streaming & Asynchronous XGBoost Inference
-5. **Outbox Poller Publication:** A dedicated background goroutine continuously polls the `outbox_events` table for unpublished rows, publishing each event to Apache Kafka topic `transactions.raw` while injecting W3C `traceparent` OpenTelemetry trace context into the Kafka message headers.
-6. **Feature Engineering & Inference:** The Python 3.12 ML Worker consumes from `transactions.raw`, engineers velocity and behavioral features, and passes the feature vector to an XGBoost gradient boosted classifier.
-7. **SHAP Contribution Calculation:** For every scored transaction, `TreeExplainer` calculates precise Shapley Additive Explanations (SHAP), quantifying the positive and negative contribution weight of each feature toward the fraud probability score (`0.00–1.00`).
-8. **Scored Event Publishing:** The worker publishes the scored payload (including `risk_score`, `risk_band`, and `shap_values`) to Kafka topic `transactions.scored`. If inference fails after 3 exponential backoff retries, the event is automatically routed to `transactions.dlq`.
+6. **Outbox Poller Publication:** A dedicated background goroutine continuously polls the `outbox_events` table for unpublished rows, publishing each event to Apache Kafka topic `transactions.raw` while injecting W3C `traceparent` OpenTelemetry trace context into the Kafka message headers.
+7. **Feature Engineering & Inference:** The Python 3.12 ML Worker consumes from `transactions.raw`, engineers velocity and behavioral features, and passes the feature vector to an XGBoost gradient boosted classifier.
+8. **SHAP Contribution Calculation:** For every scored transaction, `TreeExplainer` calculates precise Shapley Additive Explanations (SHAP), quantifying the positive and negative contribution weight of each feature toward the fraud probability score (`0.00–1.00`).
+9. **Scored Event Publishing:** The worker publishes the scored payload (including `risk_score`, `risk_band`, and `shap_values`) to Kafka topic `transactions.scored`. If inference fails after 3 exponential backoff retries, the event is automatically routed to `transactions.dlq`.
 
 #### Phase 3: Real-Time Governance, Database Synchronization & WebSocket Push
-9. **Result Consumption:** The Go API Server `Results Consumer` goroutine subscribes to `transactions.scored`.
-10. **State-Machine Transition:** The server updates the PostgreSQL `transactions` table row with the computed ML score, SHAP weights, and new operational status (`scored_approved` for low risk, `escalated` for medium/high risk, or `auto_blocked` for scores `>=0.92`).
-11. **Real-Time Analyst Alerting:** If a transaction is flagged (`escalated` or `auto_blocked`), the Go native WebSocket hub broadcasts an immediate JSON event to all connected Next.js 16 analyst browsers, rendering the flagged transaction and SHAP feature bar chart in real time without page refreshing.
+10. **Result Consumption:** The Go API Server `Results Consumer` goroutine subscribes to `transactions.scored`.
+11. **State-Machine Transition (Parallel Enrichment):** The server updates the PostgreSQL `transactions` table row with the computed ML score. If the transaction was `pending` and the score is high, it escalates to the `ML Borderline Review` queue. If already `escalated` by rules, the score re-sorts the queue (highest risk first). If `auto_blocked` by rules, the score is evaluated for `block_audit_samples` anomaly detection.
+12. **Real-Time Analyst Alerting:** If a transaction is flagged (`escalated` or `auto_blocked`), the Go native WebSocket hub broadcasts an immediate JSON event to all connected Next.js 16 analyst browsers, rendering the flagged transaction and SHAP feature bar chart in real time without page refreshing.
 
 #### Phase 4: Full-Stack Observability & Distributed Trace Continuity
-12. **Trace & Metric Correlation:** Because OpenTelemetry W3C trace headers are injected by Go into Kafka metadata and extracted by Python, Jaeger visualizes an unbroken distributed trace across HTTP handlers, Kafka brokers, and ML inference spans. Meanwhile, Prometheus scrapes live runtime metrics across both services for visualization in Grafana.
+13. **Trace & Metric Correlation:** Because OpenTelemetry W3C trace headers are injected by Go into Kafka metadata and extracted by Python, Jaeger visualizes an unbroken distributed trace across HTTP handlers, Kafka brokers, and ML inference spans. Meanwhile, Prometheus scrapes live runtime metrics across both services for visualization in Grafana.
 
 ---
 
@@ -246,19 +252,23 @@ flowchart TD
 - **Decision:** Never execute direct dual-writes (`db.Exec(...)` followed by `kafka.Produce(...)`). Instead, write to the database and an outbox table in one ACID transaction.
 - **Rationale:** Direct dual-writes create a catastrophic distributed race condition: if PostgreSQL commits but the service crashes before Kafka acknowledges the publish, the transaction is permanently lost. The Transactional Outbox Pattern guarantees at-least-once message delivery and zero event loss across service failures.
 
-#### 3. Apache Kafka (over Redis Streams or RabbitMQ)
+#### 3. Parallel Hybrid Pipeline (Rules + ML)
+- **Decision:** Execute deterministic rules synchronously during ingestion, but *unconditionally* write to the outbox to ensure the ML worker scores every transaction asynchronously.
+- **Rationale:** Sequential execution (where blocked/flagged transactions bypass ML) causes severe selection bias in training data and strips ML context from analyst queues. Parallel execution ensures ML scores enrich all queues and provides unbiased data for continuous retraining.
+
+#### 4. Apache Kafka (over Redis Streams or RabbitMQ)
 - **Decision:** Utilize Apache Kafka 7.5 as the primary event streaming backbone across `transactions.raw`, `transactions.scored`, and `transactions.dlq`.
 - **Rationale:** While Redis Streams offers lightweight streaming, Kafka provides an immutable, partitioned, replayable commit log with robust consumer group rebalancing, horizontal partition scaling, and industry-standard consumer lag monitoring (via Kafka UI and Prometheus metrics).
 
-#### 4. Asynchronous Non-Blocking Inference (`202 Accepted` Decoupling)
+#### 5. Asynchronous Non-Blocking Inference (`202 Accepted` Decoupling)
 - **Decision:** Never block the REST ingestor HTTP request while waiting for ML model inference.
 - **Rationale:** Synchronous ML scoring in the ingest request path couples merchant checkout conversion to data science model latency. By returning `202 Accepted` in `<5ms` immediately after DB commit, ingestion throughput scales independently of ML worker inference latency.
 
-#### 5. OpenTelemetry Context Propagation via Kafka Message Headers
+#### 6. OpenTelemetry Context Propagation via Kafka Message Headers
 - **Decision:** Propagate W3C `traceparent` OpenTelemetry trace identifiers across Kafka message headers between Go and Python.
 - **Rationale:** Standard HTTP tracing headers fail in asynchronous event-driven architectures. Injecting trace context into Kafka message headers ensures Jaeger visualizes an unbroken distributed trace across Go producers, Kafka brokers, and Python consumers.
 
-#### 6. Native WebSocket Push (over Analyst Client Polling)
+#### 7. Native WebSocket Push (over Analyst Client Polling)
 - **Decision:** Push flagged transactions and fraud alerts from the Go server to Next.js analyst browsers over persistent WebSockets.
 - **Rationale:** Traditional HTTP polling (`GET /api/v1/transactions?flagged=true` every 5 seconds) degrades server performance, wastes network bandwidth, and delays critical fraud alerts. WebSockets achieve sub-second alert delivery with zero database polling overhead.
 
@@ -267,150 +277,442 @@ flowchart TD
 ## 6. Folder Structure
 
 ```
-fraud-detection/
-├── docker-compose.yml
-├── docker-compose.prod.yml
+Aegis/
+├── .env
 ├── .env.example
-├── README.md                        # Architecture Decision Records (ADRs)
-├── Makefile                         # make dev, make test, make migrate
-│
-├── services/
-│   ├── api-server/                  # Go service
-│   │   ├── cmd/
-│   │   │   └── server/
-│   │   │       └── main.go          # wires deps, starts HTTP + graceful shutdown
-│   │   └── internal/
-│   │       ├── config/
-│   │       │   └── config.go        # loads .env, validates required vars
-│   │       ├── database/
-│   │       │   ├── postgres.go      # pgx pool setup
-│   │       │   └── redis.go         # go-redis client setup
-│   │       ├── middleware/
-│   │       │   ├── auth.go          # JWT parse + inject analyst into context
-│   │       │   ├── rbac.go          # role check: viewer / reviewer / admin
-│   │       │   ├── ratelimit.go     # Redis token bucket per API key
-│   │       │   ├── requestid.go     # inject X-Request-ID + trace_id
-│   │       │   └── logging.go       # zerolog request logger
-│   │       ├── handler/
-│   │       │   ├── ingest.go        # POST /api/v1/ingest/transactions
-│   │       │   ├── auth.go          # POST /auth/login, /refresh, /logout
-│   │       │   ├── transactions.go  # GET /transactions, /:id
-│   │       │   ├── reviews.go       # POST /transactions/:id/review
-│   │       │   ├── stats.go         # GET /stats/summary, /stats/trends
-│   │       │   ├── config.go        # GET/PATCH /admin/config/:key
-│   │       │   ├── dlq.go           # GET /admin/dlq, POST /admin/dlq/:id/requeue
-│   │       │   └── websocket.go     # WS /ws/feed
-│   │       ├── ws/
-│   │       │   ├── hub.go           # connection registry + broadcast loop
-│   │       │   └── client.go        # per-connection reader/writer goroutines
-│   │       ├── outbox/
-│   │       │   ├── writer.go        # writes outbox row inside DB transaction
-│   │       │   └── poller.go        # goroutine: polls outbox -> publishes Kafka
-│   │       ├── kafka/
-│   │       │   ├── producer.go      # confluent-kafka-go producer wrapper
-│   │       │   ├── results_consumer.go  # reads transactions.scored
-│   │       │   └── dlq_consumer.go      # reads transactions.dlq
-│   │       ├── repository/
-│   │       │   ├── transaction.go
-│   │       │   ├── fraud_result.go
-│   │       │   ├── review.go
-│   │       │   ├── outbox.go
-│   │       │   ├── config.go
-│   │       │   └── audit.go
-│   │       ├── service/
-│   │       │   ├── ingest.go        # orchestrates: write tx + outbox
-│   │       │   ├── fraud.go         # handles scored result: write DB + broadcast
-│   │       │   ├── review.go        # analyst review state transitions
-│   │       │   ├── stats.go         # aggregation queries for dashboard
-│   │       │   └── config.go        # runtime config: DB read + Redis cache
-│   │       ├── model/
-│   │       │   ├── transaction.go
-│   │       │   ├── fraud_result.go
-│   │       │   └── analyst.go
-│   │       ├── metrics/
-│   │       │   └── prometheus.go    # all metric definitions + registration
-│   │       └── tracing/
-│   │           └── otel.go          # tracer provider setup, Jaeger exporter
-│   │   ├── Dockerfile
-│   │   └── go.mod
-│   │
-│   ├── ml-worker/                   # Python service
-│   │   ├── main.py                  # entry: starts consumer loop + health server
-│   │   ├── consumer.py              # Kafka consumer group loop
-│   │   ├── predictor.py             # loads model, runs inference + SHAP
-│   │   ├── publisher.py             # produces to transactions.scored / .dlq
-│   │   ├── features.py              # feature engineering pipeline
-│   │   ├── tracing.py               # OTel setup, Kafka header propagation
-│   │   ├── metrics.py               # prometheus_client HTTP exposition
-│   │   ├── dlq.py                   # retry logic + DLQ publish on max retries
-│   │   ├── health.py                # FastAPI app: GET /health
-│   │   ├── model/
-│   │   │   ├── train.py             # offline training script
-│   │   │   ├── evaluate.py          # F1, precision, recall, threshold tuning
-│   │   │   ├── fraud_model_v1.pkl   # serialised XGBoost pipeline
-│   │   │   └── feature_config.json  # feature names, scaler params, threshold
-│   │   ├── requirements.txt
-│   │   └── Dockerfile
-│   │
-│   └── dashboard/                   # Next.js 16
-│       ├── app/
-│       │   ├── layout.tsx
-│       │   ├── login/page.tsx
-│       │   └── dashboard/
-│       │       ├── layout.tsx           # sidebar + nav
-│       │       ├── page.tsx             # overview stats
-│       │       ├── feed/page.tsx        # live WebSocket feed
-│       │       ├── transactions/
-│       │       │   ├── page.tsx         # searchable table
-│       │       │   └── [id]/page.tsx    # detail + SHAP chart + review form
-│       │       ├── analytics/page.tsx   # trend charts
-│       │       └── admin/
-│       │           ├── dlq/page.tsx
-│       │           └── config/page.tsx
-│       ├── components/
-│       │   ├── feed/
-│       │   │   ├── LiveFeed.tsx         # WS consumer, renders FlaggedCard list
-│       │   │   └── FlaggedCard.tsx
-│       │   ├── transactions/
-│       │   │   ├── TransactionTable.tsx
-│       │   │   ├── TransactionFilters.tsx
-│       │   │   └── ShapChart.tsx        # Recharts horizontal bar for feature weights
-│       │   ├── analytics/
-│       │   │   ├── FraudRateChart.tsx
-│       │   │   └── CategoryBreakdown.tsx
-│       │   └── ui/                      # shared primitives
-│       ├── lib/
-│       │   ├── api.ts                   # axios instance + interceptors
-│       │   └── ws.ts                    # WebSocket singleton + reconnect logic
-│       ├── hooks/
-│       │   ├── useWebSocket.ts
-│       │   ├── useTransactions.ts
-│       │   └── useStats.ts
-│       ├── types/index.ts
-│       └── package.json
-│
-├── migrations/
-│   ├── 001_create_analysts.sql
-│   ├── 002_create_transactions.sql
-│   ├── 003_create_outbox_events.sql
-│   ├── 004_create_fraud_results.sql
-│   ├── 005_create_reviews.sql
-│   ├── 006_create_audit_logs.sql
-│   ├── 007_create_model_versions.sql
-│   └── 008_create_system_config.sql
-│
-├── infra/
-│   ├── prometheus.yml               # scrape config
-│   ├── grafana/
-│   │   └── dashboards/
-│   │       └── fraud_detection.json # pre-built dashboard
-│   └── jaeger/
-│       └── jaeger-config.yml
-│
-└── scripts/
-    ├── seed_analysts.sql
-    ├── mock_transactions.py         # POST fake transactions at 10/sec
-    └── attack_scenario.py           # 20 txns from same account in 2 min
+├── .gitignore
+├── Makefile
+├── Pipeline.MD
+├── README.md
+├── aegis-corrected-architecture.md
+├── docker-compose.yml
+├── infra
+│   ├── grafana
+│   │   ├── dashboards
+│   │   │   └── fraud_detection.json
+│   │   └── provisioning
+│   │       ├── dashboards
+│   │       │   └── dashboard.yml
+│   │       └── datasources
+│   │           └── prometheus.yml
+│   └── prometheus.yml
+├── migrations
+│   
+├── scripts
+│   ├── mock_transactions.py
+│   ├── reset_test_data.ps1
+│   └── seed_analysts.sql
+└── services
+    ├── api
+    │   ├── Dockerfile
+    │   ├── cmd
+    │   │   ├── migrate
+    │   │   │   └── main.go
+    │   │   ├── register_model
+    │   │   │   └── main.go
+    │   │   ├── seed
+    │   │   │   └── main.go
+    │   │   └── server
+    │   │       └── main.go
+    │   ├── go.mod
+    │   ├── go.sum
+    │   ├── internal
+    │   │   ├── config
+    │   │   │   └── config.go
+    │   │   ├── database
+    │   │   │   ├── migrations.go
+    │   │   │   ├── postgres.go
+    │   │   │   └── redis.go
+    │   │   ├── handler
+    │   │   │   ├── admin_api.go
+    │   │   │   ├── analyst_api.go
+    │   │   │   ├── auth.go
+    │   │   │   ├── customer_api.go
+    │   │   │   ├── incident_api.go
+    │   │   │   ├── ingest.go
+    │   │   │   ├── integration_api.go
+    │   │   │   ├── metrics_api.go
+    │   │   │   ├── model_api.go
+    │   │   │   ├── notification.go
+    │   │   │   ├── queue_api.go
+    │   │   │   ├── retrain_api.go
+    │   │   │   ├── review_api.go
+    │   │   │   ├── reviewer_performance_api.go
+    │   │   │   ├── rule_api.go
+    │   │   │   ├── stats_api.go
+    │   │   │   ├── transaction_api.go
+    │   │   │   ├── util.go
+    │   │   │   ├── velocity_config_api.go
+    │   │   │   └── websocket.go
+    │   │   ├── kafka
+    │   │   │   ├── carrier.go
+    │   │   │   ├── dlq_consumer.go
+    │   │   │   ├── producer.go
+    │   │   │   └── results_consumer.go
+    │   │   ├── logger
+    │   │   │   └── logger.go
+    │   │   ├── metrics
+    │   │   │   └── prometheus.go
+    │   │   ├── middleware
+    │   │   │   ├── auth.go
+    │   │   │   ├── auth_test.go
+    │   │   │   ├── logging.go
+    │   │   │   ├── ratelimit.go
+    │   │   │   ├── rbac.go
+    │   │   │   ├── rbac_test.go
+    │   │   │   └── requestid.go
+    │   │   ├── model
+    │   │   │   ├── action_log.go
+    │   │   │   ├── analyst.go
+    │   │   │   ├── api_response.go
+    │   │   │   ├── audit.go
+    │   │   │   ├── audit_sample.go
+    │   │   │   ├── config.go
+    │   │   │   ├── customer.go
+    │   │   │   ├── fraud_result.go
+    │   │   │   ├── incident.go
+    │   │   │   ├── integration.go
+    │   │   │   ├── model_version.go
+    │   │   │   ├── notification.go
+    │   │   │   ├── queue.go
+    │   │   │   ├── retrain.go
+    │   │   │   ├── review.go
+    │   │   │   ├── reviewer_performance.go
+    │   │   │   ├── rule.go
+    │   │   │   └── transaction.go
+    │   │   ├── outbox
+    │   │   │   └── poller.go
+    │   │   ├── repository
+    │   │   │   ├── analyst.go
+    │   │   │   ├── audit.go
+    │   │   │   ├── audit_sample.go
+    │   │   │   ├── config.go
+    │   │   │   ├── customer.go
+    │   │   │   ├── fraud_result.go
+    │   │   │   ├── incident.go
+    │   │   │   ├── integration.go
+    │   │   │   ├── model.go
+    │   │   │   ├── outbox.go
+    │   │   │   ├── queue.go
+    │   │   │   ├── retrain.go
+    │   │   │   ├── review.go
+    │   │   │   ├── reviewer_performance.go
+    │   │   │   ├── rule.go
+    │   │   │   ├── rule_analytics.go
+    │   │   │   ├── stats.go
+    │   │   │   ├── transaction.go
+    │   │   │   ├── velocity.go
+    │   │   │   └── velocity_config.go
+    │   │   ├── service
+    │   │   │   ├── auth.go
+    │   │   │   ├── auth_test.go
+    │   │   │   ├── config.go
+    │   │   │   ├── fraud.go
+    │   │   │   ├── fraud_test.go
+    │   │   │   ├── incident.go
+    │   │   │   ├── ingest.go
+    │   │   │   ├── notification.go
+    │   │   │   ├── pdf_report.go
+    │   │   │   ├── review.go
+    │   │   │   ├── rules_engine.go
+    │   │   │   └── sla_monitor.go
+    │   │   ├── tracing
+    │   │   │   └── otel.go
+    │   │   ├── validator
+    │   │   │   ├── transaction.go
+    │   │   │   └── transaction_test.go
+    │   │   └── ws
+    │   │       ├── client.go
+    │   │       └── hub.go
+    │   ├── server.exe
+    │   └── tmp.exe
+    ├── dashboard
+    │   ├── .dockerignore
+    │   ├── .gitignore
+    │   ├── Dockerfile
+    │   ├── eslint.config.mjs
+    │   ├── next-env.d.ts
+    │   ├── next.config.ts
+    │   ├── package-lock.json
+    │   ├── package.json
+    │   ├── public
+    │   │   ├── file.svg
+    │   │   ├── globe.svg
+    │   │   ├── next.svg
+    │   │   ├── vercel.svg
+    │   │   └── window.svg
+    │   ├── src
+    │   │   ├── app
+    │   │   │   ├── (dashboard)
+    │   │   │   │   ├── admin
+    │   │   │   │   │   ├── audit
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   ├── config
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   ├── health
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   ├── integrations
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   ├── model-manage
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   ├── queue
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   ├── rules
+    │   │   │   │   │   │   ├── page.tsx
+    │   │   │   │   │   │   └── rules.module.css
+    │   │   │   │   │   ├── transactions
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   └── users
+    │   │   │   │   │       └── page.tsx
+    │   │   │   │   ├── components.module.css
+    │   │   │   │   ├── dashboard.module.css
+    │   │   │   │   ├── layout.tsx
+    │   │   │   │   ├── reviewer
+    │   │   │   │   │   ├── investigate
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   ├── performance
+    │   │   │   │   │   │   └── page.tsx
+    │   │   │   │   │   └── queue
+    │   │   │   │   │       └── page.tsx
+    │   │   │   │   └── viewer
+    │   │   │   │       ├── analytics
+    │   │   │   │       │   └── page.tsx
+    │   │   │   │       ├── audit
+    │   │   │   │       │   └── page.tsx
+    │   │   │   │       ├── model
+    │   │   │   │       │   └── page.tsx
+    │   │   │   │       ├── overview
+    │   │   │   │       │   └── page.tsx
+    │   │   │   │       └── transactions
+    │   │   │   │           └── page.tsx
+    │   │   │   ├── Providers.tsx
+    │   │   │   ├── contexts
+    │   │   │   │   ├── AuthContext.tsx
+    │   │   │   │   ├── NotificationContext.tsx
+    │   │   │   │   └── WebSocketContext.tsx
+    │   │   │   ├── favicon.ico
+    │   │   │   ├── globals.css
+    │   │   │   ├── layout.tsx
+    │   │   │   ├── lib
+    │   │   │   │   ├── api.ts
+    │   │   │   │   └── parseDuration.ts
+    │   │   │   ├── login
+    │   │   │   │   └── page.tsx
+    │   │   │   └── page.tsx
+    │   │   ├── components
+    │   │   │   ├── ChartCard.tsx
+    │   │   │   ├── ConfirmDialog.tsx
+    │   │   │   ├── DataTable.tsx
+    │   │   │   ├── Drawer.tsx
+    │   │   │   ├── EmptyState.tsx
+    │   │   │   ├── Modal.tsx
+    │   │   │   ├── NotificationBell.tsx
+    │   │   │   ├── NotificationToast.tsx
+    │   │   │   ├── RadialRiskGauge.tsx
+    │   │   │   ├── Slider.tsx
+    │   │   │   ├── StatCard.tsx
+    │   │   │   ├── StatusBadge.tsx
+    │   │   │   ├── Toggle.tsx
+    │   │   │   └── notification.module.css
+    │   │   └── data
+    │   │       └── countries.json
+    │   ├── tsconfig.json
+    │   └── tsconfig.tsbuildinfo
+    └── ml-worker
+        ├── .dockerignore
+        ├── Dockerfile
+        ├── app
+        │   ├── api
+        │   │   └── health.py
+        │   ├── config
+        │   │   ├── config.py
+        │   │   ├── config_client.py
+        │   │   ├── constants.py
+        │   │   ├── feature_config.json
+        │   │   ├── redis_client.py
+        │   │   └── settings.py
+        │   ├── consumer
+        │   │   ├── consumer.py
+        │   │   └── processor.py
+        │   ├── exceptions.py
+        │   ├── features
+        │   │   ├── cleaning.py
+        │   │   ├── feature_engineering.py
+        │   │   ├── pipeline.py
+        │   │   ├── preprocessing.py
+        │   │   └── velocity_features.py
+        │   ├── inference
+        │   │   ├── artifact_loader.py
+        │   │   ├── predictor.py
+        │   │   ├── schema_validator.py
+        │   │   └── shap_explainer.py
+        │   ├── kafka
+        │   │   ├── dlq.py
+        │   │   └── producer.py
+        │   ├── main.py
+        │   ├── monitoring
+        │   │   ├── logger.py
+        │   │   ├── metrics.py
+        │   │   └── tracing.py
+        │   └── runtime
+        │       ├── container.py
+        │       └── state_store.py
+        ├── artifacts
+        │   ├── best_hyperparameters.json
+        │   ├── best_trial_metrics.json
+        │   ├── calibration_metadata.json
+        │   ├── deployment_threshold.json
+        │   ├── encoder.joblib
+        │   ├── encoder_metadata.json
+        │   ├── feature_importance.csv
+        │   ├── feature_importance.json
+        │   ├── feature_selector.joblib
+        │   ├── feature_selector_estimator.joblib
+        │   ├── feature_selector_metadata.json
+        │   ├── imputer.joblib
+        │   ├── imputer_metadata.json
+        │   ├── model_metadata.json
+        │   ├── optuna_study.db
+        │   ├── probability_calibrator.joblib
+        │   ├── runtime_preprocessing.joblib
+        │   ├── runtime_preprocessing_metadata.json
+        │   ├── shap_metadata.json
+        │   ├── training_configuration.json
+        │   └── xgboost_model.joblib
+        ├── data
+        │   ├── encoded
+        │   │   ├── train.parquet
+        │   │   └── validation.parquet
+        │   ├── imputed
+        │   │   ├── train.parquet
+        │   │   └── validation.parquet
+        │   ├── preprocessed
+        │   │   ├── cleaned_dataset.parquet
+        │   │   ├── cleaning_report.json
+        │   │   ├── created_features.csv
+        │   │   ├── dataset_summary.json
+        │   │   ├── engineered_dataset.parquet
+        │   │   ├── feature_engineering_report.json
+        │   │   ├── merged_dataset.parquet
+        │   │   ├── missing_values.csv
+        │   │   ├── numerical_summary.csv
+        │   │   ├── outlier_report.csv
+        │   │   └── removed_columns.csv
+        │   ├── raw
+        │   │   ├── train_identity.csv
+        │   │   └── train_transaction.csv
+        │   ├── results
+        │   │   ├── calibrated_validation_probabilities.npy
+        │   │   └── raw_validation_probabilities.npy
+        │   ├── selected
+        │   │   ├── train.parquet
+        │   │   └── validation.parquet
+        │   └── splits
+        │       ├── split_report.json
+        │       ├── train.parquet
+        │       └── validation.parquet
+        ├── deployment
+        │   ├── deployment_config.json
+        │   ├── deployment_validation_report.json
+        │   ├── probability_calibrator.joblib
+        │   ├── runtime_preprocessing.joblib
+        │   └── xgboost_model.joblib
+        ├── docs
+        │   └── runtime_preprocessing_contract.md
+        ├── logs
+        │   ├── export_artifacts.log
+        │   ├── probability_calibration.log
+        │   └── shap_explainability_20260726_164657.log
+        ├── plots
+        │   ├── calibration_curve.png
+        │   ├── confusion_matrix.png
+        │   ├── confusion_matrix_normalized.png
+        │   ├── feature_importance_comparison.png
+        │   ├── gain_curve.png
+        │   ├── lift_curve.png
+        │   ├── optuna_contour.png
+        │   ├── optuna_history.png
+        │   ├── optuna_parallel_coordinate.png
+        │   ├── optuna_param_importance.png
+        │   ├── optuna_slice.png
+        │   ├── pr_curve.png
+        │   ├── probability_distribution.png
+        │   ├── probability_distribution_after.png
+        │   ├── probability_distribution_before.png
+        │   ├── probability_shift_histogram.png
+        │   ├── roc_curve.png
+        │   ├── shap_decision_plot.png
+        │   ├── shap_dependence_top10.png
+        │   ├── shap_force_top_fraud.html
+        │   ├── shap_force_top_legitimate.html
+        │   ├── shap_heatmap.png
+        │   ├── shap_summary_bar.png
+        │   ├── shap_summary_beeswarm.png
+        │   ├── shap_violin_plot.png
+        │   ├── shap_waterfall_top_fraud.png
+        │   ├── shap_waterfall_top_legitimate.png
+        │   ├── threshold_tradeoff.png
+        │   ├── threshold_vs_business_score.png
+        │   ├── threshold_vs_f1.png
+        │   ├── threshold_vs_precision.png
+        │   └── threshold_vs_recall.png
+        ├── reports
+        │   ├── calibration_comparison.csv
+        │   ├── calibration_report.json
+        │   ├── calibration_statistics.json
+        │   ├── calibration_summary.json
+        │   ├── confusion_matrix.csv
+        │   ├── confusion_matrix.json
+        │   ├── encoding_report.json
+        │   ├── error_analysis.csv
+        │   ├── evaluation_configuration.json
+        │   ├── feature_importance_comparison.csv
+        │   ├── feature_selection_report.json
+        │   ├── imputation_report.json
+        │   ├── lift_gain_curve.csv
+        │   ├── local_explanations.csv
+        │   ├── misclassification_explanations.csv
+        │   ├── model_evaluation_report.json
+        │   ├── model_training_report.json
+        │   ├── optimization_history.csv
+        │   ├── optimization_report.json
+        │   ├── pr_curve.csv
+        │   ├── roc_curve.csv
+        │   ├── shap_explainability_report.json
+        │   ├── shap_feature_importance.csv
+        │   ├── shap_feature_importance.json
+        │   ├── shap_summary_statistics.json
+        │   ├── threshold_analysis.csv
+        │   ├── threshold_analysis.json
+        │   ├── threshold_analysis_metadata.json
+        │   ├── threshold_comparison.csv
+        │   ├── threshold_metadata.json
+        │   ├── threshold_optimization_report.json
+        │   └── threshold_summary.json
+        ├── requirements.txt
+        ├── run_pipeline.ps1
+        ├── run_pipeline.sh
+        ├── tests
+        │   ├── __init__.py
+        │   ├── conftest.py
+        │   ├── test_consumer.py
+        │   ├── test_features.py
+        │   └── test_predictor.py
+        └── training
+            ├── categorical_encoder.py
+            ├── cleaning.py
+            ├── evaluate.py
+            ├── export_artifacts.py
+            ├── feature_engineering.py
+            ├── feature_selection.py
+            ├── hyperparameter_optimization.py
+            ├── missing_value_handler.py
+            ├── preprocessing.py
+            ├── probability_calibration.py
+            ├── shap_explainability.py
+            ├── split.py
+            ├── threshold_optimizer.py
+            └── train.py
 ```
 
 ---
@@ -904,10 +1206,3 @@ make seed      # Seed analysts and system config
 make logs      # Tail all service logs
 make reset     # Tear down and wipe all volumes
 ```
-
----
-
-<p align="center">
-  Built by <strong>Sayantan Halder</strong> · B.Tech Computer Engineering, IITRAM Ahmedabad · Batch 2027<br/>
-  <a href="https://github.com/sayantanhalder10">github.com/sayantanhalder10</a> · <a href="https://sayantan-dev-portfolio.vercel.app">sayantan-dev-portfolio.vercel.app</a>
-</p>
