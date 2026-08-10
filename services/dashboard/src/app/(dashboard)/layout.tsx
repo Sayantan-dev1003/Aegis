@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "../contexts/AuthContext";
 import { useWebSocket } from "../contexts/WebSocketContext";
+import { NotificationBell } from "@/components/NotificationBell";
+import { NotificationToast } from "@/components/NotificationToast";
 import styles from "./dashboard.module.css";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -104,6 +106,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {pageMeta.subtitle && <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", margin: "4px 0 0 0" }}>{pageMeta.subtitle}</p>}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-md)" }}>
+            <NotificationBell />
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-md)" }}>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
                 <span style={{ fontSize: "0.9rem", fontWeight: 600, color: "var(--text-main)", lineHeight: 1.2 }}>{user?.full_name || "Analyst"}</span>
@@ -119,6 +122,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </div>
       </main>
+      <NotificationToast />
     </div>
   );
 }

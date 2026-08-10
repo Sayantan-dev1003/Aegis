@@ -8,6 +8,7 @@ import (
 	"github.com/Sayantan-dev1003/aegis/api/internal/metrics"
 	"github.com/Sayantan-dev1003/aegis/api/internal/model"
 	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -31,6 +32,7 @@ func getRiskBand(score float64) string {
 // WebSocketHub interface for broadcasting messages.
 type WebSocketHub interface {
 	Broadcast(transactionID string, payload interface{})
+	SendToUser(userID string, payload interface{})
 }
 
 // FraudService handles the business logic for processing fraud results.
@@ -41,25 +43,31 @@ type FraudService struct {
 	hub             WebSocketHub
 	queueRepo       *repository.QueueRepository
 	auditSampleRepo *repository.AuditSampleRepository
+	notifService    *NotificationService
+	db              *pgxpool.Pool
 	tracer          trace.Tracer
 }
 
 // NewFraudService creates a new FraudService.
 func NewFraudService(
+	db *pgxpool.Pool,
 	fraudRepo *repository.FraudResultRepository,
 	txRepo *repository.TransactionRepository,
 	configService *ConfigService,
 	hub WebSocketHub,
 	queueRepo *repository.QueueRepository,
 	auditSampleRepo *repository.AuditSampleRepository,
+	notifService *NotificationService,
 ) *FraudService {
 	return &FraudService{
+		db:              db,
 		fraudRepo:       fraudRepo,
 		txRepo:          txRepo,
 		configService:   configService,
 		hub:             hub,
 		queueRepo:       queueRepo,
 		auditSampleRepo: auditSampleRepo,
+		notifService:    notifService,
 		tracer:          otel.Tracer("aegis/api/service"),
 	}
 }
@@ -125,6 +133,20 @@ func (s *FraudService) HandleScoredResult(ctx context.Context, result *model.Fra
 				mlQ, err := s.queueRepo.FindByName(ctx, "ML Borderline Review")
 				if err == nil && mlQ != nil {
 					queueID = &mlQ.ID
+					
+					if s.notifService != nil {
+						queueReviewer, _ := s.resolveQueueReviewer(ctx, mlQ.ID)
+						if queueReviewer != "" {
+							s.notifService.Notify(ctx, model.Notification{
+								ReviewerID:    queueReviewer,
+								EventType:     "queue.case_scored",
+								Priority:      "info",
+								Title:         "ML-Scored Case Assigned",
+								Message:       fmt.Sprintf("TXN %s (ML score: %.2f) assigned to your queue for review", result.TransactionID, result.FraudScore),
+								TransactionID: &result.TransactionID,
+							})
+						}
+					}
 				} else {
 					fallbackQ, err2 := s.queueRepo.GetFallbackQueue(ctx)
 					if err2 == nil && fallbackQ != nil {
@@ -183,4 +205,10 @@ func (s *FraudService) HandleScoredResult(ctx context.Context, result *model.Fra
 	}
 
 	return nil
+}
+
+func (s *FraudService) resolveQueueReviewer(ctx context.Context, queueID string) (string, error) {
+	var reviewerID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM analysts WHERE queue_id = $1 LIMIT 1", queueID).Scan(&reviewerID)
+	return reviewerID, err
 }

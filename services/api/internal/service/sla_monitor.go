@@ -136,6 +136,31 @@ func (m *SLAMonitor) processTier1Breaches(ctx context.Context) error {
 		`
 		if _, err := m.db.Exec(ctx, updateQ, item.txID, reducedSec, fallbackQ.ID); err == nil {
 			log.Warn().Str("transaction_id", item.txID).Msg("Tier 1 SLA Breach: Transferred to Default Queue with 50% reduced SLA")
+			
+			origReviewer, _ := m.resolveQueueReviewer(ctx, item.queueID)
+			if origReviewer != "" && m.notifService != nil {
+				m.notifService.Notify(ctx, model.Notification{
+					ReviewerID:    origReviewer,
+					EventType:     "queue.case_escalated_out",
+					Priority:      "info",
+					Title:         "Case Escalated Out",
+					Message:       fmt.Sprintf("TXN %s breached SLA in your queue and moved to Fallback", item.txID),
+					TransactionID: &item.txID,
+				})
+			}
+
+			fallbackReviewer, _ := m.resolveQueueReviewer(ctx, fallbackQ.ID)
+			if fallbackReviewer != "" && m.notifService != nil {
+				m.notifService.Notify(ctx, model.Notification{
+					ReviewerID:    fallbackReviewer,
+					EventType:     "queue.case_received",
+					Priority:      "critical",
+					Title:         "⚠️ Urgent Case Received",
+					Message:       fmt.Sprintf("TXN %s breached in original queue, now in yours with reduced SLA", item.txID),
+					TransactionID: &item.txID,
+				})
+			}
+
 			if m.hub != nil {
 				event := map[string]any{
 					"event_type":     "transaction.sla_breached_tier1",
@@ -182,7 +207,7 @@ func (m *SLAMonitor) processTier2Breaches(ctx context.Context) error {
 	}
 
 	query := `
-		SELECT t.id, t.risk_score, fr.created_at
+		SELECT t.id, t.risk_score, t.queue_id, t.claimed_by, fr.created_at
 		FROM transactions t
 		LEFT JOIN fraud_results fr ON fr.transaction_id = t.id
 		WHERE t.status IN ('escalated', 'breached')
@@ -205,12 +230,14 @@ func (m *SLAMonitor) processTier2Breaches(ctx context.Context) error {
 	type tier2Item struct {
 		txID        string
 		riskScore   *float64
+		queueID     *string
+		claimedBy   *string
 		frCreatedAt *time.Time
 	}
 	var items []tier2Item
 	for rows.Next() {
 		var item tier2Item
-		if err := rows.Scan(&item.txID, &item.riskScore, &item.frCreatedAt); err == nil {
+		if err := rows.Scan(&item.txID, &item.riskScore, &item.queueID, &item.claimedBy, &item.frCreatedAt); err == nil {
 			items = append(items, item)
 		}
 	}
@@ -243,6 +270,20 @@ func (m *SLAMonitor) processTier2Breaches(ctx context.Context) error {
 					})
 				}
 				log.Warn().Str("transaction_id", item.txID).Msgf("Tier 2 SLA Breach: Resolved via cached ML score (%s)", status)
+				
+				if item.queueID != nil {
+					curReviewer, _ := m.resolveQueueReviewer(ctx, *item.queueID)
+					if curReviewer != "" && m.notifService != nil {
+						m.notifService.Notify(ctx, model.Notification{
+							ReviewerID:    curReviewer,
+							EventType:     "queue.case_auto_resolved",
+							Priority:      "info",
+							Title:         "Case Auto-Resolved",
+							Message:       fmt.Sprintf("TXN %s auto-resolved due to investigation timeout (ML score: %.2f)", item.txID, *item.riskScore),
+							TransactionID: &item.txID,
+						})
+					}
+				}
 				continue
 			}
 		}
@@ -303,6 +344,21 @@ func (m *SLAMonitor) processTier2Breaches(ctx context.Context) error {
 
 		if err := tx.Commit(ctx); err == nil {
 			log.Warn().Str("transaction_id", item.txID).Msg("Tier 2 SLA Breach: Converted to pending status and written to outbox for ML Model")
+			
+			if item.queueID != nil {
+				curReviewer, _ := m.resolveQueueReviewer(ctx, *item.queueID)
+				if curReviewer != "" && m.notifService != nil {
+					m.notifService.Notify(ctx, model.Notification{
+						ReviewerID:    curReviewer,
+						EventType:     "queue.case_unloaded",
+						Priority:      "info",
+						Title:         "Case Sent for Re-evaluation",
+						Message:       fmt.Sprintf("TXN %s unloaded due to investigation timeout and sent for re-scoring", item.txID),
+						TransactionID: &item.txID,
+					})
+				}
+			}
+
 			if m.hub != nil {
 				event := map[string]any{
 					"event_type":     "transaction.sla_breached_tier2",
@@ -383,6 +439,18 @@ func (m *SLAMonitor) processInvestigationTimeouts(ctx context.Context) error {
 		`
 		if _, err := m.db.Exec(ctx, updateQ, atoQ.ID, atoQ.SlaTargetMinutes*60, item.txID); err == nil {
 			log.Warn().Str("transaction_id", item.txID).Msg("Investigation timeout (>30 min): Re-routed to Account Takeover Suspects with urgent priority")
+			
+			if item.claimedBy != "" && m.notifService != nil {
+				m.notifService.Notify(ctx, model.Notification{
+					ReviewerID:    item.claimedBy,
+					EventType:     "transaction.investigation_timeout",
+					Priority:      "critical",
+					Title:         "⚠️ Investigation Timeout",
+					Message:       fmt.Sprintf("TXN %s exceeded 30 min investigation window. Re-routed to Account Takeover Suspects.", item.txID),
+					TransactionID: &item.txID,
+				})
+			}
+
 			if m.incidentRepo != nil {
 				_ = m.incidentRepo.Create(ctx, &model.Incident{
 					TransactionID: strPtr(item.txID),
@@ -428,10 +496,28 @@ func (m *SLAMonitor) processVIPWarnings(ctx context.Context) error {
 		var txID, qID, qName string
 		var slaMins int
 		if err := rows.Scan(&txID, &qID, &qName, &slaMins); err == nil {
+			vipReviewer, _ := m.resolveQueueReviewer(ctx, qID)
+			if vipReviewer != "" && m.notifService != nil {
+				m.notifService.Notify(ctx, model.Notification{
+					ReviewerID:    vipReviewer,
+					EventType:     "queue.vip_case_unclaimed",
+					Priority:      "critical",
+					Title:         "🔴 VIP Case Urgent",
+					Message:       fmt.Sprintf("High-priority TXN %s in queue '%s' (SLA: %d min) unclaimed for 50%% of window. Immediate attention required.", txID, qName, slaMins),
+					TransactionID: &txID,
+				})
+			}
+
 			if m.notifService != nil {
 				m.notifService.NotifyAdminEscalation(ctx, &model.Queue{ID: qID, Name: qName}, &model.Transaction{ID: txID}, "VIP Transaction SLA > 50% elapsed and unclaimed")
 			}
 		}
 	}
 	return nil
+}
+
+func (m *SLAMonitor) resolveQueueReviewer(ctx context.Context, queueID string) (string, error) {
+	var reviewerID string
+	err := m.db.QueryRow(ctx, "SELECT id FROM analysts WHERE queue_id = $1 LIMIT 1", queueID).Scan(&reviewerID)
+	return reviewerID, err
 }

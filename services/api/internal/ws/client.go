@@ -22,7 +22,7 @@ type Client struct {
 	Conn        *websocket.Conn
 	Send        chan []byte
 	once        sync.Once
-	userID      string
+	UserID      string
 	connectedAt time.Time
 }
 
@@ -31,7 +31,7 @@ func NewClient(hub *Hub, conn *websocket.Conn, userID string) *Client {
 		hub:         hub,
 		Conn:        conn,
 		Send:        make(chan []byte, SendBufferSize),
-		userID:      userID,
+		UserID:      userID,
 		connectedAt: time.Now(),
 	}
 }
@@ -54,11 +54,11 @@ func (c *Client) ReadPump() {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				metrics.WSUnexpectedDisconnectTotal.Inc()
-				logger.Get().Warn().Err(err).Str("user_id", c.userID).Msg("unexpected disconnect")
+				logger.Get().Warn().Err(err).Str("user_id", c.UserID).Msg("unexpected disconnect")
 			}
 			break
 		}
-		logger.Get().Debug().Str("user_id", c.userID).Msg("received unexpected client message, discarding")
+		logger.Get().Debug().Str("user_id", c.UserID).Msg("received unexpected client message, discarding")
 	}
 }
 

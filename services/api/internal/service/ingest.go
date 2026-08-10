@@ -65,21 +65,23 @@ func buildMLPayload(t *model.Transaction) ([]byte, error) {
 
 // IngestService handles the business logic for transaction ingestion.
 type IngestService struct {
-	db         *pgxpool.Pool
-	txRepo     *repository.TransactionRepository
-	outboxRepo *repository.OutboxRepository
-	rules      *RulesEngine
-	queueRepo  *repository.QueueRepository
+	db           *pgxpool.Pool
+	txRepo       *repository.TransactionRepository
+	outboxRepo   *repository.OutboxRepository
+	rules        *RulesEngine
+	queueRepo    *repository.QueueRepository
+	notifService *NotificationService
 }
 
 // NewIngestService creates a new IngestService.
-func NewIngestService(db *pgxpool.Pool, txRepo *repository.TransactionRepository, outboxRepo *repository.OutboxRepository, rules *RulesEngine, queueRepo *repository.QueueRepository) *IngestService {
+func NewIngestService(db *pgxpool.Pool, txRepo *repository.TransactionRepository, outboxRepo *repository.OutboxRepository, rules *RulesEngine, queueRepo *repository.QueueRepository, notifService *NotificationService) *IngestService {
 	return &IngestService{
-		db:         db,
-		txRepo:     txRepo,
-		outboxRepo: outboxRepo,
-		rules:      rules,
-		queueRepo:  queueRepo,
+		db:           db,
+		txRepo:       txRepo,
+		outboxRepo:   outboxRepo,
+		rules:        rules,
+		queueRepo:    queueRepo,
+		notifService: notifService,
 	}
 }
 
@@ -158,6 +160,20 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 		return "", fmt.Errorf("failed to insert INGESTED action log: %w", err)
 	}
 
+	if s.notifService != nil && t.QueueID != nil {
+		queueReviewer, _ := s.resolveQueueReviewer(ctx, *t.QueueID)
+		if queueReviewer != "" {
+			s.notifService.Notify(ctx, model.Notification{
+				ReviewerID:    queueReviewer,
+				EventType:     "queue.case_received",
+				Priority:      "info",
+				Title:         "New Case in Queue",
+				Message:       fmt.Sprintf("New case TXN %s (₹%.2f) assigned to your queue", t.ID, t.Amount),
+				TransactionID: &t.ID,
+			})
+		}
+	}
+
 	// 5. Unconditionally insert into outbox_events table for ML scoring (skipML removed)
 	payloadBytes, err := buildMLPayload(t)
 	if err != nil {
@@ -175,4 +191,10 @@ func (s *IngestService) IngestTransaction(ctx context.Context, t *model.Transact
 
 	// 7. Return generated transaction ID
 	return t.ID, nil
+}
+
+func (s *IngestService) resolveQueueReviewer(ctx context.Context, queueID string) (string, error) {
+	var reviewerID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM analysts WHERE queue_id = $1 LIMIT 1", queueID).Scan(&reviewerID)
+	return reviewerID, err
 }

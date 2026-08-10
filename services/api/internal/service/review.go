@@ -157,6 +157,15 @@ func (s *ReviewService) RejectTransaction(ctx context.Context, txID string, anal
 
 		if s.notifService != nil {
 			s.notifService.NotifyAdminEscalation(ctx, adminQ, &model.Transaction{ID: txID}, fmt.Sprintf("Force-escalated after %d rejections", newRejectCount))
+
+			s.notifService.Notify(ctx, model.Notification{
+				ReviewerID:    analystID,
+				EventType:     "transaction.force_escalated",
+				Priority:      "warning",
+				Title:         "⚠️ Reject Cap Hit",
+				Message:       fmt.Sprintf("TXN %s force-escalated to Admin Escalations after 2 rejections", txID),
+				TransactionID: &txID,
+			})
 		}
 
 		if s.hub != nil {
@@ -347,7 +356,7 @@ func (s *ReviewService) SubmitReview(
 		return nil, fmt.Errorf("failed to commit tx: %w", err)
 	}
 
-	// Step 4: WebSocket broadcast
+	// Step 4: WebSocket broadcast and Notifications
 	if s.hub != nil {
 		event := model.TransactionReviewedEvent{
 			EventType:     "transaction.reviewed",
@@ -358,6 +367,65 @@ func (s *ReviewService) SubmitReview(
 			Timestamp:     time.Now().UTC(),
 		}
 		s.hub.Broadcast(txID, event)
+	}
+
+	if isEscalate && s.notifService != nil {
+		// Prepare names for the notification message
+		targetQueueName := "Unknown Queue"
+		if req.TargetQueueID != nil && *req.TargetQueueID != "" {
+			q, err := s.queueRepo.GetByID(ctx, *req.TargetQueueID)
+			if err == nil && q != nil {
+				targetQueueName = q.Name
+			}
+		}
+
+		targetAnalystName := ""
+		if req.TargetAnalystID != nil && *req.TargetAnalystID != "" {
+			a, err := s.analystRepo.FindByID(ctx, *req.TargetAnalystID)
+			if err == nil && a != nil {
+				targetAnalystName = a.FullName
+			}
+		}
+
+		// 1. Notify the original reviewer
+		msgToOriginal := fmt.Sprintf("Transaction %s was escalated to %s", txID, targetQueueName)
+		if targetAnalystName != "" {
+			msgToOriginal += fmt.Sprintf(" - %s", targetAnalystName)
+		}
+		msgToOriginal += " by you."
+
+		_ = s.notifService.Notify(ctx, model.Notification{
+			ReviewerID:    analystID,
+			EventType:     "transaction.escalated_by_you",
+			Priority:      "info",
+			Title:         "Case Escalated",
+			Message:       msgToOriginal,
+			TransactionID: &txID,
+		})
+
+		// 2. Notify the target
+		if req.TargetAnalystID != nil && *req.TargetAnalystID != "" {
+			_ = s.notifService.Notify(ctx, model.Notification{
+				ReviewerID:    *req.TargetAnalystID,
+				EventType:     "transaction.escalation_received",
+				Priority:      "critical",
+				Title:         "⚠️ Escalation Assigned",
+				Message:       fmt.Sprintf("Transaction %s was escalated directly to you.", txID),
+				TransactionID: &txID,
+			})
+		} else if req.TargetQueueID != nil && *req.TargetQueueID != "" {
+			targetReviewerID, err := s.resolveQueueReviewer(ctx, *req.TargetQueueID)
+			if err == nil && targetReviewerID != "" {
+				_ = s.notifService.Notify(ctx, model.Notification{
+					ReviewerID:    targetReviewerID,
+					EventType:     "queue.escalation_received",
+					Priority:      "critical",
+					Title:         "⚠️ New Escalation in Queue",
+					Message:       fmt.Sprintf("Transaction %s was escalated to your queue.", txID),
+					TransactionID: &txID,
+				})
+			}
+		}
 	}
 
 	// Step 5: Write audit log
@@ -379,4 +447,10 @@ func (s *ReviewService) SubmitReview(
 	}()
 
 	return review, nil
+}
+
+func (s *ReviewService) resolveQueueReviewer(ctx context.Context, queueID string) (string, error) {
+	var reviewerID string
+	err := s.db.QueryRow(ctx, "SELECT id FROM analysts WHERE queue_id = $1 LIMIT 1", queueID).Scan(&reviewerID)
+	return reviewerID, err
 }

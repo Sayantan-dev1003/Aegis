@@ -68,6 +68,10 @@ func (m *mockWebSocketHub) Broadcast(txID string, payload interface{}) {
 	}{txID, payload})
 }
 
+func (m *mockWebSocketHub) SendToUser(userID string, payload interface{}) {
+	// mock implementation
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // FraudService tests
 // Note: FraudService depends on concrete *repository types, so we test the

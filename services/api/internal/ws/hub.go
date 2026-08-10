@@ -87,3 +87,38 @@ func (h *Hub) Broadcast(transactionID string, payload interface{}) {
 		logger.Get().Error().Msg("broadcast channel full, message dropped")
 	}
 }
+
+// SendToUser sends a message to a specific user by ID
+func (h *Hub) SendToUser(userID string, payload interface{}) {
+	tracer := otel.Tracer("aegis/api/ws")
+	_, span := tracer.Start(context.Background(), "ws_hub.send_to_user")
+	span.SetAttributes(attribute.String("user_id", userID))
+	defer span.End()
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		logger.Get().Error().Err(err).Msg("failed to marshal user notification payload")
+		return
+	}
+
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for client := range h.clients {
+		if client.UserID == userID {
+			select {
+			case client.Send <- data:
+				metrics.WSMessagesUserTargetedTotal.Inc()
+			default:
+				client.once.Do(func() {
+					close(client.Send)
+				})
+				delete(h.clients, client)
+				metrics.WebSocketConnectionsActive.Dec()
+				metrics.WSSlowClientDisconnectedTotal.Inc()
+				logger.Get().Warn().Str("user_id", userID).Msg("slow client evicted during user send")
+			}
+			return
+		}
+	}
+}

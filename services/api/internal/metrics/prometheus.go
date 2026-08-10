@@ -34,6 +34,7 @@ var (
 	WSUpgradeFailedTotal            prometheus.Counter
 	DuplicateFraudResultTotal       prometheus.Counter
 	ConfigDbReadTotal               *prometheus.CounterVec
+	WSMessagesUserTargetedTotal     prometheus.Counter
 )
 
 func Init(registry prometheus.Registerer) {
@@ -245,6 +246,14 @@ func Init(registry prometheus.Registerer) {
 				Help:      "Total number of config DB reads",
 			},
 			[]string{"key", "status"},
+		)
+
+		WSMessagesUserTargetedTotal = factory.NewCounter(
+			prometheus.CounterOpts{
+				Namespace: "aegis",
+				Name:      "ws_messages_user_targeted_total",
+				Help:      "Total number of WebSocket messages sent to specific users",
+			},
 		)
 	})
 }

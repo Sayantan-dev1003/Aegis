@@ -93,6 +93,12 @@ func main() {
 	}
 	defer redisClient.Close()
 
+	// Initialize WebSocket Hub
+	wsHub := ws.NewHub()
+	
+	// Initialize Notification Service
+	notifService := service.NewNotificationService(redisClient, wsHub)
+
 	// Initialize Services & Repositories
 	analystRepo := repository.NewAnalystRepository(pgPool)
 	authService := service.NewAuthService(cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
@@ -109,7 +115,7 @@ func main() {
 	ruleAnalyticsRepo := repository.NewRuleAnalyticsRepository(redisClient)
 
 	rulesEngine := service.NewRulesEngine(ruleRepo, txRepo, velocityStore, ruleAnalyticsRepo, redisClient, &log.Logger)
-	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo, rulesEngine, queueRepo)
+	ingestService := service.NewIngestService(pgPool, txRepo, outboxRepo, rulesEngine, queueRepo, notifService)
 	ingestHandler := handler.NewIngestHandler(ingestService, velocityStore)
 
 	// Background context for graceful shutdown
@@ -129,8 +135,6 @@ func main() {
 		outboxPoller.Start(serverCtx)
 	}()
 
-	// Initialize WebSocket Hub
-	wsHub := ws.NewHub()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -139,7 +143,13 @@ func main() {
 
 	// Initialize SLA Monitor & Notification Service
 	incidentRepo := repository.NewIncidentRepository(pgPool)
-	notifService := service.NewNotificationService()
+	
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		notifService.StartBatcher(serverCtx)
+	}()
+
 	slaMonitor := service.NewSLAMonitor(pgPool, queueRepo, outboxRepo, txRepo, incidentRepo, notifService, wsHub)
 	wg.Add(1)
 	go func() {
@@ -167,7 +177,7 @@ func main() {
 
 	auditSampleRepo := repository.NewAuditSampleRepository(pgPool)
 	configService := service.NewConfigService(configRepo, redisClient, &log.Logger)
-	fraudService := service.NewFraudService(fraudResultRepo, txRepo, configService, wsHub, queueRepo, auditSampleRepo)
+	fraudService := service.NewFraudService(pgPool, fraudResultRepo, txRepo, configService, wsHub, queueRepo, auditSampleRepo, notifService)
 	reviewService := service.NewReviewService(pgPool, txRepo, reviewRepo, auditRepo, queueRepo, analystRepo, incidentRepo, notifService, wsHub)
 	incidentService := service.NewIncidentService(incidentRepo)
 
@@ -188,6 +198,7 @@ func main() {
 	retrainHandler := handler.NewRetrainHandler(retrainRepo, modelRepo, incidentRepo)
 	velocityConfigHandler := handler.NewVelocityConfigHandler(velocityConfigRepo, redisClient)
 	customerHandler := handler.NewCustomerHandler(customerRepo, txRepo)
+	notificationHandler := handler.NewNotificationHandler(notifService)
 
 	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, fraudService)
 	wg.Add(1)
@@ -353,6 +364,9 @@ func main() {
 		r.Get("/api/v1/reviewer/performance/summary", reviewerPerfHandler.Summary)
 		r.Get("/api/v1/reviewer/performance/trend", reviewerPerfHandler.Trend)
 		r.Get("/api/v1/reviewer/performance/leaderboard", reviewerPerfHandler.Leaderboard)
+
+		r.Get("/api/v1/reviewer/notifications", notificationHandler.GetNotifications)
+		r.Post("/api/v1/reviewer/notifications/read", notificationHandler.MarkNotificationsRead)
 	})
 
 	// Start server on configured API port
