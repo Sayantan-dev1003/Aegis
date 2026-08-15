@@ -12,7 +12,7 @@ import (
 )
 
 // RunMigrations connects to PostgreSQL and applies all pending migrations from migrationsPath.
-func RunMigrations(host, port, user, password, dbName, migrationsPath string) error {
+func RunMigrations(host, port, user, password, dbName, migrationsPath, sslMode string) error {
 	if migrationsPath == "" {
 		migrationsPath = "migrations"
 	}
@@ -25,7 +25,10 @@ func RunMigrations(host, port, user, password, dbName, migrationsPath string) er
 	}
 
 	// Construct DSN specifically for golang-migrate's postgres driver
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, dbName)
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", user, password, host, port, dbName, sslMode)
 
 	m, err := migrate.New("file://"+migrationsPath, dsn)
 	if err != nil {

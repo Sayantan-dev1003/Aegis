@@ -75,7 +75,7 @@ func main() {
 	defer cancel()
 
 	// Run database migrations on startup
-	if err := database.RunMigrations(cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB, cfg.MigrationsPath); err != nil {
+	if err := database.RunMigrations(cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB, cfg.MigrationsPath, cfg.PostgresSSLMode); err != nil {
 		log.Fatal().Err(err).Msg("Failed to run database migrations")
 	}
 
