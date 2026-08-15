@@ -1,7 +1,8 @@
 import { parseDurationMs } from "./parseDuration";
 
-export const API_URL = "http://localhost:8080/api/v1";
-export const AUTH_URL = "http://localhost:8080/auth";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+export const API_URL = `${BASE_URL}/api/v1`;
+export const AUTH_URL = `${BASE_URL}/auth`;
 
 // ─── Cookie helpers ───────────────────────────────────────────────────────────
 
