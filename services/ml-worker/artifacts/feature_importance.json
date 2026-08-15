@@ -1,0 +1,402 @@
+[
+    {
+        "feature": "V91",
+        "importance": 0.09687114506959915
+    },
+    {
+        "feature": "V258",
+        "importance": 0.05487370118498802
+    },
+    {
+        "feature": "V201",
+        "importance": 0.04082653298974037
+    },
+    {
+        "feature": "V219",
+        "importance": 0.03870449215173721
+    },
+    {
+        "feature": "V218",
+        "importance": 0.033015359193086624
+    },
+    {
+        "feature": "V69",
+        "importance": 0.02050357311964035
+    },
+    {
+        "feature": "V29",
+        "importance": 0.015469287522137165
+    },
+    {
+        "feature": "V294",
+        "importance": 0.013591242954134941
+    },
+    {
+        "feature": "V246",
+        "importance": 0.013253108598291874
+    },
+    {
+        "feature": "DeviceInfo_hi6210sft Build/MRA58K",
+        "importance": 0.013237907551229
+    },
+    {
+        "feature": "V70",
+        "importance": 0.01177987176924944
+    },
+    {
+        "feature": "V200",
+        "importance": 0.010920069180428982
+    },
+    {
+        "feature": "V264",
+        "importance": 0.010053482837975025
+    },
+    {
+        "feature": "V102",
+        "importance": 0.00883378554135561
+    },
+    {
+        "feature": "V34",
+        "importance": 0.008723661303520203
+    },
+    {
+        "feature": "V318",
+        "importance": 0.007855488918721676
+    },
+    {
+        "feature": "ProductCD_Unique_Merchant_Count",
+        "importance": 0.007697670720517635
+    },
+    {
+        "feature": "P_emaildomain_embarqmail.com",
+        "importance": 0.007498821709305048
+    },
+    {
+        "feature": "ProductCD_Std_TransactionAmt",
+        "importance": 0.00741936219856143
+    },
+    {
+        "feature": "DeviceInfo_MacOS",
+        "importance": 0.007283369544893503
+    },
+    {
+        "feature": "C3",
+        "importance": 0.0065549882128834724
+    },
+    {
+        "feature": "DeviceInfo_Trident/7.0",
+        "importance": 0.006173917558044195
+    },
+    {
+        "feature": "card3_Count_Transaction",
+        "importance": 0.0055188024416565895
+    },
+    {
+        "feature": "V283",
+        "importance": 0.005430588498711586
+    },
+    {
+        "feature": "V187",
+        "importance": 0.005419536493718624
+    },
+    {
+        "feature": "C8",
+        "importance": 0.005353495478630066
+    },
+    {
+        "feature": "EmailProvider_ymail",
+        "importance": 0.004918203689157963
+    },
+    {
+        "feature": "ProductCD_Min_TransactionAmt",
+        "importance": 0.004823530092835426
+    },
+    {
+        "feature": "card6_debit",
+        "importance": 0.004560725297778845
+    },
+    {
+        "feature": "id_30_Windows 8.1",
+        "importance": 0.004511968232691288
+    },
+    {
+        "feature": "C14",
+        "importance": 0.004502994008362293
+    },
+    {
+        "feature": "V244",
+        "importance": 0.004471073392778635
+    },
+    {
+        "feature": "HasRecipientEmail",
+        "importance": 0.004372296389192343
+    },
+    {
+        "feature": "card3_Unique_Merchant_Count",
+        "importance": 0.0038903956301510334
+    },
+    {
+        "feature": "P_emaildomain_ymail.com",
+        "importance": 0.003765256842598319
+    },
+    {
+        "feature": "OS_Type_Mac",
+        "importance": 0.003532421076670289
+    },
+    {
+        "feature": "V324",
+        "importance": 0.0035184246953576803
+    },
+    {
+        "feature": "ProductCD_Mean_TransactionAmt",
+        "importance": 0.0034608643036335707
+    },
+    {
+        "feature": "Browser_Type_ie",
+        "importance": 0.0034382170997560024
+    },
+    {
+        "feature": "id_33_2560x1440",
+        "importance": 0.00343332439661026
+    },
+    {
+        "feature": "id_33_801x480",
+        "importance": 0.0033807139843702316
+    },
+    {
+        "feature": "P_emaildomain_sbcglobal.net",
+        "importance": 0.003375927684828639
+    },
+    {
+        "feature": "card6_credit",
+        "importance": 0.0033253415022045374
+    },
+    {
+        "feature": "DeviceInfo_SM-J320M Build/LMY47V",
+        "importance": 0.0032951263710856438
+    },
+    {
+        "feature": "P_emaildomain_yahoo.com.mx",
+        "importance": 0.003275996772572398
+    },
+    {
+        "feature": "ProductCD_Median_TransactionAmt",
+        "importance": 0.0032436309847980738
+    },
+    {
+        "feature": "V173",
+        "importance": 0.0032116584479808807
+    },
+    {
+        "feature": "V323",
+        "importance": 0.003132955403998494
+    },
+    {
+        "feature": "D2",
+        "importance": 0.0031268952880054712
+    },
+    {
+        "feature": "id_31_chrome 58.0",
+        "importance": 0.003123148810118437
+    },
+    {
+        "feature": "V317",
+        "importance": 0.003084131982177496
+    },
+    {
+        "feature": "P_emaildomain_optonline.net",
+        "importance": 0.002984237391501665
+    },
+    {
+        "feature": "V128",
+        "importance": 0.002857570769265294
+    },
+    {
+        "feature": "EmailProvider_comcast",
+        "importance": 0.0028353591915220022
+    },
+    {
+        "feature": "V197",
+        "importance": 0.002788729267194867
+    },
+    {
+        "feature": "id_31_ie 11.0 for desktop",
+        "importance": 0.0026311923284083605
+    },
+    {
+        "feature": "P_emaildomain_live.com",
+        "importance": 0.00259122671559453
+    },
+    {
+        "feature": "V285",
+        "importance": 0.002557777799665928
+    },
+    {
+        "feature": "R_emaildomain_anonymous.com",
+        "importance": 0.0025516303721815348
+    },
+    {
+        "feature": "V149",
+        "importance": 0.0025457197334617376
+    },
+    {
+        "feature": "V161",
+        "importance": 0.0024583805352449417
+    },
+    {
+        "feature": "V254",
+        "importance": 0.0024447713512927294
+    },
+    {
+        "feature": "P_emaildomain_att.net",
+        "importance": 0.0024446784518659115
+    },
+    {
+        "feature": "V286",
+        "importance": 0.0024400821421295404
+    },
+    {
+        "feature": "V296",
+        "importance": 0.0023320955224335194
+    },
+    {
+        "feature": "V280",
+        "importance": 0.002331644995138049
+    },
+    {
+        "feature": "V99",
+        "importance": 0.00230871862731874
+    },
+    {
+        "feature": "V339",
+        "importance": 0.0023032904136925936
+    },
+    {
+        "feature": "C1",
+        "importance": 0.002302849432453513
+    },
+    {
+        "feature": "V189",
+        "importance": 0.002270185388624668
+    },
+    {
+        "feature": "card3_Median_TransactionAmt",
+        "importance": 0.002264177892357111
+    },
+    {
+        "feature": "DeviceInfo_Lenovo YT3-850M Build/MMB29M",
+        "importance": 0.0022516667377203703
+    },
+    {
+        "feature": "P_emaildomain_msn.com",
+        "importance": 0.002223985968157649
+    },
+    {
+        "feature": "V243",
+        "importance": 0.002209036611020565
+    },
+    {
+        "feature": "card3_Mean_TransactionAmt",
+        "importance": 0.0021805409342050552
+    },
+    {
+        "feature": "P_emaildomain_charter.net",
+        "importance": 0.002156551694497466
+    },
+    {
+        "feature": "ProductCD_H",
+        "importance": 0.002148482482880354
+    },
+    {
+        "feature": "P_emaildomain_mail.com",
+        "importance": 0.0021416994277387857
+    },
+    {
+        "feature": "id_17",
+        "importance": 0.002124878577888012
+    },
+    {
+        "feature": "V2",
+        "importance": 0.002115323906764388
+    },
+    {
+        "feature": "V206",
+        "importance": 0.002100037643685937
+    },
+    {
+        "feature": "V49",
+        "importance": 0.0020583218429237604
+    },
+    {
+        "feature": "V311",
+        "importance": 0.002057164441794157
+    },
+    {
+        "feature": "R_emaildomain_msn.com",
+        "importance": 0.002047741087153554
+    },
+    {
+        "feature": "C13",
+        "importance": 0.002041861182078719
+    },
+    {
+        "feature": "C11",
+        "importance": 0.0020349090918898582
+    },
+    {
+        "feature": "id_30_Android",
+        "importance": 0.002008691430091858
+    },
+    {
+        "feature": "card3",
+        "importance": 0.0019999819342046976
+    },
+    {
+        "feature": "P_emaildomain_comcast.net",
+        "importance": 0.0019975414033979177
+    },
+    {
+        "feature": "V266",
+        "importance": 0.0019756141118705273
+    },
+    {
+        "feature": "EmailProvider_charter",
+        "importance": 0.001972058555111289
+    },
+    {
+        "feature": "V193",
+        "importance": 0.0019677968230098486
+    },
+    {
+        "feature": "P_emaildomain_aim.com",
+        "importance": 0.0019635995849967003
+    },
+    {
+        "feature": "V196",
+        "importance": 0.0019539236091077328
+    },
+    {
+        "feature": "V312",
+        "importance": 0.0019165462581440806
+    },
+    {
+        "feature": "Browser_Type_safari",
+        "importance": 0.0019001393811777234
+    },
+    {
+        "feature": "SameEmailDomain",
+        "importance": 0.0018919764552265406
+    },
+    {
+        "feature": "C4",
+        "importance": 0.0018910947255790234
+    },
+    {
+        "feature": "D3",
+        "importance": 0.0018777718069031835
+    },
+    {
+        "feature": "EmailProvider_live",
+        "importance": 0.0018668635748326778
+    }
+]

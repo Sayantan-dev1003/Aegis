@@ -1,0 +1,20 @@
+{
+    "pipeline_version": "Aegis-1.0.0",
+    "timestamp": "2026-07-26T16:47:31.445198",
+    "model_version": "Aegis-1.0.0",
+    "calibration_version": "latest",
+    "threshold_version": "latest",
+    "shap_version": "0.52.0",
+    "random_seed": 42,
+    "dataset_shape": [
+        118108,
+        482
+    ],
+    "explained_samples": 2000,
+    "background_samples": 1000,
+    "expected_value": 0.3191216424112703,
+    "feature_count": 480,
+    "top_feature": "C13",
+    "execution_time_seconds": 33.52476406097412,
+    "memory_usage_mb": {}
+}

@@ -1,0 +1,8 @@
+{
+    "threshold": 0.39,
+    "strategy": "maximize_f1",
+    "pipeline_version": "Aegis-1.0.0",
+    "model_version": "Aegis-1.0.0",
+    "calibration_method": "isotonic",
+    "created_at": "2026-07-26T11:16:35.125444+00:00"
+}

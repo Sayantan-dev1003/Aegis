@@ -1,0 +1,28 @@
+{
+    "schema_version": "1.0",
+    "artifact_version": "Aegis-1.0.0",
+    "feature_engineering_version": "Aegis-1.0.0",
+    "pipeline_version": "Aegis-1.0.0",
+    "created_at": "2026-07-26T10:58:08.511832+00:00",
+    "aggregation_groups": [
+        "card1",
+        "card2",
+        "card3",
+        "card5",
+        "addr1",
+        "ProductCD",
+        "DeviceType"
+    ],
+    "frequency_groups": [
+        "DeviceInfo",
+        "DeviceType",
+        "DeviceCombined",
+        "EmailProvider"
+    ],
+    "percentile_buckets": 590540,
+    "total_aggregation_statistics": 49,
+    "total_aggregation_entries": 102375,
+    "total_frequency_mappings": 4,
+    "artifact_size_bytes": 6483135,
+    "joblib_filename": "runtime_preprocessing.joblib"
+}
