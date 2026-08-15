@@ -17,6 +17,7 @@ type Config struct {
 	PostgresDB       string
 	PostgresUser     string
 	PostgresPassword string
+	PostgresSSLMode  string
 
 	// Redis
 	RedisURL string
@@ -70,6 +71,7 @@ func Load() *Config {
 		PostgresDB:               getEnvRequired("POSTGRES_DB"),
 		PostgresUser:             getEnvRequired("POSTGRES_USER"),
 		PostgresPassword:         getEnvRequired("POSTGRES_PASSWORD"),
+		PostgresSSLMode:          getEnvDefault("POSTGRES_SSLMODE", "disable"),
 		RedisURL:                 getEnvRequired("REDIS_URL"),
 		KafkaBrokers:             getEnvRequired("KAFKA_BROKERS"),
 		KafkaTopicRaw:            getEnvRequired("KAFKA_TOPIC_RAW"),

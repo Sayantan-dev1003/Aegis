@@ -32,7 +32,7 @@ func main() {
 	defer cancel()
 
 	logger.Get().Info().Msg("Connecting to PostgreSQL...")
-	pgPool, err := database.ConnectPostgres(ctx, cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB)
+	pgPool, err := database.ConnectPostgres(ctx, cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB, cfg.PostgresSSLMode)
 	if err != nil {
 		logger.Get().Fatal().Err(err).Msg("Failed to connect to PostgreSQL")
 	}

@@ -10,10 +10,10 @@ import (
 )
 
 // ConnectPostgres configures and opens a PostgreSQL connection pool using pgxpool.
-func ConnectPostgres(ctx context.Context, host, port, user, password, dbName string) (*pgxpool.Pool, error) {
+func ConnectPostgres(ctx context.Context, host, port, user, password, dbName, sslMode string) (*pgxpool.Pool, error) {
 	// Construct connection DSN. For local host debugging, if Postgres is not run in Docker networking,
 	// the host can be overwritten or passed in config.
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", user, password, host, port, dbName)
+	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s", user, password, host, port, dbName, sslMode)
 
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {

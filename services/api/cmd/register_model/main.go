@@ -21,7 +21,7 @@ func main() {
 	ctx := context.Background()
 
 	// Connect to Postgres
-	dbPool, err := database.ConnectPostgres(ctx, cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB)
+	dbPool, err := database.ConnectPostgres(ctx, cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB, cfg.PostgresSSLMode)
 	if err != nil {
 		log.Fatalf("Failed to connect to postgres: %v", err)
 	}
