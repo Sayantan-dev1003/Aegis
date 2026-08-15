@@ -45,6 +45,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # -----------------------------------------------------------------------------
