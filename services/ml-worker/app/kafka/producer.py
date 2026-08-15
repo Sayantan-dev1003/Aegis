@@ -34,7 +34,7 @@ class AegisProducer:
                 "sasl.mechanisms": config.settings.KAFKA_SASL_MECHANISM,
                 "sasl.username": config.settings.KAFKA_USERNAME,
                 "sasl.password": config.settings.KAFKA_PASSWORD,
-                "ssl.ca.location": "/etc/ssl/certs/ca-certificates.crt",
+                "ssl.ca.location": "probe",
             })
             
         self.producer = Producer(config_dict)
