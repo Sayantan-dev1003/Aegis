@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     KAFKA_BROKERS: str
+    KAFKA_USERNAME: str | None = None
+    KAFKA_PASSWORD: str | None = None
+    KAFKA_SASL_MECHANISM: str = "PLAIN"
     KAFKA_TOPIC_RAW: str
     KAFKA_TOPIC_SCORED: str
     KAFKA_TOPIC_DLQ: str

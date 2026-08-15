@@ -19,17 +19,25 @@ class AegisConsumer:
         self, processor_callback: Callable[[dict[str, Any], dict[str, str], str], None]
     ) -> None:
         config = get_config()
-        self.consumer = Consumer(
-            {
-                "bootstrap.servers": config.settings.KAFKA_BROKERS,
-                "group.id": config.settings.KAFKA_CONSUMER_GROUP,
-                "auto.offset.reset": "earliest",
-                "enable.auto.commit": False,
-                "max.poll.interval.ms": 300000,
-                "heartbeat.interval.ms": 3000,
-                "session.timeout.ms": 30000,
-            }
-        )
+        config_dict = {
+            "bootstrap.servers": config.settings.KAFKA_BROKERS,
+            "group.id": config.settings.KAFKA_CONSUMER_GROUP,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+            "max.poll.interval.ms": 300000,
+            "heartbeat.interval.ms": 3000,
+            "session.timeout.ms": 30000,
+        }
+        
+        if config.settings.KAFKA_USERNAME:
+            config_dict.update({
+                "security.protocol": "SASL_SSL",
+                "sasl.mechanisms": config.settings.KAFKA_SASL_MECHANISM,
+                "sasl.username": config.settings.KAFKA_USERNAME,
+                "sasl.password": config.settings.KAFKA_PASSWORD,
+            })
+            
+        self.consumer = Consumer(config_dict)
         self.topic = config.settings.KAFKA_TOPIC_RAW
         self.processor_callback = processor_callback
         self.running = False

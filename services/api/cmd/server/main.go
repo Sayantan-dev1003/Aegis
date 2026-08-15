@@ -125,7 +125,7 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Initialize Kafka & Outbox Poller
-	kafkaProducer := kafka.NewProducer(cfg.KafkaBrokers)
+	kafkaProducer := kafka.NewProducer(cfg.KafkaBrokers, cfg.KafkaUsername, cfg.KafkaPassword, cfg.KafkaSASLMechanism)
 	defer kafkaProducer.Close()
 
 	outboxPoller := outbox.NewPoller(outboxRepo, kafkaProducer)
@@ -200,7 +200,7 @@ func main() {
 	customerHandler := handler.NewCustomerHandler(customerRepo, txRepo)
 	notificationHandler := handler.NewNotificationHandler(notifService)
 
-	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, fraudService)
+	resultsConsumer := kafka.NewResultsConsumer(cfg.KafkaBrokers, cfg.KafkaUsername, cfg.KafkaPassword, cfg.KafkaSASLMechanism, fraudService)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -209,7 +209,7 @@ func main() {
 		}
 	}()
 
-	dlqConsumer := kafka.NewDLQConsumer(cfg.KafkaBrokers, txRepo)
+	dlqConsumer := kafka.NewDLQConsumer(cfg.KafkaBrokers, cfg.KafkaUsername, cfg.KafkaPassword, cfg.KafkaSASLMechanism, txRepo)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

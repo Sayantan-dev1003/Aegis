@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"strings"
 
@@ -10,6 +11,9 @@ import (
 	"github.com/Sayantan-dev1003/aegis/api/internal/logger"
 	"github.com/Sayantan-dev1003/aegis/api/internal/metrics"
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/segmentio/kafka-go/sasl/scram"
 	"go.opentelemetry.io/otel"
 )
 
@@ -22,14 +26,42 @@ type ResultsConsumer struct {
 }
 
 // NewResultsConsumer initializes a new ResultsConsumer.
-func NewResultsConsumer(brokers string, fraudService *service.FraudService) *ResultsConsumer {
+func NewResultsConsumer(brokers, username, password, saslMechanism string, fraudService *service.FraudService) *ResultsConsumer {
 	brokerList := strings.Split(brokers, ",")
+	
+	var dialer *kafka.Dialer
+	if username != "" {
+		var mechanism sasl.Mechanism
+		if strings.ToUpper(saslMechanism) == "SCRAM-SHA-256" || strings.ToUpper(saslMechanism) == "SCRAM-SHA-512" {
+			algo := scram.SHA256
+			if strings.ToUpper(saslMechanism) == "SCRAM-SHA-512" {
+				algo = scram.SHA512
+			}
+			m, err := scram.Mechanism(algo, username, password)
+			if err != nil {
+				panic("Failed to initialize SCRAM mechanism: " + err.Error())
+			}
+			mechanism = m
+		} else {
+			mechanism = plain.Mechanism{
+				Username: username,
+				Password: password,
+			}
+		}
+
+		dialer = &kafka.Dialer{
+			TLS:           &tls.Config{},
+			SASLMechanism: mechanism,
+		}
+	}
+
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  brokerList,
 		GroupID:  "api-results-consumer",
 		Topic:    "transactions.scored",
 		MinBytes: 10e3, // 10KB
 		MaxBytes: 10e6, // 10MB
+		Dialer:   dialer,
 	})
 
 	return &ResultsConsumer{

@@ -17,18 +17,26 @@ class AegisProducer:
 
     def __init__(self) -> None:
         config = get_config()
-        self.producer = Producer(
-            {
-                "bootstrap.servers": config.settings.KAFKA_BROKERS,
-                "acks": "all",
-                "enable.idempotence": True,
-                "compression.type": "gzip",
-                "linger.ms": 5,
-                "batch.size": 32768,
-                "max.in.flight.requests.per.connection": 5,
-                "retries": 5,
-            }
-        )
+        config_dict = {
+            "bootstrap.servers": config.settings.KAFKA_BROKERS,
+            "acks": "all",
+            "enable.idempotence": True,
+            "compression.type": "gzip",
+            "linger.ms": 5,
+            "batch.size": 32768,
+            "max.in.flight.requests.per.connection": 5,
+            "retries": 5,
+        }
+        
+        if config.settings.KAFKA_USERNAME:
+            config_dict.update({
+                "security.protocol": "SASL_SSL",
+                "sasl.mechanisms": config.settings.KAFKA_SASL_MECHANISM,
+                "sasl.username": config.settings.KAFKA_USERNAME,
+                "sasl.password": config.settings.KAFKA_PASSWORD,
+            })
+            
+        self.producer = Producer(config_dict)
         self.topic_scored = config.settings.KAFKA_TOPIC_SCORED
         self.topic_dlq = config.settings.KAFKA_TOPIC_DLQ
 

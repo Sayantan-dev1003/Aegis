@@ -22,8 +22,10 @@ type Config struct {
 	// Redis
 	RedisURL string
 
-	// Kafka
 	KafkaBrokers       string
+	KafkaUsername      string
+	KafkaPassword      string
+	KafkaSASLMechanism string
 	KafkaTopicRaw      string
 	KafkaTopicScored   string
 	KafkaTopicDLQ      string
@@ -74,6 +76,9 @@ func Load() *Config {
 		PostgresSSLMode:          getEnvDefault("POSTGRES_SSLMODE", "disable"),
 		RedisURL:                 getEnvRequired("REDIS_URL"),
 		KafkaBrokers:             getEnvRequired("KAFKA_BROKERS"),
+		KafkaUsername:            getEnvDefault("KAFKA_USERNAME", ""),
+		KafkaPassword:            getEnvDefault("KAFKA_PASSWORD", ""),
+		KafkaSASLMechanism:       getEnvDefault("KAFKA_SASL_MECHANISM", "PLAIN"),
 		KafkaTopicRaw:            getEnvRequired("KAFKA_TOPIC_RAW"),
 		KafkaTopicScored:         getEnvRequired("KAFKA_TOPIC_SCORED"),
 		KafkaTopicDLQ:            getEnvRequired("KAFKA_TOPIC_DLQ"),

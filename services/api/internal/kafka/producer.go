@@ -2,9 +2,13 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"strings"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/segmentio/kafka-go/sasl/scram"
 )
 
 // Producer wraps a kafka-go Writer.
@@ -14,13 +18,40 @@ type Producer struct {
 
 // NewProducer initializes a new Kafka producer using segmentio/kafka-go.
 // The delivery report goroutine logic is handled implicitly by the Completion callback.
-func NewProducer(brokers string) *Producer {
+func NewProducer(brokers, username, password, saslMechanism string) *Producer {
 	brokerList := strings.Split(brokers, ",")
+
+	var transport *kafka.Transport
+	if username != "" {
+		var mechanism sasl.Mechanism
+		if strings.ToUpper(saslMechanism) == "SCRAM-SHA-256" || strings.ToUpper(saslMechanism) == "SCRAM-SHA-512" {
+			algo := scram.SHA256
+			if strings.ToUpper(saslMechanism) == "SCRAM-SHA-512" {
+				algo = scram.SHA512
+			}
+			m, err := scram.Mechanism(algo, username, password)
+			if err != nil {
+				panic("Failed to initialize SCRAM mechanism: " + err.Error())
+			}
+			mechanism = m
+		} else {
+			mechanism = plain.Mechanism{
+				Username: username,
+				Password: password,
+			}
+		}
+
+		transport = &kafka.Transport{
+			TLS:  &tls.Config{},
+			SASL: mechanism,
+		}
+	}
 
 	w := &kafka.Writer{
 		Addr:                   kafka.TCP(brokerList...),
 		Balancer:               &kafka.Hash{},
 		AllowAutoTopicCreation: true,
+		Transport:              transport,
 		// Using synchronous writes so we can guarantee delivery before marking as published in the DB.
 	}
 

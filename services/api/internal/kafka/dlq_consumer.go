@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"strings"
 
@@ -9,6 +10,9 @@ import (
 	"github.com/Sayantan-dev1003/aegis/api/internal/metrics"
 	"github.com/Sayantan-dev1003/aegis/api/internal/repository"
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl"
+	"github.com/segmentio/kafka-go/sasl/plain"
+	"github.com/segmentio/kafka-go/sasl/scram"
 )
 
 
@@ -27,14 +31,42 @@ type DLQConsumer struct {
 }
 
 // NewDLQConsumer initializes a new DLQConsumer.
-func NewDLQConsumer(brokers string, txRepo *repository.TransactionRepository) *DLQConsumer {
+func NewDLQConsumer(brokers, username, password, saslMechanism string, txRepo *repository.TransactionRepository) *DLQConsumer {
 	brokerList := strings.Split(brokers, ",")
+	
+	var dialer *kafka.Dialer
+	if username != "" {
+		var mechanism sasl.Mechanism
+		if strings.ToUpper(saslMechanism) == "SCRAM-SHA-256" || strings.ToUpper(saslMechanism) == "SCRAM-SHA-512" {
+			algo := scram.SHA256
+			if strings.ToUpper(saslMechanism) == "SCRAM-SHA-512" {
+				algo = scram.SHA512
+			}
+			m, err := scram.Mechanism(algo, username, password)
+			if err != nil {
+				panic("Failed to initialize SCRAM mechanism: " + err.Error())
+			}
+			mechanism = m
+		} else {
+			mechanism = plain.Mechanism{
+				Username: username,
+				Password: password,
+			}
+		}
+
+		dialer = &kafka.Dialer{
+			TLS:           &tls.Config{},
+			SASLMechanism: mechanism,
+		}
+	}
+
 	r := kafka.NewReader(kafka.ReaderConfig{
 		Brokers:  brokerList,
 		GroupID:  "api-dlq-consumer",
 		Topic:    "transactions.dlq",
 		MinBytes: 10e3,
 		MaxBytes: 10e6,
+		Dialer:   dialer,
 	})
 
 	return &DLQConsumer{
