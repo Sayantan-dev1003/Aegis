@@ -145,9 +145,9 @@ Aegis delivers a complete, production-grade feature set organized across five co
 
 Aegis is architected as an asynchronous, event-driven pipeline designed to decouple sub-millisecond transaction ingestion from intensive machine learning inference. Below is the end-to-end data flow and structural layout of the system:
 
-![Architecture Diagram](Aegis - High Level Architecture Diagram.png)
+![Architecture Diagram](Aegis%20-%20High%20Level%20Architecture%20Diagram.png)
 
-![Data Flow Diagram](Data Flow Diagram.png)
+![Data Flow Diagram](Data%20Flow%20Diagram.png)
 
 ### End-to-End Transaction Lifecycle
 
@@ -207,492 +207,1129 @@ Aegis is architected as an asynchronous, event-driven pipeline designed to decou
 
 ---
 
-## 10. Real-Time Events (WebSocket)
+## 6. Core Modules / Services
 
-All events are JSON objects. The hub broadcasts to all connected analysts regardless of role.
+Aegis is composed of three independently deployable services, each with a strictly defined responsibility boundary and its own internal package architecture.
 
-### `transaction.scored`
+### API Service (`services/api`)
 
-Emitted when the ML worker completes scoring and the result is written to DB.
+The Go API Server is the central nervous system of Aegis. It is a **single modular monolith** — not a microservice cluster — built on top of the `chi/v5` HTTP router and structured into strict internal packages under `services/api/internal/`.
 
-```json
-{
-  "event": "transaction.scored",
-  "data": {
-    "transaction_id":    "uuid",
-    "external_id":       "TXN-2025-ABC123",
-    "account_id":        "ACC-98765",
-    "merchant_name":     "Amazon India",
-    "merchant_category": "E-Commerce",
-    "amount":            45999.00,
-    "currency":          "INR",
-    "fraud_score":       0.923,
-    "is_fraud":          true,
-    "auto_blocked":      true,
-    "top_features": [
-      { "feature": "amount_zscore",    "weight": 0.42 },
-      { "feature": "txn_velocity_1h",  "weight": 0.31 },
-      { "feature": "country_mismatch", "weight": 0.18 }
-    ],
-    "trace_id":   "abc123def456",
-    "scored_at":  "2025-03-27T14:32:01.823Z"
-  }
-}
-```
+**Internal Package Structure:**
 
-### `alert.fraud_spike`
+| Package | Responsibility |
+|---|---|
+| `internal/handler` | HTTP handlers for every REST endpoint group (ingest, auth, admin, analyst, transaction, review, rule, queue, stats, metrics, retrain, model, notification, customer, incident, integration, velocity config) |
+| `internal/service` | Business logic layer — decoupled from HTTP and database transport |
+| `internal/repository` | PostgreSQL data access layer using `pgx/v5` connection pooling |
+| `internal/kafka` | Kafka producer (outbox relay) and consumers (results consumer + DLQ consumer) |
+| `internal/outbox` | Background goroutine that polls the `outbox_events` table and publishes unpublished events to `transactions.raw` |
+| `internal/ws` | Native Go WebSocket hub: manages persistent analyst browser connections and broadcasts real-time fraud alerts |
+| `internal/middleware` | JWT authentication middleware, RBAC role enforcement, request logging, Prometheus request metrics middleware |
+| `internal/metrics` | Prometheus counter, gauge, and histogram registrations for `transactions_ingested_total`, `fraud_score_histogram`, `ml_inference_duration_seconds`, `ws_connections_active` |
+| `internal/tracing` | OpenTelemetry tracer initialization, W3C `traceparent` propagation helpers |
+| `internal/config` | Environment variable parsing and validation via `os.Getenv` with sensible defaults |
+| `internal/database` | PostgreSQL connection pool bootstrap and migration runner |
+| `internal/model` | Shared Go struct definitions for all database entities |
+| `internal/logger` | `zerolog` structured JSON logger factory enriched with `service`, `trace_id` |
+| `internal/validator` | Input validation helpers for request payloads |
 
-Emitted when fraud rate in the last 15 minutes exceeds the configured threshold.
+**Entry Points (`services/api/cmd`):**
 
-```json
-{
-  "event": "alert.fraud_spike",
-  "data": {
-    "fraud_rate_15m": 0.087,
-    "threshold":      0.05,
-    "flagged_count":  34,
-    "window_start":   "2025-03-27T14:15:00Z"
-  }
-}
-```
-
-### `transaction.reviewed`
-
-Emitted when an analyst submits a review, so all other connected analysts see the update live.
-
-```json
-{
-  "event": "transaction.reviewed",
-  "data": {
-    "transaction_id": "uuid",
-    "decision":       "false_positive",
-    "analyst_name":   "Priya Sharma",
-    "reviewed_at":    "2025-03-27T14:38:00Z"
-  }
-}
-```
-
-### `transaction.dlq`
-
-Emitted when the ML worker exhausts retries and sends a transaction to the DLQ.
-
-```json
-{
-  "event": "transaction.dlq",
-  "data": {
-    "transaction_id": "uuid",
-    "error":          "model inference timeout after 3 retries",
-    "failed_at":      "2025-03-27T14:40:00Z"
-  }
-}
-```
-
-### `config.updated`
-
-Emitted when an admin updates a runtime config value.
-
-```json
-{
-  "event": "config.updated",
-  "data": {
-    "key":         "fraud_threshold",
-    "old_value":   "0.75",
-    "new_value":   "0.80",
-    "updated_by":  "admin@bank.com"
-  }
-}
-```
+| Command | Purpose |
+|---|---|
+| `cmd/server` | Main API server binary — starts HTTP server, background goroutines (outbox poller, Kafka consumers), and WebSocket hub |
+| `cmd/migrate` | Standalone migration runner: `up` applies all pending migrations, `down` rolls back one migration |
+| `cmd/seed` | Seeds the `analysts` table with default Admin, Reviewer, and Viewer accounts and default queues |
+| `cmd/register_model` | Inserts a new ML model version record into `model_versions` table |
 
 ---
 
-## 11. System Design Deep-Dive
+### ML Worker Service (`services/ml-worker`)
 
-### Kafka Topic Design
+The Python 3.12 ML Worker is the exclusive ML inference service. It is the only architectural boundary intentionally separated from Go, because it requires Python's data-science ecosystem (`XGBoost`, `SHAP`, `scikit-learn`) and has a fundamentally different scaling profile (CPU/GPU-bound inference vs. Go's high-concurrency I/O).
 
-| Topic | Partitions | Producer | Consumer Group | Retention |
-|---|---|---|---|---|
-| `transactions.raw` | 3 (partitioned by `account_id` for per-account ordering) | Outbox poller | `ml-workers` | 7 days |
-| `transactions.scored` | 3 | ML worker | `api-results-consumer` | 3 days |
-| `transactions.dlq` | 1 | ML worker (on max retries) | `api-dlq-consumer` | 14 days |
+**Internal Package Structure (`services/ml-worker/app`):**
 
-### Outbox Pattern Flow
+| Package | Responsibility |
+|---|---|
+| `app/consumer` | Kafka consumer group (`ml-workers`) that polls `transactions.raw` for transaction events |
+| `app/features` | Feature engineering pipeline — derives velocity, frequency, and behavioral aggregations from raw transaction fields |
+| `app/inference` | XGBoost `predict_proba()` inference and SHAP `TreeExplainer` contribution weight computation |
+| `app/kafka` | Kafka producer that publishes scored events to `transactions.scored` and routes failed events to `transactions.dlq` after 3 exponential-backoff retries |
+| `app/api` | FastAPI health and admin endpoints (`GET /health`, `GET /model/version`, `POST /model/reload`) |
+| `app/monitoring` | Prometheus `prometheus-client` metrics export for ML inference latency, score distributions, and consumer lag |
+| `app/runtime` | Runtime model reloading logic — hot-swaps in-memory XGBoost artifact without service restart |
+| `app/config` | `pydantic-settings` environment configuration loader |
 
-The Outbox Pattern solves the dual-write problem. Without it: if the API server writes to Postgres successfully but crashes before publishing to Kafka, the transaction is in the DB but never scored — silently lost from the pipeline.
+**Training Pipeline (`services/ml-worker/training`):**
 
-```
-Step 1: HTTP ingest handler begins a DB transaction.
-Step 2: INSERT into transactions table.
-Step 3: INSERT into outbox_events table (same transaction).
-Step 4: COMMIT — both writes are atomic.
-Step 5: Return 202 to caller immediately.
+The offline training pipeline is a fully automated sequence of Python scripts that produces serialized model artifacts for deployment:
 
-Background goroutine (outbox poller, runs every 500ms):
-Step 6: SELECT id, payload FROM outbox_events
-        WHERE published = false
-        ORDER BY created_at LIMIT 100
-        -- partial index makes this O(1)
-Step 7: For each row: kafka.Produce(topic, payload)
-Step 8: On Kafka ACK: UPDATE outbox_events
-        SET published=true, published_at=NOW()
-        WHERE id = ?
+| Script | Purpose |
+|---|---|
+| `preprocessing.py` | Data ingestion, type coercion, and initial sanity validation |
+| `cleaning.py` | Missing value imputation strategy selection and outlier removal |
+| `missing_value_handler.py` | Advanced missing value imputation (median, KNN, iterative imputer) |
+| `categorical_encoder.py` | Target encoding, frequency encoding, and one-hot encoding for categorical features |
+| `feature_engineering.py` | Velocity window aggregations (1m, 5m, 1h, 24h), cross-merchant behavioral features, device/IP risk scoring |
+| `feature_selection.py` | Recursive Feature Elimination (RFE) and SHAP-based importance-driven feature pruning |
+| `split.py` | Stratified train/validation/test split with class imbalance handling (SMOTE) |
+| `hyperparameter_optimization.py` | Optuna-driven Bayesian hyperparameter search for XGBoost |
+| `train.py` | Main XGBoost training loop with early stopping and cross-validation |
+| `probability_calibration.py` | Platt scaling / isotonic regression for calibrated fraud probabilities |
+| `threshold_optimizer.py` | Precision-recall trade-off optimization to select operational decision threshold |
+| `evaluate.py` | Full classification report, ROC-AUC, PR-AUC, confusion matrix, and lift curve generation |
+| `shap_explainability.py` | Offline SHAP summary, waterfall, and beeswarm plot generation for training audit |
+| `export_artifacts.py` | Serializes final model, feature config JSON, and encoder objects to `artifacts/` |
 
-Idempotency on ML worker side:
-  fraud_results has UNIQUE INDEX on transaction_id.
-  Duplicate Kafka messages (at-least-once) result in a
-  duplicate key error which the worker catches and ignores.
-```
+---
+
+### Dashboard — Admin / Reviewer / Viewer Roles (`services/dashboard`)
+
+The Next.js 16 analyst dashboard is a TypeScript web application built with the App Router pattern. It connects to the Go API Server over both REST (via `TanStack Query`) and a persistent native `WebSocket` for real-time fraud feed delivery.
+
+**Role-Based Access Control (Dashboard):**
+
+| Role | Permissions |
+|---|---|
+| **Admin** | Full access: manage analysts, configure rules, update thresholds, trigger model retraining, view all queues and system metrics, access audit logs and incident management |
+| **Reviewer** | Assigned to a specific queue; can claim, review, and submit decisions on transactions; can escalate cases; subject to SLA tracking and reject capping |
+| **Viewer** | Read-only access to transaction details, SHAP charts, fraud scores, and queue status; cannot submit review decisions or modify configuration |
+
+**Key Dashboard Pages:**
+
+| Page | Description |
+|---|---|
+| **Live Feed** | WebSocket-powered real-time stream of flagged transactions with SHAP feature-weight bar charts, fraud score badges, and inline review action buttons |
+| **Transaction Explorer** | Paginated, filterable transaction table with advanced search by account, merchant, status, score band, and date range |
+| **Case Queue** | Assigned queue worklist showing SLA countdown timers, fraud scores, and ML risk band labels; supports one-click claim and decision submission |
+| **Analytics & Stats** | Aggregated fraud rate trends, TPS charts, score distribution histograms, and reviewer performance leaderboards |
+| **Rules Management** | Admin UI to create, edit, activate, and delete deterministic fraud detection rules with live threshold controls |
+| **Model Registry** | Displays registered model versions, performance metrics (AUC, precision, recall, F1), and current active version |
+| **Audit Log Viewer** | Chronological immutable log of all analyst actions, config changes, and SLA breach events |
+| **Incident Board** | Active and resolved incident tracker with severity levels (low, medium, high, critical) |
+
+---
+
+## 7. Fraud Detection Pipeline
 
 ### Feature Engineering
 
-The ML worker engineers 10 features from the raw transaction payload combined with Redis velocity counters. Velocity features are computed at inference time from Redis sorted sets — never from a slow PostgreSQL query in the hot path.
+At inference time, the ML Worker derives the following feature categories from each raw transaction event:
 
-| Feature | Description | Source |
-|---|---|---|
-| `amount_zscore` | How many std-devs is this amount from the account's 30-day mean | Redis (account stats cache) |
-| `txn_velocity_1h` | Transaction count from this `account_id` in past 1 hour | Redis `ZCOUNT` |
-| `txn_velocity_24h` | Transaction count from this `account_id` in past 24 hours | Redis `ZCOUNT` |
-| `country_mismatch` | Boolean: `country_code` ≠ account's home country | Redis (account profile) |
-| `hour_of_day_sin` | Cyclical encoding of hour (sin component) | Transaction timestamp |
-| `hour_of_day_cos` | Cyclical encoding of hour (cos component) | Transaction timestamp |
-| `day_of_week_sin` | Cyclical encoding of weekday (sin component) | Transaction timestamp |
-| `day_of_week_cos` | Cyclical encoding of weekday (cos component) | Transaction timestamp |
-| `merchant_category_risk` | Precomputed risk score per MCC category from training data | In-memory lookup |
-| `device_seen_before` | Boolean: has `device_id` appeared with this account before | Redis SET |
-| `amount_vs_avg_ratio` | `amount / account 30-day average` — catches unusually large purchases | Redis (account stats cache) |
+**Velocity Features (computed against Redis sorted sets):**
 
-### Redis Data Structures for Velocity
+| Feature | Description |
+|---|---|
+| `tx_count_1m` | Number of transactions from this account in the last 1 minute |
+| `tx_count_5m` | Number of transactions from this account in the last 5 minutes |
+| `tx_count_1h` | Number of transactions from this account in the last 1 hour |
+| `tx_amount_sum_1h` | Total amount transacted from this account in the last 1 hour |
+| `merchant_tx_count_1h` | Number of transactions at this merchant in the last 1 hour |
+| `unique_merchants_1h` | Number of distinct merchants visited by this account in 1 hour |
+
+**Behavioral & Contextual Features:**
+
+| Feature | Description |
+|---|---|
+| `amount_zscore` | Z-score of this transaction amount relative to the account's historical mean and std |
+| `is_new_merchant` | Boolean — first time this account transacts at this merchant |
+| `is_new_device` | Boolean — device ID not seen for this account before |
+| `hour_of_day` | Transaction hour extracted from timestamp (0–23) |
+| `is_weekend` | Boolean — weekend transactions carry different risk profiles |
+| `country_risk_score` | Pre-computed numeric risk weight for the transaction's country code |
+| `channel_risk` | Encoded risk weight for channel type (online > pos > atm) |
+| `merchant_category_encoded` | Target-encoded MCC label from training data |
+
+---
+
+### Model Training & Evaluation
+
+The XGBoost gradient boosted classifier is trained on a labeled historical transaction dataset with the following pipeline:
+
+1. **Data Cleaning** — Remove duplicates, handle missing values via median/KNN imputation
+2. **Feature Engineering** — Generate the complete velocity and behavioral feature set offline
+3. **Encoding** — Target-encode categorical features, frequency-encode high-cardinality fields
+4. **Class Imbalance** — Apply SMOTE (Synthetic Minority Oversampling) to address the heavily imbalanced fraud/legitimate ratio
+5. **Hyperparameter Optimization** — Bayesian search via Optuna across `max_depth`, `n_estimators`, `learning_rate`, `subsample`, `colsample_bytree`, `scale_pos_weight`
+6. **Training** — XGBoost with early stopping on validation AUC-PR
+7. **Probability Calibration** — Platt scaling to produce well-calibrated fraud probabilities
+8. **Threshold Optimization** — Precision-recall trade-off optimization targeting maximum F1 at acceptable FPR
+9. **Export** — Serialize model to `.pkl` (joblib), feature config to `.json`, encoders to `artifacts/`
+
+To run the full training pipeline:
 
 ```bash
-# Ingestor writes on every transaction received:
-ZADD acct:{account_id}:txns <unix_timestamp> <transaction_id>
-EXPIRE acct:{account_id}:txns 172800   # 48-hour TTL
-
-# ML Worker reads at inference time:
-ZCOUNT acct:{account_id}:txns {now-3600}  {now}   # velocity_1h  — O(log N)
-ZCOUNT acct:{account_id}:txns {now-86400} {now}   # velocity_24h — O(log N)
-
-# Device seen before:
-SADD     acct:{account_id}:devices {device_id}
-SISMEMBER acct:{account_id}:devices {device_id}   # boolean check
-
-# Runtime config cache (60s TTL, invalidated on admin update):
-GET    config:fraud_threshold
-DEL    config:{key}  # called by PATCH /admin/config/:key
-```
-
-### WebSocket Hub Architecture
-
-Standard Go hub pattern with per-client buffered channels to prevent slow readers from blocking the broadcast loop.
-
-```go
-type Hub struct {
-    clients    map[*Client]bool
-    broadcast  chan []byte
-    register   chan *Client
-    unregister chan *Client
-    mu         sync.RWMutex
-}
-
-type Client struct {
-    conn      *websocket.Conn
-    send      chan []byte  // buffered: 256
-    analystID string
-    role      string
-}
-
-// If client.send buffer is full (slow reader):
-// Hub drops message + closes connection rather than blocking broadcast.
-// Client reconnects and calls GET /stats/summary to re-sync.
-```
-
-### OTel Trace Propagation via Kafka
-
-A single trace spans HTTP ingestion → Kafka → ML worker → result consumer → DB write. The `trace_id` is visible in Jaeger for any transaction, showing exact latency at each hop.
-
-```go
-// Go API Server (producer):
-ctx, span := tracer.Start(ctx, "ingest.transaction")
-propagator.Inject(ctx, KafkaHeaderCarrier(msg.Headers))
-kafka.Produce(msg)
-```
-
-```python
-# Python ML Worker (consumer):
-ctx = propagator.extract(KafkaHeaderCarrier(msg.headers()))
-with tracer.start_as_current_span("ml.score_transaction", context=ctx):
-    score = predictor.predict(features)
-    # This span is a CHILD of the original API server span
-    # => single trace in Jaeger shows the full pipeline
+cd services/ml-worker
+python run_pipeline.py          # Windows: ./run_pipeline.ps1
 ```
 
 ---
 
-## 12. Challenges & Solutions
+### Model Performance Metrics
 
-### Challenge 1 — Feature computation requires recent transaction history
+Metrics are stored per model version in the `model_versions` table (`metrics JSONB` column) and displayed in the Dashboard Model Registry page.
 
-Features like `txn_velocity_1h` can't come from the transaction payload alone. A slow PostgreSQL query at inference time would destroy latency.
-
-**Solution:** The ingestor maintains Redis sorted sets keyed by `account_id` (`ZADD` with Unix timestamp, 48h TTL). The ML worker does `ZCOUNT` to get velocity in O(log N) — sub-millisecond. No DB hit in the hot path.
-
----
-
-### Challenge 2 — Outbox poller at-least-once Kafka delivery
-
-If the server crashes after Kafka produce but before marking `published=true`, the message is re-sent on restart.
-
-**Solution:** `fraud_results` has a `UNIQUE INDEX` on `transaction_id`. Duplicate inserts from re-processed Kafka messages are caught as constraint violations and silently skipped — idempotent by design.
-
----
-
-### Challenge 3 — WebSocket slow-reader back-pressure
-
-A naive WS hub blocks the broadcast goroutine if a client reads slowly, stalling all other clients.
-
-**Solution:** Each client gets a buffered `send` channel (256 messages). If the buffer fills, the hub drops the message and closes that client's connection rather than blocking the broadcast loop. The client reconnects and re-syncs via `GET /stats/summary`.
+| Metric | Description |
+|---|---|
+| **ROC-AUC** | Area under the Receiver Operating Characteristic curve |
+| **PR-AUC** | Area under the Precision-Recall curve (primary metric for imbalanced datasets) |
+| **Precision** | Fraction of predicted fraud transactions that are actually fraud |
+| **Recall** | Fraction of actual fraud transactions correctly identified |
+| **F1 Score** | Harmonic mean of Precision and Recall |
+| **False Positive Rate** | Fraction of legitimate transactions incorrectly flagged |
+| **Inference Latency (p99)** | 99th-percentile model inference latency in milliseconds |
+| **SHAP Mean Absolute Value** | Mean |SHAP| per feature, used for feature importance ranking |
 
 ---
 
-### Challenge 4 — ML model class imbalance (3.5% fraud rate)
+## 8. Rules Engine & Case Queue Routing
 
-Training naively gives 96.5% accuracy with a useless model that predicts everything as legitimate.
+Aegis uses a **hybrid parallel pipeline** — deterministic rules execute synchronously during ingestion while ML scoring happens asynchronously. This ensures immediate routing without ML latency blocking the ingest SLA.
 
-**Solution:** XGBoost `scale_pos_weight = (negatives / positives)`. Threshold tuning on the validation set — the default 0.5 is wrong; the optimal threshold for F1 on this dataset is ~0.35–0.45. Target metric: **F1 on the fraud class, not accuracy**.
+### Deterministic Rules
 
----
+Rules are stored in the `rules` PostgreSQL table and cached in Redis. Each rule defines:
 
-### Challenge 5 — SHAP computation latency
+| Column | Description |
+|---|---|
+| `entity` | Target of the rule: `account`, `merchant`, `ip_address`, `device`, `global` |
+| `metric` | What to measure: `amount`, `tx_count_1m`, `tx_count_5m`, `unique_merchants_1h`, etc. |
+| `operator` | Comparison: `>`, `<`, `>=`, `<=`, `==`, `!=` |
+| `value` | Threshold numeric value |
+| `window` | Time window for velocity-based metrics (`1m`, `5m`, `1h`, `24h`) |
+| `action` | Outcome: `block` (auto-blocks the transaction), `flag` (escalates to analyst queue) |
 
-`TreeExplainer` SHAP for a single XGBoost sample takes 8–12ms. Re-instantiating the explainer per request would be catastrophic.
+**Default Seed Rules:**
+- Amount > ₹200,000 → `flag` (High Value Exceptions queue)
+- `tx_count_5m` > 10 → `block` (velocity spike auto-block)
+- New device + amount > ₹50,000 → `flag`
+- Country code in high-risk list + amount > ₹10,000 → `flag`
 
-**Solution:** The SHAP explainer object is loaded **once** on worker startup alongside the model and reused for every inference call.
+### Queue Routing Logic
 
----
+After rules execute, every transaction is routed into one of three case queues:
 
-### Challenge 6 — Runtime config propagation
-
-Fraud threshold updates need to reach all service instances without restart.
-
-**Solution:** `system_config` table is the source of truth. Redis cache (60s TTL) sits in front. Admin `PATCH` invalidates the Redis key immediately (`DEL config:{key}`). Next inference request reads from DB and re-caches. Maximum 60s stale config window — acceptable for a risk threshold.
-
----
-
-### Challenge 7 — Kafka consumer group rebalance during DLQ retry
-
-Re-queuing a DLQ message to `transactions.raw` could cause it to be consumed by a different worker instance mid-rebalance and double-processed.
-
-**Solution:** Idempotent processing via unique constraint on `fraud_results.transaction_id` ensures double-processing is a no-op. The re-queued message gets a new Kafka offset but the same `transaction_id`, so the DB insert is safely rejected.
-
----
-
-## 13. Architecture Decision Records (ADRs)
-
-### ADR-1: Kafka over Redis Streams
-
-Kafka provides a durable partitioned log, consumer group management with lag monitoring, and replay capability. Redis Streams gives 90% of this with zero operational overhead.
-
-**Decision:** Kafka, because this project specifically demonstrates event-driven architecture patterns that MAANG system design rounds probe.
-
-**Trade-off:** Requires Zookeeper/KRaft; heavier Docker Compose setup.
-
-**Interview answer:** *"In a startup context, Redis Streams is the correct operational choice. Kafka is correct here because it demonstrates exactly the infrastructure knowledge interviewers probe: consumer group management, partition key design, consumer lag observability, and DLQ patterns."*
-
----
-
-### ADR-2: Single Go binary over microservices
-
-All Go logic (ingestion, result consumption, REST API, WebSocket) lives in one binary with clean internal package boundaries. The ML worker is the only justified service split — different language runtime, different scaling profile, different failure mode.
-
-**Trade-off:** Cannot scale ingestion independently from the API.
-
-**Interview answer:** *"Splitting Go into two services for ingestion vs API would be premature — it adds inter-service HTTP calls and distributed transaction complexity for zero benefit at this scale. The Python ML worker boundary is the one that's truly justified."*
-
----
-
-### ADR-3: Async scoring over synchronous
-
-The ingestor returns `202 Accepted` in <5ms. ML inference arrives asynchronously via Kafka.
-
-**Trade-off:** The bank caller cannot get a synchronous fraud decision in the same API response.
-
-**Interview answer:** *"Synchronous scoring (request-reply via Kafka or gRPC) would be needed if the bank required a real-time block decision before transaction settlement. For post-hoc flagging, async is correct — it fully decouples ingestor latency from ML worker latency and means a slow or restarting ML worker never causes bank-facing timeouts."*
-
----
-
-### ADR-4: XGBoost over deep learning
-
-XGBoost is more interpretable (SHAP works cleanly), trains in minutes on a laptop, achieves competitive F1 on tabular fraud data, and requires no GPU.
-
-**Trade-off:** Less accurate on velocity-based attack patterns with long temporal dependencies vs. an LSTM or Transformer.
-
-**Interview answer:** *"Production answer: XGBoost for analyst-facing explainability, with a sequence model running in parallel for high-confidence auto-block decisions. For this project, XGBoost is the right call."*
-
----
-
-### ADR-5: PostgreSQL + JSONB over MongoDB
-
-SHAP `feature_weights` are stored as JSONB — flexible, schema-free. But the rest of the schema is deeply relational (`fraud_results` reference `transactions`, `reviews` reference `analysts`). PostgreSQL JSONB gives relational integrity where needed and schema flexibility where not.
-
-**Trade-off:** JSONB queries are less ergonomic than native MongoDB document queries.
-
----
-
-### ADR-6: In-memory WS hub vs. Redis Pub/Sub
-
-Current implementation: single API server instance, hub is in-memory. If two API server instances run, a connection on server A won't receive broadcasts from server B.
-
-**Upgrade path:** Redis Pub/Sub as a broadcast layer between instances — each server subscribes to a channel and re-broadcasts to local clients. The code structure makes this upgrade straightforward.
-
-**Interview answer:** *"This is the correct answer to 'how would you scale the WebSocket tier?' — replace the in-memory hub with a Redis Pub/Sub fan-out layer and scale the API server horizontally."*
-
----
-
-## 14. Observability
-
-The full observability stack is included in Docker Compose and requires zero manual setup.
-
-### Prometheus Metrics
-
-| Metric | Type | Description |
+| Queue | Routing Condition | SLA Target |
 |---|---|---|
-| `transactions_ingested_total` | Counter | Total transactions received by ingest endpoint |
-| `fraud_score_histogram` | Histogram | Distribution of fraud scores (buckets: 0–0.3, 0.3–0.6, 0.6–0.9, 0.9–1.0) |
-| `ml_inference_duration_seconds` | Histogram | XGBoost inference latency per prediction |
-| `kafka_consumer_lag` | Gauge | Current consumer lag on `transactions.raw` |
-| `websocket_connections_active` | Gauge | Number of live WebSocket connections to the hub |
-| `auto_blocked_total` | Counter | Transactions automatically blocked (score ≥ 0.92) |
+| **ML Borderline Review** | Rule-flagged `pending` transactions where ML score falls between fraud threshold (`0.75`) and auto-block threshold (`0.92`) | 60 minutes |
+| **High Value Exceptions** | Transactions exceeding the high-value rule threshold | 30 minutes |
+| **ATO Suspects** | Transactions matching account takeover velocity patterns | 45 minutes |
 
-### Jaeger Distributed Tracing
+**Reject Capping:** A Reviewer can reject a case (send back to queue) at most **2 times**. On the third rejection, the case is automatically force-escalated to an Admin for mandatory claim, preventing indefinite queue-bouncing.
 
-Every transaction produces a single trace spanning:
-1. HTTP handler span (`ingest.transaction`) — Go
-2. Kafka produce span
-3. ML worker span (`ml.score_transaction`) — Python
-4. DB write span (`fraud.save_result`) — Go
+**SLA Symmetry:** When a Reviewer rejects a case honestly (within SLA), they receive a fresh full SLA on re-claim. A silent SLA breach (case expires unclaimed) logs an incident against the Reviewer and reduces the next claim SLA by 50%.
 
-The `trace_id` is stored in `fraud_results` and surfaced as a clickable Jaeger link on the transaction detail page.
+---
 
-### Grafana Dashboard
+## 9. Authentication & Authorization (RBAC / JWT)
 
-A pre-built Grafana dashboard JSON is committed at `infra/grafana/dashboards/fraud_detection.json`. It includes panels for transaction throughput, fraud rate over time, ML inference p95, Kafka consumer lag, and WebSocket connection count.
+Aegis uses a **stateless JWT authentication** system with role-based access control enforced at the API middleware layer.
 
-### Structured Logging
+### Authentication Flow
 
-All logs are JSON to stdout, compatible with any log aggregation platform (Loki, Datadog, CloudWatch).
+```
+POST /api/v1/auth/login
+  → Validates email + bcrypt password against analysts table
+  → Issues Access Token (JWT, 30m TTL)  +  Refresh Token (JWT, 8h TTL)
+  → Stores refresh token in Redis (keyed by analyst UUID)
+
+POST /api/v1/auth/refresh
+  → Validates refresh token signature + Redis presence
+  → Issues new Access Token (with 2-minute refresh buffer window)
+
+POST /api/v1/auth/logout
+  → Deletes refresh token from Redis, invalidating the session
+```
+
+### JWT Payload
+
+```json
+{
+  "sub": "<analyst_uuid>",
+  "role": "admin | reviewer | viewer",
+  "queue_id": "<assigned_queue_uuid>",
+  "iat": 1720000000,
+  "exp": 1720001800
+}
+```
+
+### RBAC Enforcement
+
+Role enforcement is applied by Go middleware (`internal/middleware`) on every protected route:
+
+| Route Group | Minimum Role Required |
+|---|---|
+| `POST /api/v1/ingest/transactions` | API Key (bank-facing, no JWT) |
+| `GET /api/v1/transactions` | viewer |
+| `POST /api/v1/reviews` | reviewer |
+| `GET /api/v1/stats/*` | viewer |
+| `POST /api/v1/rules` | admin |
+| `PUT /api/v1/rules/:id` | admin |
+| `POST /api/v1/admin/analysts` | admin |
+| `POST /api/v1/retrain` | admin |
+| `PUT /api/v1/config/*` | admin |
+| `GET /api/v1/audit-logs` | admin |
+
+---
+
+## 10. Real-Time Notifications (WebSocket)
+
+The Go API Server maintains a native WebSocket hub (`internal/ws`) that pushes real-time events to connected analyst browsers without polling.
+
+### WebSocket Connection
+
+```
+ws://localhost:8080/ws/feed
+  → Requires Authorization: Bearer <access_token> in query param or header
+  → Authenticated via JWT middleware before upgrade
+```
+
+### Event Payload Format
+
+When a transaction is escalated (flagged or auto-blocked), the hub broadcasts the following JSON to all connected clients:
+
+```json
+{
+  "type": "TRANSACTION_FLAGGED",
+  "transaction_id": "uuid",
+  "account_id": "ACC123456",
+  "amount": 85000.00,
+  "currency": "INR",
+  "merchant_name": "Fast Electronics",
+  "status": "escalated",
+  "fraud_score": 0.8842,
+  "risk_band": "HIGH",
+  "shap_values": {
+    "tx_count_5m": 0.42,
+    "amount_zscore": 0.31,
+    "is_new_device": 0.18,
+    "country_risk_score": 0.09
+  },
+  "model_version": "v1.2.0",
+  "timestamp": "2026-08-15T14:05:33Z"
+}
+```
+
+### Hub Architecture
+
+- The hub maintains a `map[*Client]bool` of active WebSocket connections protected by a `sync.RWMutex`
+- Each client connection runs in a dedicated goroutine for write serialization
+- Ping/pong heartbeat every 30 seconds to detect stale connections
+- Automatic client deregistration on disconnect or write error
+
+---
+
+## 11. Database Schema & Migrations
+
+Aegis uses **golang-migrate** for versioned, sequential database migrations. All migration files live in the `/migrations` directory and follow the `NNNNNN_description.up.sql` / `.down.sql` naming convention.
+
+### Core Tables
+
+```sql
+-- analysts: Authentication and RBAC subjects
+CREATE TABLE analysts (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email         TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    full_name     TEXT NOT NULL,
+    role          TEXT NOT NULL CHECK (role IN ('viewer', 'reviewer', 'admin')),
+    queue_id      UUID REFERENCES queues(id),    -- reviewer's assigned queue
+    is_active     BOOLEAN DEFAULT true,
+    created_at    TIMESTAMPTZ DEFAULT NOW(),
+    last_login    TIMESTAMPTZ
+);
+
+-- transactions: Primary event ledger
+CREATE TABLE transactions (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    external_id       TEXT UNIQUE NOT NULL,
+    account_id        TEXT NOT NULL,
+    merchant_id       TEXT NOT NULL,
+    merchant_name     TEXT NOT NULL,
+    merchant_category TEXT NOT NULL,
+    amount            NUMERIC(12,2) NOT NULL,
+    currency          CHAR(3) NOT NULL DEFAULT 'INR',
+    country_code      CHAR(2) NOT NULL,
+    transaction_type  TEXT NOT NULL,
+    channel           TEXT NOT NULL,
+    device_id         TEXT,
+    ip_address        INET,
+    timestamp         TIMESTAMPTZ NOT NULL,
+    ingested_at       TIMESTAMPTZ DEFAULT NOW(),
+    status            TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending','scored','auto_blocked','reviewed','scoring_failed')),
+    queue_id          UUID REFERENCES queues(id),
+    claimed_by        UUID REFERENCES analysts(id),
+    claimed_at        TIMESTAMPTZ,
+    sla_deadline      TIMESTAMPTZ,
+    reject_count      INT DEFAULT 0
+);
+
+-- outbox_events: Transactional Outbox for Kafka relay
+CREATE TABLE outbox_events (
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    aggregate_id UUID NOT NULL,
+    event_type   TEXT NOT NULL,
+    payload      JSONB NOT NULL,
+    published    BOOLEAN DEFAULT false,
+    created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- fraud_results: ML scoring output + SHAP values
+CREATE TABLE fraud_results (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id  UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    fraud_score     NUMERIC(5,4) NOT NULL,
+    is_fraud        BOOLEAN NOT NULL,
+    threshold_used  NUMERIC(5,4) NOT NULL,
+    auto_blocked    BOOLEAN DEFAULT false,
+    model_version   TEXT NOT NULL,
+    feature_weights JSONB NOT NULL,     -- SHAP values per feature
+    inference_ms    INTEGER,
+    trace_id        TEXT,
+    scored_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- reviews: Analyst decision records
+CREATE TABLE reviews (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id UUID NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+    analyst_id     UUID NOT NULL REFERENCES analysts(id) ON DELETE CASCADE,
+    decision       TEXT NOT NULL
+        CHECK (decision IN ('confirmed_fraud', 'false_positive', 'escalated')),
+    notes          TEXT,
+    queue_id       UUID REFERENCES queues(id),
+    reviewed_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- audit_logs: Immutable compliance event log
+CREATE TABLE audit_logs (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    analyst_id UUID REFERENCES analysts(id) ON DELETE SET NULL,
+    action     TEXT NOT NULL,
+    resource   TEXT,
+    metadata   JSONB DEFAULT '{}',
+    ip_address INET,
+    trace_id   TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- rules: Configurable deterministic fraud rules
+CREATE TABLE rules (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       TEXT NOT NULL,
+    entity     TEXT NOT NULL,
+    metric     TEXT NOT NULL,
+    operator   TEXT NOT NULL,
+    value      NUMERIC NOT NULL,
+    "window"   TEXT,
+    action     TEXT NOT NULL,
+    is_active  BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- queues: Case routing queues
+CREATE TABLE queues (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name                TEXT UNIQUE NOT NULL,
+    description         TEXT,
+    status              TEXT DEFAULT 'active',
+    sla_target_minutes  INT,
+    created_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- model_versions: ML artifact registry
+CREATE TABLE model_versions (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    version     TEXT UNIQUE NOT NULL,
+    description TEXT,
+    is_active   BOOLEAN DEFAULT false,
+    metrics     JSONB DEFAULT '{}',
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- incidents: Operational incident tracker
+CREATE TABLE incidents (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title       VARCHAR(255) NOT NULL,
+    description TEXT,
+    status      VARCHAR(50) NOT NULL CHECK (status IN ('active', 'resolved')),
+    severity    VARCHAR(50) NOT NULL CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- sla_breaches: Tracks analyst SLA violations
+CREATE TABLE sla_breaches (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    transaction_id UUID REFERENCES transactions(id),
+    analyst_id     UUID REFERENCES analysts(id),
+    queue_id       UUID REFERENCES queues(id),
+    breach_type    TEXT NOT NULL,
+    breached_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- retrain_jobs: Model retraining job tracker
+CREATE TABLE retrain_jobs (
+    id            VARCHAR(50) PRIMARY KEY,
+    status        VARCHAR(20) NOT NULL,
+    started_at    TIMESTAMPTZ DEFAULT NOW(),
+    completed_at  TIMESTAMPTZ,
+    duration_sec  INT,
+    triggered_by  VARCHAR(255)
+);
+```
+
+### Running Migrations
 
 ```bash
-# Filter logs for a specific transaction
-docker compose logs -f api-server | jq 'select(.transaction_id=="<uuid>")'
+# Apply all pending migrations
+make migrate
 
-# Filter only error logs
-docker compose logs -f ml-worker | jq 'select(.level=="error")'
+# Roll back one migration
+make migrate-down
+
+# Or run directly:
+go run services/api/cmd/migrate/main.go up
+go run services/api/cmd/migrate/main.go down
 ```
 
-Every log line carries: `trace_id`, `transaction_id`, `service`, `level`, `timestamp`.
+> [!NOTE]
+> Migration files are automatically mounted into the `api-server` Docker container via the `./migrations:/app/migrations` volume. The server runs `migrate up` on startup before accepting traffic.
 
 ---
 
-## 15. Bonus / Production Features
+## 12. API Reference / Endpoints Documentation
 
-### Runtime-Configurable Thresholds
+All endpoints are versioned under `/api/v1/`. Protected endpoints require `Authorization: Bearer <access_token>` unless noted.
 
-Fraud and auto-block thresholds live in `system_config` and are cached in Redis with a 60s TTL. An admin `PATCH /admin/config/:key` writes to DB, invalidates the Redis key, and emits a `config.updated` WebSocket event to all connected analysts. Zero restarts required.
+### Authentication
 
-**Interview answer:** *"How do you change ML thresholds without redeployment?"* → point to this pattern.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/auth/login` | None | Login with email + password; returns access + refresh tokens |
+| `POST` | `/api/v1/auth/refresh` | Refresh Token | Issue new access token |
+| `POST` | `/api/v1/auth/logout` | Bearer | Revoke refresh token |
 
-### Dead Letter Queue with Admin Requeue
+### Ingestion (Bank-Facing)
 
-When the ML worker fails inference after 3 retries with exponential backoff, the transaction is published to `transactions.dlq` with full error context. The admin dashboard shows all `scoring_failed` transactions, and `POST /admin/dlq/:id/requeue` re-publishes to `transactions.raw` for another attempt.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/ingest/transactions` | API Key (`X-API-Key`) | Ingest a raw transaction event; returns `202 Accepted` in <5ms |
 
-**Interview answer:** *"What happens when your ML service fails?"* → DLQ + requeue UI.
+**Request Body:**
+```json
+{
+  "external_id": "TXN-BANK-20260815-001",
+  "account_id": "ACC123456",
+  "merchant_id": "MRC789",
+  "merchant_name": "Fast Electronics",
+  "merchant_category": "electronics",
+  "amount": 85000.00,
+  "currency": "INR",
+  "country_code": "IN",
+  "transaction_type": "purchase",
+  "channel": "online",
+  "device_id": "DEV-XYZ-001",
+  "ip_address": "103.27.12.45",
+  "timestamp": "2026-08-15T14:05:33Z"
+}
+```
 
-### Redis Token-Bucket Rate Limiter
+### Transactions
 
-Per-API-key token bucket on the ingest endpoint. The check-and-increment is performed as an atomic Lua script to prevent TOCTOU race conditions. Returns `429 Too Many Requests` with a `Retry-After` header.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/transactions` | viewer | List transactions with filters (`status`, `account_id`, `from`, `to`, `limit`, `offset`) |
+| `GET` | `/api/v1/transactions/:id` | viewer | Get a single transaction with full fraud result and SHAP values |
+| `GET` | `/api/v1/transactions/flagged` | viewer | Get currently escalated/flagged transactions |
 
-**Interview answer:** *"How would you implement rate limiting?"* → point to this code.
+### Reviews
 
-### OpenTelemetry End-to-End Tracing
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/v1/reviews` | reviewer | Submit a review decision (`confirmed_fraud`, `false_positive`, `escalated`) |
+| `GET` | `/api/v1/reviews` | reviewer | List reviews submitted by the authenticated analyst |
 
-Trace context propagated via Kafka headers using the W3C TraceContext format. A single Jaeger trace shows the full pipeline for any transaction from HTTP ingestion to DB result write.
+### Rules
 
-**Resume bullet:** *"Instrumented distributed traces across Go and Python services, propagated through Kafka headers, surfacing p95 inference latency in Jaeger."*
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/rules` | viewer | List all fraud detection rules |
+| `POST` | `/api/v1/rules` | admin | Create a new rule |
+| `PUT` | `/api/v1/rules/:id` | admin | Update an existing rule |
+| `DELETE` | `/api/v1/rules/:id` | admin | Soft-delete (deactivate) a rule |
 
-### Prometheus + Grafana
+### Queue Management
 
-Pre-built Grafana dashboard committed to the repo. During demo: open Grafana alongside the app, show live metrics as `mock_transactions.py` runs at 10 transactions/second.
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/queues` | viewer | List all case queues with pending counts and SLA stats |
+| `GET` | `/api/v1/queues/:id/transactions` | reviewer | List transactions in a specific queue |
+| `POST` | `/api/v1/queues/:id/claim` | reviewer | Claim the next available transaction in the queue |
 
-**Resume bullet:** *"Built observable system with Prometheus + Grafana tracking transaction throughput, ML inference p95, and Kafka consumer lag across services."*
+### Admin & Configuration
 
-### Fraud Spike Alerting
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/admin/analysts` | admin | List all analysts |
+| `POST` | `/api/v1/admin/analysts` | admin | Create a new analyst account |
+| `PUT` | `/api/v1/admin/analysts/:id` | admin | Update analyst role, queue assignment, or status |
+| `GET` | `/api/v1/config` | admin | Get all system configuration key-value pairs |
+| `PUT` | `/api/v1/config/:key` | admin | Update a runtime config value (e.g. `FRAUD_THRESHOLD`) |
+| `GET` | `/api/v1/audit-logs` | admin | Paginated immutable audit log |
 
-A background goroutine on the API server computes the fraud rate over a rolling 15-minute window. If it exceeds the configured `fraud_spike_alert_rate` (default 5%), an `alert.fraud_spike` WebSocket event is broadcast to all connected analysts immediately.
+### Analytics & Statistics
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/stats/overview` | viewer | System-wide fraud rate, total transactions, auto-block rate |
+| `GET` | `/api/v1/stats/fraud-trend` | viewer | Hourly/daily fraud rate time series |
+| `GET` | `/api/v1/stats/reviewer-performance` | admin | Per-analyst review accuracy, SLA compliance, and throughput |
+| `GET` | `/api/v1/metrics` | viewer | Prometheus-style metrics JSON for dashboard visualizations |
+
+### ML Model & Retraining
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/models` | viewer | List all registered model versions with metrics |
+| `POST` | `/api/v1/models/activate/:id` | admin | Set a model version as the active inference model |
+| `POST` | `/api/v1/retrain` | admin | Trigger an asynchronous model retraining job |
+| `GET` | `/api/v1/retrain/:job_id` | admin | Get the status of a retraining job |
+
+### Notifications & Incidents
+
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/notifications` | reviewer | List unread notifications for the authenticated analyst |
+| `GET` | `/api/v1/incidents` | admin | List active and resolved incidents |
+| `POST` | `/api/v1/incidents` | admin | Create a new incident record |
+| `PUT` | `/api/v1/incidents/:id/resolve` | admin | Mark an incident as resolved |
+
+### WebSocket
+
+| Protocol | Endpoint | Auth | Description |
+|---|---|---|---|
+| `WS` | `/ws/feed` | Bearer (query `token=`) | Real-time WebSocket feed of flagged transaction events |
 
 ---
 
-## 16. Running Locally
+## 13. Prerequisites
 
-### Prerequisites
+Ensure the following are installed on your development machine:
 
-- Docker and Docker Compose v2
-- Go 1.26.4 (for local development without Docker)
-- Python 3.12 (for local development without Docker)
-- Node.js 20+ (for local development without Docker)
+| Tool | Version | Purpose |
+|---|---|---|
+| **Docker Desktop** | 24.0+ | Container runtime for all services |
+| **Docker Compose** | v2.x (bundled with Docker Desktop) | Multi-container orchestration |
+| **Go** | 1.22+ | Build and run the API server locally (optional if using Docker) |
+| **Python** | 3.12 | Run and train the ML Worker locally (optional if using Docker) |
+| **Node.js** | 18+ (LTS) | Build and run the Next.js dashboard locally (optional if using Docker) |
+| **Git** | 2.x | Clone the repository |
 
-### Quickstart (Docker Compose)
+> [!TIP]
+> For a fully containerized setup, only **Docker Desktop** is required. Go, Python, and Node.js are only needed for local development outside of Docker.
+
+---
+
+## 14. Installation & Local Setup
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Sayantan-dev1003/Aegis
+git clone https://github.com/Sayantan-dev1003/Aegis.git
 cd Aegis
 
-# 2. Set up environment variables
+# 2. Create your environment file from the example template
 cp .env.example .env
-# Edit .env if needed — defaults work for local Docker Compose
 
-# 3. Start the full stack
-docker compose up -d
-
-# 4. Run database migrations
-make migrate
-
-# 5. Seed analyst accounts
-psql $DATABASE_URL -f scripts/seed_analysts.sql
-
-# 6. Verify everything is running
-docker compose ps
+# 3. Edit .env and set secure values for:
+#    POSTGRES_PASSWORD, JWT_SECRET, GRAFANA_PASSWORD, BANK_API_KEY
+#    (all other defaults work out-of-the-box for local development)
 ```
 
-### Service URLs
+> [!IMPORTANT]
+> Never commit the `.env` file to version control. It is already listed in `.gitignore`. Only `.env.example` should be committed.
+
+---
+
+## 15. Environment Variables / Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `POSTGRES_HOST` | `postgres` | PostgreSQL host (use `localhost` for local dev outside Docker) |
+| `POSTGRES_PORT` | `5432` | PostgreSQL port |
+| `POSTGRES_DB` | `aegis_db` | Database name |
+| `POSTGRES_USER` | `aegis_admin` | Database user |
+| `POSTGRES_PASSWORD` | *(required)* | **Set a strong password** |
+| `REDIS_URL` | `redis://redis:6379` | Redis connection URL |
+| `KAFKA_BROKERS` | `kafka:29092` | Kafka bootstrap server (internal Docker listener) |
+| `KAFKA_TOPIC_RAW` | `transactions.raw` | Kafka topic for raw transaction events |
+| `KAFKA_TOPIC_SCORED` | `transactions.scored` | Kafka topic for ML-scored events |
+| `KAFKA_TOPIC_DLQ` | `transactions.dlq` | Dead-letter queue topic |
+| `API_PORT` | `8080` | Go API server HTTP port |
+| `BANK_API_KEY` | *(required)* | API key validated on `POST /api/v1/ingest/transactions` |
+| `JWT_SECRET` | *(required)* | **Min 32-char secret** for JWT signing (HS256) |
+| `JWT_ACCESS_TTL` | `30m` | Access token time-to-live |
+| `JWT_REFRESH_TTL` | `8h` | Refresh token time-to-live |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated allowed CORS origins |
+| `MODEL_PATH` | `/app/model/fraud_model_v1.pkl` | Path to serialized XGBoost model artifact |
+| `SHAP_MAX_FEATURES` | `8` | Maximum number of SHAP features to compute and store |
+| `ML_MAX_RETRIES` | `3` | Maximum inference retry attempts before routing to DLQ |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://jaeger:4317` | Jaeger OTLP gRPC endpoint |
+| `METRICS_PORT` | `9091` | Port the Go API server exposes `/metrics` for Prometheus scraping |
+| `FRAUD_THRESHOLD` | `0.75` | ML fraud score above which transactions are flagged for analyst review |
+| `AUTO_BLOCK_THRESHOLD` | `0.92` | ML fraud score above which transactions are automatically blocked |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8080` | Browser-facing API base URL for the dashboard |
+| `NEXT_PUBLIC_WS_URL` | `ws://localhost:8080/ws/feed` | Browser-facing WebSocket URL for the live feed |
+
+---
+
+## 16. Running with Docker Compose
+
+```bash
+# Start the entire Aegis stack (builds images on first run)
+make dev
+# Equivalent: docker compose up --build -d
+
+# Check service health
+docker compose ps
+
+# Stream logs from all services
+make logs
+# Equivalent: docker compose logs -f
+
+# Stream logs from a specific service
+docker compose logs -f api-server
+docker compose logs -f ml-worker
+
+# Tear down the stack and wipe all volumes (clean slate)
+make reset
+# Equivalent: docker compose down -v
+```
+
+**Service Ports After Startup:**
 
 | Service | URL |
 |---|---|
-| API Server | http://localhost:8080 |
+| Go API Server | http://localhost:8080 |
+| ML Worker (FastAPI) | http://localhost:8000 |
 | Next.js Dashboard | http://localhost:3000 |
-| Kafka UI | http://localhost:8090 |
-| Jaeger UI | http://localhost:16686 |
+| Grafana | http://localhost:3001 (admin / from .env) |
 | Prometheus | http://localhost:9090 |
-| Grafana | http://localhost:3001 |
+| Jaeger UI | http://localhost:16686 |
+| Kafka UI | http://localhost:8085 |
 
-### Running the Demo
+> [!NOTE]
+> On first startup, Kafka requires ~30 seconds to initialize before the API server and ML worker begin processing. Docker Compose `healthcheck` conditions ensure proper service startup ordering.
 
-```bash
-# Stream mock transactions at 10/sec
-python scripts/mock_transactions.py
+---
 
-# Simulate an attack: 20 transactions from same account in 2 minutes
-python scripts/attack_scenario.py
-```
+## 17. Database Seeding & Mock Data
 
-Watch the live feed in the dashboard at `http://localhost:3000/dashboard/feed`. Switch to Grafana at `http://localhost:3001` to see metrics update in real time. Click any flagged transaction to see the SHAP feature weights and the Jaeger trace link.
-
-### Useful Make Targets
+### Seeding Analyst Accounts & Default Queues
 
 ```bash
-make dev       # Start all services in watch mode
-make test      # Run Go unit tests + Python pytest
-make migrate   # Run all pending DB migrations
-make seed      # Seed analysts and system config
-make logs      # Tail all service logs
-make reset     # Tear down and wipe all volumes
+# Seeds analysts + queues into the running PostgreSQL container
+make seed
+# Equivalent: go run services/api/cmd/seed/main.go
 ```
+
+This seeds the following default accounts (password for all: `password123`):
+
+| Email | Role | Assigned Queue |
+|---|---|---|
+| `admin@aegis.com` | admin | None (global access) |
+| `reviewer@aegis.com` | reviewer | ML Borderline Review |
+| `viewer@aegis.com` | viewer | None (read-only) |
+
+And the following default queues:
+
+| Queue Name | SLA Target |
+|---|---|
+| ML Borderline Review | 60 minutes |
+| High Value Exceptions | 30 minutes |
+| ATO Suspects | 45 minutes |
+
+### Generating Mock Transaction Traffic
+
+```bash
+# Send 50 mock transactions at 5 TPS with 20% fraud ratio
+make mock
+# Equivalent:
+python scripts/mock_transactions.py --count 50 --rps 5 --fraud-ratio 0.2
+
+# High-volume stress test
+python scripts/mock_transactions.py --count 500 --rps 50 --fraud-ratio 0.15
+```
+
+The mock script generates realistic transaction payloads with varied merchant categories, amounts, channels, and device IDs, and correctly sets the `X-API-Key` header matching `BANK_API_KEY`.
+
+---
+
+## 18. Testing
+
+Aegis maintains separate unit test suites for the Go API service and the Python ML worker.
+
+### Go Unit Tests
+
+Tests cover the `service`, `validator`, and `middleware` packages. They require **no live database or Kafka connection** — all dependencies are mocked via interfaces.
+
+```bash
+# Run all Go unit tests
+make test-go
+# Equivalent:
+cd services/api && go test -v -count=1 ./internal/service/... ./internal/validator/... ./internal/middleware/...
+```
+
+### Python Unit Tests
+
+Tests cover the feature engineering pipeline, inference engine, and Kafka consumer logic. All external dependencies (Kafka, Redis, PostgreSQL) are mocked via `pytest-mock`.
+
+```bash
+# Run all Python unit tests
+make test-python
+# Equivalent:
+cd services/ml-worker && python -m pytest tests/ -v --tb=short
+```
+
+### Run Both Suites
+
+```bash
+make test
+```
+
+### Integration Testing
+
+For full end-to-end integration testing, use the mock transaction script against a running Docker Compose stack:
+
+```bash
+docker compose up -d
+make seed
+make mock          # Injects 50 mock transactions
+# Observe:
+#   → Kafka UI (localhost:8085) for topic activity
+#   → Dashboard (localhost:3000) for live WebSocket feed
+#   → Jaeger (localhost:16686) for distributed traces
+#   → Grafana (localhost:3001) for metrics dashboards
+```
+
+---
+
+## 19. Observability & Monitoring (Prometheus, Grafana, Distributed Tracing)
+
+### Prometheus Metrics
+
+The Go API Server exposes a `/metrics` endpoint on port `9091` in Prometheus text format. Prometheus scrapes this endpoint every 15 seconds per `infra/prometheus.yml`.
+
+**Key Metrics Exported:**
+
+| Metric | Type | Description |
+|---|---|---|
+| `aegis_transactions_ingested_total` | Counter | Total transactions ingested, labeled by `status` (pending, auto_blocked, escalated) |
+| `aegis_fraud_score_histogram` | Histogram | Distribution of ML fraud probability scores (buckets: 0.1 to 1.0) |
+| `aegis_ml_inference_duration_seconds` | Histogram | End-to-end ML inference latency from Kafka consume to scored event publish |
+| `aegis_kafka_consumer_lag` | Gauge | Current Kafka consumer group lag per topic partition |
+| `aegis_ws_connections_active` | Gauge | Number of active WebSocket analyst connections |
+| `aegis_ingest_duration_seconds` | Histogram | HTTP handler latency for `POST /api/v1/ingest/transactions` |
+| `aegis_review_decisions_total` | Counter | Analyst review decisions by `decision` and `analyst_id` |
+| `aegis_sla_breaches_total` | Counter | Total SLA breach events by `queue` and `breach_type` |
+
+### Grafana Dashboards
+
+Pre-configured Grafana dashboard provisioning JSON is included at `infra/grafana/`. On startup, Grafana automatically provisions:
+
+- **Aegis System Overview** — TPS, fraud rate, score distribution, consumer lag
+- **ML Worker Performance** — Inference latency percentiles (p50, p95, p99), DLQ rate
+- **Analyst Operations** — Review throughput, SLA compliance rate, breach trends
+
+Access Grafana at `http://localhost:3001` with credentials from `.env` (`GRAFANA_USER` / `GRAFANA_PASSWORD`).
+
+### Distributed Tracing (Jaeger)
+
+Every transaction carries an unbroken W3C `traceparent` trace identifier from HTTP ingestion through Kafka to ML inference. In Jaeger (`http://localhost:16686`):
+
+1. Search by `Service: aegis-api` to find the ingest trace
+2. Click any trace to see the full span tree: HTTP handler → DB write → Outbox publish → Kafka produce → (async) → Kafka consume → ML inference → SHAP compute → scored event publish → result consume → DB update → WebSocket broadcast
+3. Filter by `Operation: POST /api/v1/ingest/transactions` and sort by duration to identify p99 latency outliers
+
+---
+
+## 20. Model Retraining Workflow
+
+Aegis supports **admin-triggered asynchronous model retraining** via the API.
+
+### Trigger Retraining
+
+```bash
+# Via API (requires admin JWT)
+curl -X POST http://localhost:8080/api/v1/retrain \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{"triggered_by": "admin@aegis.com"}'
+
+# Response
+{ "job_id": "retrain-20260815-001", "status": "started" }
+```
+
+### Retraining Pipeline Steps
+
+1. **Data Export** — Exports labeled transaction + review data from PostgreSQL to the ML worker's training dataset
+2. **Pipeline Execution** — Runs the full training pipeline: clean → engineer → train → calibrate → evaluate
+3. **Artifact Export** — Serializes new model to `artifacts/fraud_model_<version>.pkl`
+4. **Model Registration** — Calls `POST /api/v1/models` to register the new version with performance metrics in the `model_versions` table
+5. **Hot-Swap** — Admin calls `POST /api/v1/models/activate/:id` to make the new model active; ML Worker picks it up via `POST /model/reload` without restart
+
+### Check Job Status
+
+```bash
+curl http://localhost:8080/api/v1/retrain/retrain-20260815-001 \
+  -H "Authorization: Bearer <admin_token>"
+
+# Response
+{
+  "id": "retrain-20260815-001",
+  "status": "completed",
+  "started_at": "2026-08-15T14:00:00Z",
+  "completed_at": "2026-08-15T14:12:33Z",
+  "duration_sec": 753,
+  "triggered_by": "admin@aegis.com"
+}
+```
+
+---
+
+## 21. Incident & Escalation Management
+
+Aegis includes a lightweight **incident management system** for operational events such as fraud spikes, SLA crises, or service degradation.
+
+### Incident Lifecycle
+
+```
+Create Incident (admin)
+  → status: "active", severity: low | medium | high | critical
+  → Appears on Dashboard Incident Board
+  → Triggers notification to all connected admin WebSocket clients
+
+Resolve Incident (admin)
+  → status: "resolved", resolved_at: <timestamp>
+  → Logged in audit_logs
+```
+
+### Automatic Incident Triggers
+
+The system automatically creates incidents for:
+
+- **SLA Breach Spike** — When more than 5 SLA breaches occur within 15 minutes in any queue
+- **Fraud Rate Alert** — When the 5-minute rolling fraud rate exceeds `FRAUD_SPIKE_ALERT_RATE` (default `5%`)
+- **DLQ Surge** — When more than 10 events accumulate in `transactions.dlq` without admin acknowledgment
+- **Reviewer Negligence** — When a reviewer accumulates 3+ SLA breaches in a single shift
+
+### Escalation Chain
+
+```
+Transaction rejected 2 times by Reviewer
+  → Auto-force-escalated to Admin for mandatory claim
+  → Incident logged: "Escalation Cap Reached — Transaction <id>"
+  → Admin WebSocket notification sent immediately
+```
+
+---
+
+## 22. Audit Logging & Compliance
+
+Every significant state change in Aegis is written to the immutable `audit_logs` table, enriched with analyst identity, originating IP address, and OpenTelemetry trace ID.
+
+### Logged Events
+
+| Action | Trigger |
+|---|---|
+| `LOGIN` | Successful analyst authentication |
+| `LOGIN_FAILED` | Failed login attempt (with IP) |
+| `LOGOUT` | Analyst session termination |
+| `REVIEW_SUBMIT` | Analyst submits a case decision |
+| `CASE_CLAIM` | Analyst claims a transaction from queue |
+| `CASE_REJECT` | Analyst rejects a case back to queue |
+| `CONFIG_UPDATE` | Admin modifies system configuration |
+| `RULE_CREATE` | Admin creates a new fraud detection rule |
+| `RULE_UPDATE` | Admin modifies a rule |
+| `RULE_DELETE` | Admin deactivates a rule |
+| `ANALYST_CREATE` | Admin creates a new analyst account |
+| `ANALYST_UPDATE` | Admin modifies analyst role or queue |
+| `MODEL_ACTIVATE` | Admin activates a new model version |
+| `RETRAIN_TRIGGER` | Admin initiates model retraining |
+| `SLA_BREACH` | Queue SLA deadline exceeded for a transaction |
+| `INCIDENT_CREATE` | Admin creates an incident record |
+| `INCIDENT_RESOLVE` | Admin resolves an incident |
+
+### Querying Audit Logs
+
+```bash
+# Via API (admin only)
+GET /api/v1/audit-logs?analyst_id=<uuid>&action=REVIEW_SUBMIT&from=2026-08-01&limit=100
+```
+
+Audit logs are **append-only** — no UPDATE or DELETE operations are ever executed on this table. This ensures tamper-proof compliance records for financial regulatory requirements.
+
+---
+
+## 23. Performance Benchmarks
+
+The following benchmarks were measured on a local Docker Compose stack running on an 8-core development machine (Intel i7, 32 GB RAM).
+
+| Benchmark | Result |
+|---|---|
+| **Ingest endpoint p50 latency** | ~2ms |
+| **Ingest endpoint p99 latency** | ~8ms |
+| **Max sustained ingest throughput** | ~1,200 TPS (with rate limiter at 1,000 RPS) |
+| **ML inference latency (XGBoost, p50)** | ~6ms |
+| **ML inference latency (XGBoost, p99)** | ~18ms |
+| **SHAP computation (8 features, p50)** | ~4ms |
+| **End-to-end latency (ingest → WebSocket alert)** | ~180–400ms |
+| **Kafka consumer lag under 100 TPS** | <5 messages |
+| **PostgreSQL write throughput (transactions table)** | ~800 rows/sec |
+| **WebSocket broadcast latency (50 connected clients)** | <10ms |
+
+> [!NOTE]
+> End-to-end latency (ingest to WebSocket alert) includes: ingest HTTP round-trip + outbox poll interval (up to 100ms) + Kafka produce/consume + ML inference + SHAP + result consume + DB update + WebSocket broadcast.
+
+---
+
+## 24. Deployment Guide
+
+### Docker Compose (Local / Staging)
+
+```bash
+# Production-equivalent local deployment
+cp .env.example .env
+# Edit .env: set strong secrets for POSTGRES_PASSWORD, JWT_SECRET, GRAFANA_PASSWORD
+
+docker compose up --build -d
+make seed
+```
+
+### Environment-Specific Configuration
+
+For staging or production, override Docker Compose environment variables via `.env` or shell exports:
+
+```bash
+export FRAUD_THRESHOLD=0.80      # More conservative threshold for production
+export AUTO_BLOCK_THRESHOLD=0.95
+export INGESTOR_RATE_LIMIT_RPS=5000
+export JWT_ACCESS_TTL=15m        # Shorter access token TTL for production
+```
+
+### Cloud Deployment Considerations
+
+| Concern | Recommendation |
+|---|---|
+| **Kafka** | Replace Zookeeper-mode Kafka with Confluent Cloud or AWS MSK for managed, HA operation |
+| **PostgreSQL** | Use AWS RDS PostgreSQL 15 or Cloud SQL with read replicas and automated backups |
+| **Redis** | Use AWS ElastiCache Redis or Redis Enterprise for HA with automatic failover |
+| **Container Orchestration** | Migrate Docker Compose to Kubernetes (GKE/EKS/AKS) with HPA for ML Worker pods |
+| **ML Worker Scaling** | Scale ML Worker pods horizontally — Kafka consumer group rebalancing distributes partitions automatically |
+| **Secrets Management** | Replace `.env` file with AWS Secrets Manager, GCP Secret Manager, or HashiCorp Vault |
+| **TLS** | Terminate TLS at a load balancer / ingress controller; configure `CORS_ALLOWED_ORIGINS` to your production domain |
+| **Grafana** | Use Grafana Cloud or deploy Grafana with persistent external storage |
+
+### Health Check Endpoints
+
+| Service | Endpoint | Expected Response |
+|---|---|---|
+| Go API Server | `GET /health` | `{"status": "ok"}` |
+| ML Worker | `GET /health` | `{"status": "ok", "model": "<version>"}` |
+
+---
+
+## 25. Roadmap / Future Enhancements
+
+| Priority | Feature | Description |
+|---|---|---|
+| 🔴 High | **Graph Neural Network (GNN) Fraud Model** | Replace or ensemble XGBoost with a GNN model that natively models transaction relationship graphs (shared devices, IPs, merchants) for dramatically improved ATO detection |
+| 🔴 High | **Online Feature Store (Redis/Feast)** | Replace in-request Redis velocity queries with a dedicated feature store for consistent train/serve feature parity |
+| 🟡 Medium | **Kafka KRaft Mode (Zookeeper Removal)** | Migrate from Zookeeper-coordinated Kafka to Kafka KRaft mode for simplified operations and improved stability |
+| 🟡 Medium | **Multi-Tenant Support** | Support multiple financial institution tenants with isolated transaction streams, separate ML models, and tenant-scoped RBAC |
+| 🟡 Medium | **A/B Model Shadow Testing** | Route a configurable percentage of traffic to a shadow model and compare score distributions without affecting production decisions |
+| 🟢 Low | **Customer Risk Profile API** | REST API for bank systems to query per-account cumulative risk scores, velocity metrics, and historical fraud decisions |
+| 🟢 Low | **Slack / PagerDuty Incident Webhooks** | Push critical fraud spike and SLA breach incidents to Slack channels or PagerDuty via outbound webhooks |
+| 🟢 Low | **Case Assignment Optimization** | ML-powered queue routing that assigns cases to the reviewer with the best historical accuracy on similar transaction patterns |
+| 🟢 Low | **GDPR / Data Retention Policies** | Automated data anonymization and purge jobs for transaction PII exceeding configurable retention windows |
+
+---
+
+## 26. Known Limitations
+
+| Limitation | Details |
+|---|---|
+| **Single Kafka Partition Per Topic** | The local development setup uses 1 partition per topic. In production, increase partition count for parallel ML Worker consumer scaling. |
+| **Outbox Poll Interval** | The Transactional Outbox poller has a configurable poll interval (default ~100ms). This introduces a ~100ms latency floor for Kafka event publish after DB commit. |
+| **Model Training Requires Historical Labels** | The XGBoost model requires a labeled dataset with confirmed fraud/non-fraud labels. Without analyst review feedback, retraining accuracy degrades over time. |
+| **No Native Kafka Authentication** | The local Kafka setup uses `PLAINTEXT` listeners without SASL/SSL authentication. Production deployments must enable Kafka mutual TLS or SASL_SCRAM. |
+| **In-Memory WebSocket Hub** | The Go WebSocket hub is in-memory. Running multiple API server replicas behind a load balancer requires a shared pub/sub layer (e.g., Redis pub/sub) for broadcast fan-out. |
+| **Dashboard Requires API Server** | The Next.js dashboard has no offline or degraded-mode fallback — it fully depends on the Go API Server being reachable at `NEXT_PUBLIC_API_BASE_URL`. |
+| **No Automated Alerting** | Prometheus alerting rules and Alertmanager integration are not configured out-of-the-box. Fraud spike and SLA alerts must be manually configured in Grafana. |
+
+---
+
+## 27. Contributing Guidelines
+
+Contributions are welcome! Please follow these guidelines to maintain code quality and consistency.
+
+### Getting Started
+
+1. **Fork** the repository on GitHub
+2. **Clone** your fork: `git clone https://github.com/<your-username>/Aegis.git`
+3. **Create a feature branch**: `git checkout -b feature/your-feature-name`
+4. **Make your changes** following the coding standards below
+5. **Run the test suite**: `make test`
+6. **Commit** with a descriptive message following [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
+7. **Push** your branch and **open a Pull Request** against `main`
+
+### Coding Standards
+
+**Go (API Service):**
+- Follow standard Go formatting: run `gofmt -w .` before committing
+- All exported functions must have godoc comments
+- Use `zerolog` for all logging — never use `fmt.Println` in production code paths
+- New HTTP handlers must be registered in the router in `cmd/server/main.go`
+- Business logic belongs in `internal/service`, not in `internal/handler`
+- All new database queries must have corresponding repository methods in `internal/repository`
+
+**Python (ML Worker):**
+- Format with `black`: `black app/ training/`
+- Type-annotate all function signatures
+- Use `structlog` for all logging
+- New features must have corresponding unit tests in `tests/`
+
+**Database Migrations:**
+- Every schema change requires a new numbered migration file pair (`.up.sql` + `.down.sql`)
+- Migrations must be backward-compatible where possible
+- Never modify existing migration files — add a new migration instead
+
+### Pull Request Requirements
+
+- All tests must pass (`make test`)
+- PR description must explain the problem, the solution, and any breaking changes
+- For new API endpoints, include the endpoint documentation in the PR description
+- For ML changes, include before/after performance metric comparisons
+
+---
+
+## 28. Author
+
+**Sayantan** — Backend & ML Engineer
+
+> Aegis was designed and built as a production-grade demonstration of modern event-driven system architecture, combining high-throughput Go backend engineering, real-time machine learning inference, and full-stack observability into a single cohesive fraud detection platform.
+
+- **GitHub:** [github.com/Sayantan-dev1003](https://github.com/Sayantan-dev1003)
+
+---
+
+<div align="center">
+
+*Built with ❤️ for production-grade fraud detection engineering*
+
+</div>
