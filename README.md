@@ -145,76 +145,9 @@ Aegis delivers a complete, production-grade feature set organized across five co
 
 Aegis is architected as an asynchronous, event-driven pipeline designed to decouple sub-millisecond transaction ingestion from intensive machine learning inference. Below is the end-to-end data flow and structural layout of the system:
 
-```mermaid
-flowchart TD
-    subgraph Client[" External Bank Core Systems "]
-        A["POST /api/v1/ingest/transactions"]
-    end
+![Architecture Diagram](Aegis - High Level Architecture Diagram.png)
 
-    subgraph API_Layer[" Go API Server (Modular Monolith) "]
-        B["Ingestor HTTP Handler"]
-        C["Token-Bucket Rate Limiter"]
-        RuleEngine["Synchronous Rule Engine"]
-        D["Outbox Poller Goroutine"]
-        E["Kafka Results Consumer"]
-        F["REST API Handlers & WebSocket Hub"]
-    end
-
-    subgraph Cache_Layer[" Redis 7-Alpine "]
-        G[("Rate Limit Tokens & Velocity Counters")]
-    end
-
-    subgraph DB_Layer[" PostgreSQL 15-Alpine "]
-        H[("Transactions & Outbox Events Table")]
-    end
-
-    subgraph Broker_Layer[" Apache Kafka 7.5 "]
-        I[["Topic: transactions.raw"]]
-        J[["Topic: transactions.scored"]]
-        K[["Topic: transactions.dlq"]]
-    end
-
-    subgraph ML_Layer[" Python 3.12 ML Worker "]
-        L["Kafka Consumer Engine"]
-        M["XGBoost Inference & SHAP TreeExplainer"]
-        N["DLQ Retry Handler (3x Backoff)"]
-    end
-
-    subgraph UI_Layer[" Next.js 16 Analyst Dashboard "]
-        O["Real-Time Flagged Transaction Feed"]
-        P["Interactive SHAP Explainer UI"]
-    end
-
-    subgraph Telemetry[" Full-Stack Observability Plane "]
-        Q["OpenTelemetry + Jaeger (Traces)"]
-        R["Prometheus + Grafana (Metrics)"]
-    end
-
-    A -->|1. Webhook Payload| B
-    B <-->|2. Check Rate Limit sub-1ms| C
-    C <-->|3. Token Bucket| G
-    B -->|4. Sync Rule Eval: block, flag, pass| RuleEngine
-    RuleEngine -->|5. Atomic ACID Commit: Unconditional Outbox sub-3ms| H
-    RuleEngine -.-x|6. Return 202 Accepted sub-5ms| A
-
-    D -->|7. Read Unpublished Rows| H
-    D -->|8. Produce Event + OTel Header| I
-    I -->|9. Consume Event| L
-    L -->|10. Compute Score & SHAP| M
-    M -->|11a. Publish Scored Result| J
-    M -.->|11b. On 3x Failure| N
-    N -.->|Publish Failed Event| K
-
-    J -->|12. Consume Scored Result| E
-    E -->|13. Update DB - Enrich with Score| H
-    E -->|14. Push Live JSON Payload| F
-    F ===>|15. Native WebSocket| O
-    F -->|REST /api/v1/reviews| P
-
-    B -.- Q & R
-    M -.- Q & R
-    E -.- Q & R
-```
+![Data Flow Diagram](Data Flow Diagram.png)
 
 ### End-to-End Transaction Lifecycle
 
