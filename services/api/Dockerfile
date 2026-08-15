@@ -6,15 +6,14 @@ RUN apk add --no-cache git
 
 WORKDIR /app
 
-# Copy dependency manifests
-COPY go.mod go.sum ./
+# Copy dependency manifests (paths relative to monorepo root build context)
+COPY services/api/go.mod services/api/go.sum ./
 RUN go mod download
 
-# Copy source code
-COPY . .
+# Copy API source code
+COPY services/api/ .
 
-# Copy root-level migrations folder into the build context
-# (The build context is set to the monorepo root via render.yaml or Render dashboard)
+# Copy root-level migrations into the build
 COPY migrations/ ./migrations/
 
 # Build statically linked binary
