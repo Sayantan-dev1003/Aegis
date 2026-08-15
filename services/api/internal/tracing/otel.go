@@ -23,10 +23,23 @@ func InitTracer(ctx context.Context) (func(context.Context) error, error) {
 	if endpoint == "" {
 		endpoint = "localhost:4317"
 	}
-	
+
 	// Strip "http://" since grpc.Dial doesn't accept scheme by default without a custom resolver
 	endpoint = strings.TrimPrefix(endpoint, "http://")
 	endpoint = strings.TrimPrefix(endpoint, "https://")
+
+	// If the endpoint is localhost, skip real OTLP export and use a no-op tracer.
+	// This avoids "connection refused" log spam on cloud deployments (Render, etc.)
+	// where no Jaeger/Tempo collector is running.
+	if strings.HasPrefix(endpoint, "localhost") || strings.HasPrefix(endpoint, "127.0.0.1") {
+		noop := trace.NewNoopTracerProvider()
+		otel.SetTracerProvider(noop)
+		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{},
+		))
+		return func(context.Context) error { return nil }, nil
+	}
 
 	// Create insecure connection (we are internal in Docker network)
 	conn, err := grpc.DialContext(ctx, endpoint,
